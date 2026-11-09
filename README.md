@@ -89,3 +89,7 @@ Para probar sin tocar tus pestañas reales, estas variables solo actúan al ejec
 | `CLAUDES_AUTO_CONFIRM` | Acepta solos los diálogos (elige siempre el primer botón) |
 | `CLAUDES_BLOCK_PROMPTS` | Los mensajes se rechazan antes de llegar al modelo: permite probar sin gastar tokens |
 | `CLAUDES_LOG_HOOKS` | Escribe en la consola los avisos de hooks y las peticiones MCP |
+
+## Licencia
+
+[MIT](LICENSE).

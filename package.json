@@ -5,6 +5,7 @@
   "description": "Sesiones de Claude Code en pestañas, una por carpeta",
   "main": "src/main/main.js",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
     "icon": "electron scripts/make-icon.js",
