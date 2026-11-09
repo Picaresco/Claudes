@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:">
+<title>Claudes</title>
+<link rel="stylesheet" href="../../node_modules/@fontsource/ibm-plex-sans/400.css">
+<link rel="stylesheet" href="../../node_modules/@fontsource/ibm-plex-sans/500.css">
+<link rel="stylesheet" href="../../node_modules/@fontsource/ibm-plex-sans/600.css">
+<link rel="stylesheet" href="../../node_modules/@fontsource/ibm-plex-mono/400.css">
+<link rel="stylesheet" href="../../node_modules/@fontsource/ibm-plex-mono/600.css">
+<link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header id="strip">
+  <div class="brand">
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 6h5l1.5-2.5H16V15H2z"/><path d="M2 9h14"/></svg>
+    <span>Claudes</span>
+  </div>
+  <div id="tabs" role="tablist" aria-label="Sesiones abiertas"></div>
+  <div class="plus-wrap">
+    <button id="btn-plus" class="icon-btn" aria-label="Abrir una sesión" aria-haspopup="true" aria-expanded="false" title="Abrir una sesión">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2v10M2 7h10"/></svg>
+    </button>
+    <div id="plus-menu" class="popover" hidden>
+      <button id="plus-new" class="menu-item menu-strong">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2v10M2 7h10"/></svg>
+        <span class="grow">Nueva sesión…</span>
+        <span class="kbd">Ctrl+Mayús+T</span>
+      </button>
+      <div class="menu-sep" aria-hidden="true"></div>
+      <div class="menu-label">Recientes</div>
+      <div id="recents"></div>
+      <div id="recents-note" class="menu-note"></div>
+    </div>
+  </div>
+  <div class="strip-space"></div>
+  <button id="codex-chip" class="codex-chip" data-state="missing" aria-pressed="false" hidden>
+    <span class="codex-dot" aria-hidden="true"></span>
+    <span id="codex-label">Codex</span>
+  </button>
+</header>
+
+<div id="toolbar" hidden>
+  <div class="tb-id">
+    <span id="tb-swatch" class="swatch" aria-hidden="true"></span>
+    <strong id="tb-name"></strong>
+    <span id="tb-path" class="mono"></span>
+    <span id="tb-codex" class="badge" title="Esta sesión puede pedir imágenes a Codex con la herramienta «generar_imagen»" hidden>imágenes con Codex</span>
+  </div>
+  <div class="tb-actions">
+    <button id="btn-folder" class="btn btn-icon" aria-label="Abrir la carpeta en el Explorador" title="Abrir la carpeta en el Explorador">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.5 4.5h4.2l1.3 1.6h7.5v6.9h-13z"/></svg>
+    </button>
+    <button id="btn-terminal" class="btn" aria-pressed="false" title="Mostrar u ocultar la terminal (Ctrl+ñ)">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4.5 6l2.5 2-2.5 2M8.5 10.5h3"/></svg>
+      Terminal
+    </button>
+    <button id="btn-swap" class="btn" hidden title="Intercambiar los dos lados">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5h11M10.5 3l2.5 2.5L10.5 8M14 10.5H3M5.5 8L3 10.5 5.5 13"/></svg>
+      Intercambiar lados
+    </button>
+    <button id="btn-split" class="btn" title="Ver dos sesiones a la vez (Ctrl+Mayús+D)">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path id="split-line" d="M8 2.5v11"/></svg>
+      <span id="btn-split-label">Dividir</span>
+    </button>
+    <button id="btn-newconv" class="btn" title="Empezar una conversación nueva en esta pestaña">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2v10M2 7h10"/></svg>
+      Nueva conversación
+    </button>
+  </div>
+</div>
+
+<main id="workspace">
+  <section class="pane" data-side="left" hidden>
+    <div class="pane-head"></div>
+    <div class="pane-body"></div>
+  </section>
+  <div id="divider" role="separator" aria-orientation="vertical" aria-label="Ancho de cada lado" hidden></div>
+  <section class="pane" data-side="right" hidden>
+    <div class="pane-head"></div>
+    <div class="pane-body"></div>
+  </section>
+  <div id="drop-hint" hidden></div>
+  <div id="empty" hidden>
+    <svg aria-hidden="true" width="40" height="40" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1" stroke-linejoin="round"><path d="M2 6h5l1.5-2.5H16V15H2z"/><path d="M2 9h14"/></svg>
+    <h1>No hay sesiones abiertas</h1>
+    <p>Abre una carpeta y ponle nombre a su pestaña. Claude arrancará dentro.</p>
+    <button id="empty-new" class="btn btn-primary">Nueva sesión</button>
+  </div>
+</main>
+
+<footer id="statusbar">
+  <div class="sb-left">
+    <span id="sb-count"></span>
+    <span id="sb-working" class="sb-item" hidden></span>
+    <span id="sb-attn" class="sb-item sb-attn" hidden></span>
+  </div>
+  <div class="sb-right">
+    <button id="sb-zoom" title="Tamaño del texto de esta pestaña. Ctrl + y Ctrl − lo cambian; pulsa para volver al 100 %." hidden></button>
+    <span id="sb-hint">Ctrl+Tab cambia de pestaña · Ctrl+1…9 va directa</span>
+  </div>
+</footer>
+
+<div id="toast" role="status" hidden></div>
+
+<dialog id="dlg-new" aria-labelledby="dlg-new-title">
+  <form id="form-new" method="dialog" novalidate>
+    <div class="dlg-head">
+      <h1 id="dlg-new-title">Nueva sesión</h1>
+      <p>Elige la carpeta y el nombre que verás en la pestaña.</p>
+    </div>
+
+    <div class="field">
+      <label for="f-folder">Carpeta</label>
+      <div class="row">
+        <input id="f-folder" type="text" class="mono" spellcheck="false" autocomplete="off" placeholder="C:\Proyectos\mi-proyecto">
+        <button id="f-browse" type="button" class="btn">Examinar…</button>
+      </div>
+      <div id="f-error" class="error" role="alert" hidden></div>
+    </div>
+
+    <div class="field">
+      <label for="f-name">Nombre de la pestaña</label>
+      <input id="f-name" type="text" spellcheck="false" autocomplete="off" maxlength="60">
+    </div>
+
+    <fieldset>
+      <legend>Color de la pestaña (opcional)</legend>
+      <div id="f-colors" class="chips"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Al abrir la pestaña</legend>
+      <label class="radio"><input type="radio" name="mode" value="continue" checked> Continuar la última conversación de esa carpeta</label>
+      <label class="radio"><input type="radio" name="mode" value="new"> Empezar una conversación nueva</label>
+    </fieldset>
+
+    <div class="field">
+      <label for="f-shell">Terminal extra</label>
+      <select id="f-shell"></select>
+    </div>
+
+    <div class="dlg-actions">
+      <button id="f-cancel" type="button" class="btn">Cancelar</button>
+      <button id="f-submit" type="submit" class="btn btn-primary">Abrir sesión</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
+<script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+<script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

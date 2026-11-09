@@ -1,0 +1,5 @@
+node_modules/
+dist/
+
+# Datos locales de Claude Code (historial de sesiones, ajustes personales)
+.claude/
