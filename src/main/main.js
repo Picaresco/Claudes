@@ -28,6 +28,67 @@ const liveNotifications = new Set();
 
 const CLOSE_BUTTONS = ['Guardar estado y cerrar', 'Cerrar ya', 'Cancelar'];
 
+const two = (n) => String(n).padStart(2, '0');
+const dayStamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}`;
+const localStamp = (d = new Date()) => `${dayStamp(d)}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+
+// ── Registro de depuración ─────────────────────────────────────────
+// Con la depuración activada, cada sesión de Claude arranca con --debug-file y
+// la app anota además su propia actividad (arranques, hooks, salidas, errores).
+// Todo queda en <datos de la app>\logs y se borra solo pasada una semana.
+
+const LOG_DAYS = 7;
+const LOG_MAX_BYTES = 300 * 1024 * 1024;
+let debugEnabled = true;
+let appLogStream = null;
+let appLogDay = '';
+const tabNames = new Map(); // id de pestaña → nombre, para que los registros se lean bien
+const tabLogs = new Map(); // id de pestaña → registro de Claude de su último arranque
+
+const logsDir = () => path.join(app.getPath('userData'), 'logs');
+const tabLabel = (id) => {
+  const base = String(id).replace(/:sh$/, '');
+  return `«${tabNames.get(base) || base}»${String(id).endsWith(':sh') ? ' (terminal extra)' : ''}`;
+};
+
+function appLog(text) {
+  if (!debugEnabled) return;
+  try {
+    const now = new Date();
+    const day = dayStamp(now);
+    if (day !== appLogDay) {
+      if (appLogStream) appLogStream.end();
+      fs.mkdirSync(logsDir(), { recursive: true });
+      appLogStream = fs.createWriteStream(path.join(logsDir(), `claudes-${day}.log`), { flags: 'a' });
+      appLogStream.on('error', () => { /* disco lleno o sin permiso: se sigue sin registro */ });
+      appLogDay = day;
+    }
+    const time = `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+    appLogStream.write(`${time} ${String(text).replace(/\r?\n/g, ' ⏎ ')}\n`);
+  } catch { /* el registro nunca debe romper la app */ }
+}
+
+// Borra los registros de más de una semana y, si aun así ocupan demasiado, los más antiguos.
+function cleanLogs() {
+  let files = [];
+  try {
+    files = fs.readdirSync(logsDir())
+      .filter((name) => name.endsWith('.log'))
+      .map((name) => { const file = path.join(logsDir(), name); const st = fs.statSync(file); return { file, mtime: st.mtimeMs, size: st.size }; })
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch { return; }
+  const limit = Date.now() - LOG_DAYS * 24 * 60 * 60 * 1000;
+  let total = 0;
+  for (const entry of files) {
+    total += entry.size;
+    if (entry.mtime < limit || total > LOG_MAX_BYTES) {
+      try { fs.unlinkSync(entry.file); } catch { /* en uso */ }
+    }
+  }
+}
+
+const safeFileName = (name) => (String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, '_').slice(0, 40) || 'sesion');
+
 // ── Codex ──────────────────────────────────────────────────────────
 
 const CODEX_SERVER = 'codex-imagenes'; // nombre del servidor MCP: la herramienta se ve como mcp__codex-imagenes__generar_imagen
@@ -56,6 +117,8 @@ async function codexTool(tabId, _name, args) {
   if (!codexState.enabled) throw new Error('Las imágenes con Codex están desactivadas en Claudes (indicador «Codex» de la barra superior).');
   codexState.busy += 1;
   send('codex:changed', codexInfo());
+  const startedAt = Date.now();
+  appLog(`Codex: ${tabLabel(tabId)} pide una imagen (${String(args.descripcion || '').length} caracteres de descripción)`);
   try {
     const result = await codex.generateImage({
       description: args.descripcion,
@@ -65,7 +128,11 @@ async function codexTool(tabId, _name, args) {
       cwd,
       workDir: path.join(app.getPath('temp'), 'Claudes-codex'),
     });
+    appLog(`Codex: imagen lista en ${Math.round((Date.now() - startedAt) / 1000)} s → ${result.path}`);
     return `Imagen generada con Codex y guardada en: ${result.path}`;
+  } catch (err) {
+    appLog(`Codex: fallo tras ${Math.round((Date.now() - startedAt) / 1000)} s: ${err && err.message}`);
+    throw err;
   } finally {
     codexState.busy = Math.max(0, codexState.busy - 1);
     send('codex:changed', codexInfo());
@@ -141,6 +208,7 @@ function spawnPty(id, file, args, options) {
     clearTimeout(entry.timer);
     flush();
     if (ptys.get(id) === entry) ptys.delete(id);
+    appLog(`proceso de ${tabLabel(id)} termina con código ${exitCode}${entry.killed ? ' (cerrado por la app)' : ''}`);
     entry.waiters.forEach((done) => done());
     if (!entry.killed) send('pty:exit', id, exitCode);
   });
@@ -182,11 +250,16 @@ async function createPty(o) {
   if (o.kind === 'shell') {
     const sh = shellCommand(o.shell);
     spawnPty(o.id, sh.file, sh.args, { ...base, env: childEnv(sh.env) });
+    appLog(`terminal extra de ${tabLabel(o.id)} arranca: ${path.basename(sh.file)} en ${o.cwd}`);
     return { ok: true };
   }
 
+  if (typeof o.name === 'string' && o.name) tabNames.set(o.id, o.name);
   const exe = sessions.findClaude();
-  if (!exe) return { ok: false, error: 'No encuentro Claude Code en este equipo (el comando «claude» no está instalado o no está en el PATH).' };
+  if (!exe) {
+    appLog(`sesión ${tabLabel(o.id)}: no se encuentra claude en el equipo`);
+    return { ok: false, error: 'No encuentro Claude Code en este equipo (el comando «claude» no está instalado o no está en el PATH).' };
+  }
   const chosen = sessions.plan({ cwd: o.cwd, sessionId: o.sessionId, mode: o.mode, exclude: o.exclude });
   const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id)];
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
@@ -200,6 +273,17 @@ async function createPty(o) {
     // Una imagen puede tardar más que el límite por defecto de una herramienta.
     if (!process.env.MCP_TOOL_TIMEOUT) extraEnv.MCP_TOOL_TIMEOUT = String(10 * 60 * 1000);
   }
+
+  // Registro de depuración de Claude Code para este arranque.
+  let logFile = null;
+  if (debugEnabled) {
+    fs.mkdirSync(logsDir(), { recursive: true });
+    logFile = path.join(logsDir(), `${localStamp()}-${safeFileName(o.name)}.log`);
+    args.push('--debug-file', logFile);
+    tabLogs.set(o.id, logFile);
+  }
+  appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
+    + `${withCodex ? ' · con Codex' : ''}${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
   const env = childEnv(extraEnv);
   if (/\.(cmd|bat)$/i.test(exe)) {
     // Instalación por npm: claude es un .cmd y hay que lanzarlo a través de cmd.exe.
@@ -218,9 +302,7 @@ const pasteDir = () => path.join(app.getPath('temp'), 'Claudes-pegado');
 // Una imagen copiada (una captura, «Copiar imagen» del navegador…) se guarda
 // como archivo para poder pegar su ruta, igual que un archivo arrastrado.
 function savePastedImage(buffer) {
-  const now = new Date();
-  const two = (n) => String(n).padStart(2, '0');
-  const stamp = `${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
+  const stamp = localStamp();
   fs.mkdirSync(pasteDir(), { recursive: true });
   let file = path.join(pasteDir(), `imagen-${stamp}.png`);
   for (let n = 2; fs.existsSync(file); n += 1) file = path.join(pasteDir(), `imagen-${stamp}-${n}.png`);
@@ -366,6 +448,10 @@ function createWindow() {
   win.webContents.on('before-input-event', (_event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') win.webContents.toggleDevTools();
   });
+  // Si la interfaz se cae o deja de responder, que quede constancia.
+  win.webContents.on('render-process-gone', (_event, details) => appLog(`la interfaz se ha caído: ${details.reason} (código ${details.exitCode})`));
+  win.on('unresponsive', () => appLog('la ventana ha dejado de responder'));
+  win.on('responsive', () => appLog('la ventana vuelve a responder'));
 
   if (DEV) devTools();
 }
@@ -436,8 +522,29 @@ function registerIpc() {
     if (typeof id === 'string' && !id.includes(':')) {
       hookServer.forget(id);
       tabFolders.delete(id);
+      tabNames.delete(id);
+      tabLogs.delete(id);
     }
   });
+
+  // Registro de depuración: estado, interruptor y acceso a los archivos.
+  const debugInfo = () => ({ enabled: debugEnabled, dir: logsDir() });
+  ipcMain.handle('debug:get', debugInfo);
+  ipcMain.handle('debug:set', (_e, on) => {
+    if (debugEnabled && !on) appLog('registro de depuración desactivado');
+    debugEnabled = Boolean(on);
+    store.set('debugLogs', debugEnabled);
+    if (debugEnabled) appLog('registro de depuración activado');
+    return debugInfo();
+  });
+  // Abre el registro de Claude de una pestaña; sin pestaña (o sin registro), la carpeta.
+  ipcMain.on('debug:open', (_e, tabId) => {
+    const file = typeof tabId === 'string' ? tabLogs.get(tabId) : null;
+    if (file && fs.existsSync(file)) { shell.openPath(file); return; }
+    fs.mkdirSync(logsDir(), { recursive: true });
+    shell.openPath(logsDir());
+  });
+  ipcMain.on('log', (_e, text) => appLog(`interfaz: ${String(text).slice(0, 600)}`));
 
   ipcMain.handle('codex:status', async (_e, refresh) => {
     // Como mucho una comprobación por minuto, salvo que se pida expresamente.
@@ -465,8 +572,12 @@ function registerIpc() {
     notification.on('failed', (_event, error) => {
       liveNotifications.delete(notification);
       console.error('La notificación no se pudo mostrar:', error);
+      appLog(`notificación «${o.title}»: Windows no la ha mostrado (${error})`);
     });
-    if (DEV) notification.on('show', () => console.log('[notificación mostrada]', o.title));
+    notification.on('show', () => {
+      if (DEV) console.log('[notificación mostrada]', o.title);
+      appLog(`notificación mostrada: «${o.title}»`);
+    });
     notification.show();
     if (win && !win.isFocused()) win.flashFrame(true);
   });
@@ -512,6 +623,13 @@ function registerIpc() {
       { type: 'separator' },
       { label: 'Nueva conversación', click: pick('newconv') },
       { label: 'Abrir carpeta en el Explorador', click: pick('folder') },
+      { type: 'separator' },
+      {
+        label: 'Ver el registro de depuración de esta sesión',
+        enabled: Boolean(tabLogs.get(o.id) && fs.existsSync(tabLogs.get(o.id))),
+        click: pick('log'),
+      },
+      { label: 'Abrir la carpeta de registros', click: pick('logs') },
       { type: 'separator' },
       { label: 'Cerrar pestaña', accelerator: 'Ctrl+Shift+W', registerAccelerator: false, click: pick('close') },
     ]);
@@ -566,8 +684,19 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null); // los atajos del menú por defecto chocarían con la terminal
     store = new Store(path.join(app.getPath('userData'), 'state.json'));
+    debugEnabled = store.get('debugLogs', true) !== false; // activado salvo que se haya apagado
+    cleanLogs();
+    appLog(`──── Claudes ${app.getVersion()} arranca (Electron ${process.versions.electron}, ${app.isPackaged ? 'ejecutable' : 'desde el código'}) ────`);
+    process.on('uncaughtException', (err) => {
+      appLog(`ERROR sin capturar en el proceso principal: ${(err && err.stack) || err}`);
+      dialog.showErrorBox('Error en Claudes', String((err && err.stack) || err));
+    });
+    process.on('unhandledRejection', (reason) => {
+      appLog(`promesa rechazada sin capturar en el proceso principal: ${(reason && reason.stack) || reason}`);
+    });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
+      appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
       send('hook', tabId, event);
     });
     // Solo para pruebas: los mensajes se bloquean antes de llegar al modelo (no gastan tokens).
@@ -578,13 +707,13 @@ if (!app.requestSingleInstanceLock()) {
       tools: [codex.IMAGE_TOOL],
       callTool: codexTool,
     });
-    if (DEV && process.env.CLAUDES_LOG_HOOKS) {
-      const inner = hookServer.mcp;
-      hookServer.mcp = (tabId, body) => {
-        console.log('[mcp]', [].concat(body).map((m) => (m && m.method) || '?').join(', '));
-        return inner(tabId, body);
-      };
-    }
+    const innerMcp = hookServer.mcp;
+    hookServer.mcp = (tabId, body) => {
+      const methods = [].concat(body).map((m) => (m && m.method) || '?').join(', ');
+      if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[mcp]', methods);
+      appLog(`MCP de ${tabLabel(tabId)}: ${methods}`);
+      return innerMcp(tabId, body);
+    };
     await hookServer.start();
     cleanPastedImages();
     codexState.enabled = store.get('codexImages', false) === true;

@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld('api', {
   codexSetEnabled: (on) => ipcRenderer.invoke('codex:setEnabled', Boolean(on)),
   onCodexChanged: on('codex:changed'),
 
+  // Registro de depuración: interruptor, acceso a los archivos y anotaciones de la interfaz.
+  debugGet: () => ipcRenderer.invoke('debug:get'),
+  debugSet: (on) => ipcRenderer.invoke('debug:set', Boolean(on)),
+  openLog: (tabId) => ipcRenderer.send('debug:open', tabId || null),
+  log: (text) => ipcRenderer.send('log', String(text)),
+
   // Cierre de la app con sesiones trabajando.
   onWrapUpAll: on('app:wrapup'),
   closeNow: () => ipcRenderer.send('app:closeNow'),

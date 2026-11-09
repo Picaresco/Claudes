@@ -265,8 +265,9 @@ body.dragging #workspace * { pointer-events: none; }
 .sb-left, .sb-right { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
 .sb-item { display: flex; align-items: center; gap: 6px; }
 .sb-attn { color: var(--attn); }
-#sb-zoom { padding: 2px 8px; border: 1px solid var(--line2); border-radius: 6px; font-size: 12px; color: var(--txt); }
-#sb-zoom:hover { border-color: var(--mute); }
+#sb-zoom, #sb-debug { padding: 2px 8px; border: 1px solid var(--line2); border-radius: 6px; font-size: 12px; color: var(--txt); }
+#sb-zoom:hover, #sb-debug:hover { border-color: var(--mute); }
+#sb-debug[aria-pressed="false"] { color: var(--dim); }
 
 #toast {
   position: fixed;

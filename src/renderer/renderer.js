@@ -366,7 +366,7 @@
     // Una misma conversación no se abre en dos pestañas a la vez.
     const exclude = S.tabs.filter((t) => t.id !== tab.id && t.sessionId).map((t) => t.sessionId);
     const res = await api.ptyCreate({
-      id: tab.id, kind: 'claude', cwd: tab.cwd, sessionId: tab.sessionId, mode, exclude,
+      id: tab.id, kind: 'claude', name: tab.name, cwd: tab.cwd, sessionId: tab.sessionId, mode, exclude,
       cols: view.term.cols, rows: view.term.rows,
     });
     if (!views.has(tab.id)) { api.ptyKill(tab.id); return; } // se cerró mientras arrancaba
@@ -554,6 +554,7 @@
     // Mientras guarda su estado para cerrar, la pestaña se queda en ese estado.
     if (view.closing && status !== 'closing') return;
     if (view.status === status) return;
+    api.log(`estado de «${view.tab.name}»: ${view.status} → ${status}`);
     view.status = status;
     renderTabs();
     renderHeads();
@@ -602,6 +603,31 @@
     }
     await Promise.race([gone, sleep(5000)]); // Claude tarda unos 3 s en cerrarse
     console.log(`[cierre] ${view.tab.name}: salida ${exited ? 'ordenada' : 'forzada'}`);
+    api.log(`cierre ordenado de «${view.tab.name}»: salida ${exited ? 'por sí mismo' : 'forzada por la app'}`);
+  }
+
+  // ── Registro de depuración ───────────────────────────────────────
+
+  let debugInfo = null;
+
+  function renderDebug(info) {
+    if (info) debugInfo = info;
+    const button = $('#sb-debug');
+    if (!debugInfo) { button.hidden = true; return; }
+    button.hidden = false;
+    button.textContent = debugInfo.enabled ? 'Depuración: activada' : 'Depuración: desactivada';
+    button.setAttribute('aria-pressed', String(debugInfo.enabled));
+    button.title = debugInfo.enabled
+      ? `Cada sesión de Claude guarda un registro detallado en ${debugInfo.dir} (se borran solos a la semana). Pulsa para desactivarlo. Los registros se abren con el botón derecho sobre una pestaña.`
+      : 'Las sesiones no guardan registro de depuración. Pulsa para activarlo.';
+  }
+
+  async function toggleDebug() {
+    if (!debugInfo) return;
+    renderDebug(await api.debugSet(!debugInfo.enabled));
+    toast(debugInfo.enabled
+      ? 'Depuración activada: las sesiones que abras o reinicies a partir de ahora guardan su registro.'
+      : 'Depuración desactivada. Las sesiones ya abiertas siguen registrando hasta que se reinicien.');
   }
 
   function needsYou(view, body) {
@@ -1027,9 +1053,11 @@
   async function tabMenu(id) {
     const tab = byId(id);
     if (!tab) return;
-    const action = await api.tabMenu({ color: tab.color || '', colors: COLORS.map(({ key, name }) => ({ key, name })) });
+    const action = await api.tabMenu({ id, color: tab.color || '', colors: COLORS.map(({ key, name }) => ({ key, name })) });
     if (!action || !byId(id)) return;
-    if (action === 'rename') startRename(id);
+    if (action === 'log') api.openLog(id);
+    else if (action === 'logs') api.openLog(null);
+    else if (action === 'rename') startRename(id);
     else if (action === 'newconv') newConversation(id);
     else if (action === 'folder') api.openPath(tab.cwd);
     else if (action === 'close') closeTab(id);
@@ -1365,6 +1393,7 @@
     });
 
     $('#codex-chip').addEventListener('click', toggleCodex);
+    $('#sb-debug').addEventListener('click', toggleDebug);
 
     new ResizeObserver(queueFit).observe($('#workspace'));
     window.addEventListener('focus', () => {
@@ -1510,6 +1539,10 @@
     api.onNotifyClick((tabId) => { if (byId(tabId)) activate(tabId); });
     api.onCodexChanged(renderCodex);
     api.codexStatus(false).then(renderCodex).catch(() => { /* sin indicador hasta la próxima comprobación */ });
+    api.debugGet().then(renderDebug).catch(() => { /* sin interruptor de depuración */ });
+    // Los errores de la interfaz también quedan en el registro de la app.
+    window.addEventListener('error', (e) => api.log(`ERROR: ${e.message} (${String(e.filename).split('/').pop()}:${e.lineno})`));
+    window.addEventListener('unhandledrejection', (e) => api.log(`promesa rechazada: ${(e.reason && e.reason.stack) || e.reason}`));
     // Cierre de la app con «Guardar estado y cerrar»: cada sesión que trabaja deja
     // anotado su estado y, cuando todas han terminado, la app se cierra.
     api.onWrapUpAll(async () => {
