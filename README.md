@@ -8,7 +8,7 @@ Proyecto personal para Windows. No está afiliado a Anthropic ni a OpenAI.
 
 - Windows 10 u 11.
 - [Claude Code](https://code.claude.com/docs) instalado y con sesión iniciada (`claude` en el PATH).
-- Node.js 22.12 o posterior, para ejecutar desde el código o generar el ejecutable.
+- Node.js 22.12 o posterior, para ejecutar desde el código, generar el ejecutable o actualizar desde la propia app.
 - Opcional: Codex CLI con sesión de ChatGPT, para que Claude pueda pedirle imágenes.
 
 ## Instalación
@@ -28,6 +28,7 @@ La primera vez, `npm start` descarga el binario de Electron. Para tener un ejecu
 - **Pegar imágenes y documentos.** `Ctrl+V` o botón derecho pegan lo que haya en el portapapeles: texto, archivos copiados en el Explorador (se pegan sus rutas; Claude adjunta las imágenes como `[Image #1]`) o una imagen copiada, como una captura de pantalla. También se pueden soltar archivos sobre la terminal.
 - **Cierre ordenado.** Al cerrar una pestaña (o la app) con Claude trabajando, avisa. «Guardar estado y cerrar» interrumpe la tarea, le pide a Claude que deje anotado por dónde iba y espera a que termine antes de cerrar; al reabrir la sesión, ese resumen es lo último de la conversación. «Cerrar ya» corta en el acto.
 - **Registro de depuración.** Activado de serie; se apaga y enciende con el botón «Depuración» de la barra inferior. Los registros se abren con el botón derecho sobre una pestaña.
+- **Actualizaciones desde GitHub.** Si en GitHub hay una versión mayor que la instalada, aparece el botón «Actualizar a vX.Y.Z» en la barra superior. Al pulsarlo, Claudes descarga el código, genera el ejecutable nuevo y comprueba que haya un acceso directo en el escritorio (si falta, lo crea). Todo esto ocurre en segundo plano y puedes seguir trabajando. Cuando termina, ofrece «Reiniciar ahora» o instalarla «Al cerrar Claudes». Al volver se abren tus pestañas y cada sesión retoma su conversación. La versión que ya tenías queda guardada como copia.
 - **Dictado por voz.** El micrófono de la barra superior activa el dictado de Claude Code: amarillo oscuro = activado, gris oscuro = desactivado. Activado, mantén pulsada la barra espaciadora en una sesión para hablar; al soltarla deja de grabar y el texto queda en el cuadro de Claude para revisarlo y enviarlo con `Intro`. Desactivado, la barra espaciadora solo escribe espacios. Vale al momento para todas las pestañas. Necesita una sesión de Claude Code iniciada con cuenta de Claude.ai y permiso de micrófono para las aplicaciones de escritorio en Windows.
 - **Imágenes con Codex.** El indicador de la barra superior muestra si Codex está instalado con una suscripción de ChatGPT. Al activarlo, las sesiones de Claude reciben la herramienta `generar_imagen`, que pide la imagen a Codex y la guarda en la carpeta de la sesión.
 - **Estado de cada sesión.** Aro girando = trabajando, punto coral = te necesita o ha terminado sin que lo vieras, círculo hueco = en reposo. Si no estás mirando esa pestaña, salta además una notificación de Windows.
@@ -63,6 +64,7 @@ Los atajos de la app usan `Ctrl+Mayús` para no pisar los de Claude Code (`Ctrl+
 - **Conversaciones.** Cada pestaña recuerda el identificador de su conversación y la retoma con `claude --resume <id>`. Si esa conversación ya no existe, empieza una nueva. La opción «Continuar la última conversación de esa carpeta» solo se aplica al crear la pestaña.
 - **Estado.** Cada sesión arranca con `--settings <archivo>`, que añade hooks HTTP hacia un servidor local de la app (`src/main/hooks.js`). No se modifica tu configuración de Claude Code y tus hooks y mods siguen funcionando.
 - **Dictado.** El mismo archivo de `--settings` activa el [dictado de Claude Code](https://code.claude.com/docs/en/voice-dictation) en modo «mantener» (`voice.enabled`, `voice.mode: "hold"`): la grabación y la transcripción las hace Claude Code. Claude Code reconoce la tecla mantenida por sus repeticiones, así que el botón del micrófono solo decide si las repeticiones de la barra espaciadora llegan a la sesión. Por eso se aplica al momento, sin reiniciar nada. Si tu configuración de Claude Code no fija `language`, Claudes añade `"language": "spanish"` para que el dictado sea en español; ese ajuste también hace que Claude responda en español. Si pones tu propio `language` en `~/.claude/settings.json`, se usa el tuyo.
+- **Actualización.** Solo en el ejecutable instalado. Al arrancar y cada 6 horas, compara `version` de `package.json` en la rama `main` de GitHub con la instalada. Para actualizar descarga el código de `main` en `%LOCALAPPDATA%\Claudes-update` y ejecuta `npm ci` y `scripts/package.mjs` con el Node.js del equipo. Después comprueba el acceso directo del escritorio. Windows no deja sustituir un programa abierto, así que al cerrarse Claudes lanza `src/main/install-update.js` con ese mismo `node.exe`. Ese instalador espera a que Claudes termine, renombra la carpeta del programa a `<carpeta>.anterior`, pone la nueva en su sitio y, si se eligió reiniciar, vuelve a abrir Claudes. Si algo falla, recupera la anterior. Cada actualización deja su registro en `logs\actualizacion-<fecha>.log`, y al volver a abrir Claudes un aviso dice si se instaló.
 - **Cierre ordenado.** La app envía `Esc` (interrumpe el turno), escribe la petición de resumen y espera el hook `Stop`; después deja que Claude salga solo con `Ctrl+C`. Gasta un turno corto de Claude por sesión.
 - **Codex.** `codex login status` dice si hay sesión de ChatGPT. La herramienta es un servidor MCP local (`src/main/mcp.js`) que se pasa a cada sesión con `--mcp-config`; al llamarla, la app ejecuta `codex exec` en modo solo lectura y copia la imagen resultante a la carpeta de la sesión. Cada imagen consume una generación del plan de Codex. Las sesiones abiertas antes de activar el indicador necesitan reiniciarse para recibir la herramienta (la app lo ofrece).
 - **Registros.** Con la depuración activada, cada arranque de Claude lleva `--debug-file` y escribe en `%APPDATA%\Claudes\logs\<fecha>-<hora>-<pestaña>.log` (horas en UTC, formato de Claude Code). La app añade su propio `claudes-<fecha>.log` (hora local) con arranques, hooks recibidos, cambios de estado, notificaciones, peticiones a Codex y errores. Se borran a la semana o al pasar de 300 MB. El interruptor afecta a las sesiones que se abran o reinicien después de cambiarlo.
@@ -70,7 +72,7 @@ Los atajos de la app usan `Ctrl+Mayús` para no pisar los de Claude Code (`Ctrl+
 - **Datos.** `%APPDATA%\Claudes\state.json` guarda pestañas, recientes, posición de la ventana y si las imágenes con Codex y el micrófono para dictar están activados.
 
 ```
-src/main/      proceso principal: ventana, terminales, hooks, portapapeles, Codex, guardado
+src/main/      proceso principal: ventana, terminales, hooks, portapapeles, Codex, guardado, actualización
 src/preload/   puente entre la interfaz y el proceso principal
 src/renderer/  interfaz: pestañas, vista dividida, diálogos
 scripts/       icono y empaquetado
@@ -94,6 +96,23 @@ Para probar sin tocar tus pestañas reales, estas variables solo actúan al ejec
 | `CLAUDES_AUTO_CONFIRM` | Acepta solos los diálogos (elige siempre el primer botón) |
 | `CLAUDES_BLOCK_PROMPTS` | Los mensajes se rechazan antes de llegar al modelo: permite probar sin gastar tokens |
 | `CLAUDES_LOG_HOOKS` | Escribe en la consola los avisos de hooks y las peticiones MCP |
+| `CLAUDES_UPDATE_FAKE_VERSION` | Finge que la versión instalada es esa, para que aparezca el botón «Actualizar» (también funciona en el ejecutable) |
+| `CLAUDES_UPDATE_AUTO` | Actualiza sin preguntar en cuanto hay versión nueva, y reinicia al terminar (para pruebas con el ejecutable) |
+| `CLAUDES_DESKTOP_DIR` | Carpeta donde se comprueba el acceso directo en vez del escritorio |
+
+Con `CLAUDES_USER_DATA`, la actualización trabaja en `<datos>\actualizacion` en vez de en `%LOCALAPPDATA%\Claudes-update`.
+
+## Publicar una versión
+
+Las instalaciones de Claudes detectan una versión nueva cuando `version` de `package.json` en `main` es mayor que la suya. Para publicarla:
+
+```
+npm version 0.3.0 --no-git-tag-version
+git commit -am "Claudes 0.3.0: …"
+git push origin main
+```
+
+Una versión anterior a la 0.2.0 no tiene actualizador: se actualiza a mano una vez (`npm run package` con Claudes cerrado).
 
 ## Licencia
 

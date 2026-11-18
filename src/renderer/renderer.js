@@ -33,6 +33,7 @@
     idle: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" fill="none" stroke="#8B929D" stroke-width="1.5"/></svg>',
     off: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" fill="none" stroke="#8B929D" stroke-width="1.5" stroke-dasharray="2.4 2.4"/></svg>',
     close: '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg>',
+    update: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8.5M4.5 7L8 10.5 11.5 7M2.5 13.5h11"/></svg>',
     terminal: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4.5 6l2.5 2-2.5 2M8.5 10.5h3"/></svg>',
   };
 
@@ -609,6 +610,55 @@
     await Promise.race([gone, sleep(5000)]); // Claude tarda unos 3 s en cerrarse
     console.log(`[cierre] ${view.tab.name}: salida ${exited ? 'ordenada' : 'forzada'}`);
     api.log(`cierre ordenado de «${view.tab.name}»: salida ${exited ? 'por sí mismo' : 'forzada por la app'}`);
+  }
+
+  // ── Actualización ────────────────────────────────────────────────
+  // El proceso principal comprueba GitHub; aquí solo se pinta el botón y se
+  // avisa de cómo va.
+
+  let updateInfo = null;
+
+  function renderUpdate(info) {
+    const prev = updateInfo;
+    if (info) updateInfo = info;
+    const u = updateInfo;
+    if (!u) return;
+    if (u.status === 'error' && u.error && !(prev && prev.status === 'error' && prev.error === u.error)) {
+      toast(`No se pudo actualizar: ${u.error}`);
+    }
+    const button = $('#update-btn');
+    button.hidden = !u.latest || !['available', 'working', 'ready', 'error'].includes(u.status);
+    if (button.hidden) return;
+    button.dataset.state = u.status;
+    button.setAttribute('aria-disabled', String(u.status === 'working'));
+    const icon = $('#update-icon');
+    const label = $('#update-label');
+    if (u.status === 'working') {
+      icon.innerHTML = SVG.working;
+      label.textContent = `${u.step}…`;
+      button.title = `Generando Claudes ${u.latest} en segundo plano. Puedes seguir trabajando.`;
+    } else if (u.status === 'ready') {
+      icon.innerHTML = SVG.update;
+      label.textContent = 'Reiniciar para actualizar';
+      button.title = `Claudes ${u.latest} está lista. Pulsa para cerrar y volver a abrir Claudes con la versión nueva: tus pestañas se restauran.`;
+    } else {
+      icon.innerHTML = SVG.update;
+      label.textContent = `Actualizar a v${u.latest}`;
+      button.title = u.status === 'error'
+        ? `El último intento ha fallado: ${u.error} Pulsa para reintentar.`
+        : `Hay una versión nueva de Claudes en GitHub (tienes la ${u.current}). Pulsa para descargarla y generar el ejecutable; puedes seguir trabajando mientras tanto.`;
+    }
+  }
+
+  async function clickUpdate() {
+    if (!updateInfo) return;
+    if (updateInfo.status === 'ready') { api.updateRestart(); return; }
+    if (updateInfo.status === 'working') return;
+    renderUpdate(await api.updateStart());
+    if (updateInfo.status === 'working') {
+      toast(`Descargando y generando Claudes ${updateInfo.latest}. Puedes seguir trabajando: tarda unos minutos y te avisará al terminar.`);
+    }
+    focusTerminal();
   }
 
   // ── Micrófono para dictar ────────────────────────────────────────
@@ -1422,6 +1472,7 @@
 
     $('#codex-chip').addEventListener('click', toggleCodex);
     $('#mic-btn').addEventListener('click', toggleVoice);
+    $('#update-btn').addEventListener('click', clickUpdate);
     $('#sb-debug').addEventListener('click', toggleDebug);
 
     new ResizeObserver(queueFit).observe($('#workspace'));
@@ -1571,6 +1622,16 @@
     api.codexStatus(false).then(renderCodex).catch(() => { /* sin indicador hasta la próxima comprobación */ });
     api.debugGet().then(renderDebug).catch(() => { /* sin interruptor de depuración */ });
     api.voiceGet().then(renderVoice).catch(() => { /* sin botón de micrófono */ });
+    api.onUpdateChanged(renderUpdate);
+    api.updateGet().then((u) => {
+      renderUpdate(u);
+      // Resultado de la actualización instalada al cerrar la vez anterior.
+      if (u && u.result) {
+        toast(u.result.ok
+          ? `Claudes se ha actualizado a la versión ${u.result.version}.`
+          : `No se ha podido instalar Claudes ${u.result.version}. Los detalles están en la carpeta de registros.`);
+      }
+    }).catch(() => { /* sin botón de actualizar */ });
     // Los errores de la interfaz también quedan en el registro de la app.
     window.addEventListener('error', (e) => api.log(`ERROR: ${e.message} (${String(e.filename).split('/').pop()}:${e.lineno})`));
     window.addEventListener('unhandledrejection', (e) => api.log(`promesa rechazada: ${(e.reason && e.reason.stack) || e.reason}`));

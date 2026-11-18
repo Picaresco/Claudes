@@ -1,5 +1,5 @@
 // Proceso principal de Claudes: ventana, procesos de terminal, avisos y guardado.
-const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen, net } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -10,6 +10,7 @@ const { HookServer } = require('./hooks');
 const { createMcp } = require('./mcp');
 const sessions = require('./sessions');
 const codex = require('./codex');
+const { Updater } = require('./updater');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -20,6 +21,7 @@ const DEV = !app.isPackaged;
 let win = null;
 let store = null;
 let hookServer = null;
+let updater = null;
 let summary = { working: 0 };
 let closeApproved = false; // el usuario ya ha decidido cerrar aunque haya sesiones trabajando
 let closeDialogOpen = false;
@@ -168,6 +170,34 @@ function sessionSettings() {
   // respuestas; si el usuario ya ha elegido uno, se respeta el suyo.
   if (!userLanguage()) settings.language = 'spanish';
   return settings;
+}
+
+// ── Actualización ──────────────────────────────────────────────────
+// La versión nueva se genera en segundo plano; para instalarla hay que cerrar
+// Claudes, así que se pregunta si reiniciar ya o dejarlo para cuando se cierre.
+
+async function offerRestart(info) {
+  if (process.env.CLAUDES_UPDATE_AUTO) { restartToUpdate(); return; } // solo para pruebas automáticas
+  if (!win) return;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'info',
+    message: `Claudes ${info.latest} está lista para instalarse`,
+    detail: 'Para instalarla hay que cerrar Claudes un momento. Al volver se abren tus pestañas y cada sesión retoma su conversación. '
+      + 'Con «Al cerrar Claudes» se instalará la próxima vez que lo cierres.',
+    buttons: ['Reiniciar ahora', 'Al cerrar Claudes'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (response === 0) restartToUpdate();
+}
+
+// Cierra Claudes por el camino normal (pregunta si hay sesiones trabajando) y,
+// al salir, el instalador pone la versión nueva y vuelve a abrirlo.
+function restartToUpdate() {
+  if (!updater || updater.state.status !== 'ready') return;
+  updater.relaunch = true;
+  if (win) win.close();
 }
 
 // Variables que una sesión de Claude Code pone a sus procesos hijos. Si Claudes
@@ -466,6 +496,7 @@ function createWindow() {
       noLink: true,
     }).then(({ response }) => {
       closeDialogOpen = false;
+      if (response === 2 && updater) updater.relaunch = false; // ya no se cierra: tampoco se reinicia
       if (!win) return;
       if (response === 1) { closeApproved = true; win.close(); }
       else if (response === 0) send('app:wrapup'); // la interfaz avisa con app:closeNow al terminar
@@ -598,6 +629,14 @@ function registerIpc() {
     appLog(`micrófono para dictar ${voiceEnabled ? 'activado' : 'desactivado'}`);
     return { enabled: voiceEnabled };
   });
+
+  // Actualización desde GitHub.
+  ipcMain.handle('update:get', () => updater.info());
+  ipcMain.handle('update:start', () => {
+    updater.start(); // tarda minutos: el avance llega por update:changed
+    return updater.info();
+  });
+  ipcMain.on('update:restart', restartToUpdate);
 
   ipcMain.on('status:summary', (_e, value) => {
     summary = { working: Math.max(0, Number(value && value.working) || 0) };
@@ -759,6 +798,18 @@ if (!app.requestSingleInstanceLock()) {
     codexState.enabled = store.get('codexImages', false) === true;
     voiceEnabled = store.get('voiceDictation', false) === true;
     refreshCodex().catch(() => { /* se reintentará al consultar el estado */ });
+    updater = new Updater({
+      app, net, shell, log: appLog, logsDir,
+      onChange: (info) => {
+        send('update:changed', info);
+        // Solo para pruebas automáticas: actualizar en cuanto haya versión nueva.
+        if (process.env.CLAUDES_UPDATE_AUTO && info.status === 'available') setImmediate(() => updater.start());
+      },
+      onReady: offerRestart,
+    });
+    updater.noteAttempt(store.get('updateAttempt', null));
+    store.set('updateAttempt', null);
+    updater.schedule();
     registerIpc();
     createWindow();
   });
@@ -766,6 +817,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     killAll();
     if (hookServer) hookServer.stop();
+    // Con una versión nueva lista, se instala ahora que Claudes se cierra.
+    const attempt = updater ? updater.installOnQuit() : null;
+    if (attempt && store) store.set('updateAttempt', attempt);
     if (store) store.flush();
     app.quit();
   });

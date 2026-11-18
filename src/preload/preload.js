@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld('api', {
   codexSetEnabled: (on) => ipcRenderer.invoke('codex:setEnabled', Boolean(on)),
   onCodexChanged: on('codex:changed'),
 
+  // Actualización desde GitHub: estado, generar la versión nueva y reiniciar para instalarla.
+  updateGet: () => ipcRenderer.invoke('update:get'),
+  updateStart: () => ipcRenderer.invoke('update:start'),
+  updateRestart: () => ipcRenderer.send('update:restart'),
+  onUpdateChanged: on('update:changed'),
+
   // Micrófono para dictar con la barra espaciadora mantenida.
   voiceGet: () => ipcRenderer.invoke('voice:get'),
   voiceSet: (on) => ipcRenderer.invoke('voice:set', Boolean(on)),
