@@ -332,6 +332,46 @@ body.dragging #workspace * { pointer-events: none; }
   font-size: 13px;
 }
 
+/* ── Vista previa de archivos (al pasar el ratón por una ruta o una imagen pegada) ── */
+.preview {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+  max-width: 340px;
+  padding: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  pointer-events: none; /* que no le quite el ratón a la terminal */
+}
+.pv-body { display: flex; justify-content: center; }
+.pv-img { display: block; max-width: 320px; max-height: 240px; border-radius: 6px; background: var(--bg0); }
+.preview[data-kind="page"] .pv-img { max-height: 300px; background: #fff; border: 1px solid var(--line2); border-radius: 3px; }
+.preview[data-kind="icon"] .pv-body { justify-content: flex-start; }
+.preview[data-kind="icon"] .pv-img { width: 32px; height: 32px; background: none; border-radius: 0; }
+.pv-text {
+  max-width: 320px;
+  max-height: 240px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  background: var(--bg0);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 11px/1.45 var(--mono);
+  color: var(--dim);
+  white-space: pre;
+}
+.pv-loading { padding: 14px 4px; font-size: 12px; color: var(--dim); }
+.pv-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pv-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-info { font-size: 12px; color: var(--dim); }
+.pv-hint { font-size: 11px; color: var(--mute); }
+
 /* ── Diálogo «Nueva sesión» ────────────────────────────────────── */
 dialog {
   width: 600px;

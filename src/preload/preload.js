@@ -36,6 +36,10 @@ contextBridge.exposeInMainWorld('api', {
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
   clipboardWrite: (text) => ipcRenderer.send('clipboard:write', text),
   pathForFile: (file) => webUtils.getPathForFile(file),
+  // Vista previa: datos de un archivo (miniatura, primera página, primeras líneas…)
+  // y, de una lista de rutas candidatas, las que existen.
+  preview: (file) => ipcRenderer.invoke('preview:file', file),
+  existingFiles: (list) => ipcRenderer.invoke('preview:existing', list),
   openPath: (target) => ipcRenderer.send('shell:openPath', target),
 
   // Codex: detección de la suscripción e interruptor de «imágenes con Codex».

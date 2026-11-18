@@ -1,5 +1,5 @@
 // Proceso principal de Claudes: ventana, procesos de terminal, avisos y guardado.
-const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen, net, nativeImage } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -11,6 +11,7 @@ const { createMcp } = require('./mcp');
 const sessions = require('./sessions');
 const codex = require('./codex');
 const { Updater } = require('./updater');
+const { createPreview } = require('./preview');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -22,6 +23,7 @@ let win = null;
 let store = null;
 let hookServer = null;
 let updater = null;
+let previewer = null;
 let summary = { working: 0 };
 let closeApproved = false; // el usuario ya ha decidido cerrar aunque haya sesiones trabajando
 let closeDialogOpen = false;
@@ -556,6 +558,7 @@ function registerIpc() {
     shells: shellList(),
     claudeFound: Boolean(sessions.findClaude()),
     windowsBuild: Number(os.release().split('.')[2]) || 0,
+    dev: DEV,
   }));
 
   ipcMain.handle('state:load', () => store.get('ui', null));
@@ -660,6 +663,10 @@ function registerIpc() {
     notification.show();
     if (win && !win.isFocused()) win.flashFrame(true);
   });
+
+  // Vista previa de los archivos sobre los que se pasa el ratón en la terminal.
+  ipcMain.handle('preview:file', (_e, target) => previewer.preview(target));
+  ipcMain.handle('preview:existing', (_e, list) => previewer.existing(list));
 
   ipcMain.handle('fs:isDir', (_e, target) => {
     try { return typeof target === 'string' && fs.statSync(target).isDirectory(); } catch { return false; }
@@ -795,6 +802,8 @@ if (!app.requestSingleInstanceLock()) {
     };
     await hookServer.start();
     cleanPastedImages();
+    previewer = createPreview({ app, nativeImage });
+    previewer.cleanTemp();
     codexState.enabled = store.get('codexImages', false) === true;
     voiceEnabled = store.get('voiceDictation', false) === true;
     refreshCodex().catch(() => { /* se reintentará al consultar el estado */ });
