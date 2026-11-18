@@ -1,8 +1,10 @@
-# Claudes
+# ClaudHome
 
 Sesiones de Claude Code en pestañas: cada pestaña es un `claude` trabajando en su carpeta, con el nombre que tú le pongas.
 
 Proyecto personal para Windows. No está afiliado a Anthropic ni a OpenAI.
+
+Antes se llamaba Claudes. Solo ha cambiado el nombre que se ve: el ejecutable (`Claudes.exe`), el repositorio y las carpetas de la app conservan el nombre anterior, para que las instalaciones existentes sigan funcionando y actualizándose.
 
 ## Requisitos
 
@@ -29,7 +31,7 @@ La primera vez, `npm start` descarga el binario de Electron. Para tener un ejecu
 - **Vista previa al pasar el ratón.** Sobre el `[Image #n]` de una imagen pegada, o sobre la ruta de cualquier archivo que exista (la que pegues tú o la que escriba Claude en su respuesta), aparece una tarjeta con la vista previa: la miniatura de una imagen, la primera página de un PDF, las primeras líneas de un archivo de texto o código, y para lo demás la miniatura de Windows o el icono de su tipo. Debajo salen el tipo, el tamaño, y las dimensiones o páginas. `Ctrl`+clic abre el archivo.
 - **Cierre ordenado.** Al cerrar una pestaña (o la app) con Claude trabajando, avisa. «Guardar estado y cerrar» interrumpe la tarea, le pide a Claude que deje anotado por dónde iba y espera a que termine antes de cerrar; al reabrir la sesión, ese resumen es lo último de la conversación. «Cerrar ya» corta en el acto.
 - **Registro de depuración.** Activado de serie; se apaga y enciende con el botón «Depuración» de la barra inferior. Los registros se abren con el botón derecho sobre una pestaña.
-- **Actualizaciones desde GitHub.** Si en GitHub hay una versión mayor que la instalada, aparece el botón «Actualizar a vX.Y.Z» en la barra superior. Al pulsarlo se muestran los cambios de todas las versiones posteriores a la tuya, agrupados por versión. Con «Cancel» no se toca nada: actualizar no es obligatorio y el botón sigue ahí. Con «Update», Claudes descarga el código, genera el ejecutable nuevo y comprueba que haya un acceso directo en el escritorio (si falta, lo crea). Todo esto ocurre en segundo plano y puedes seguir trabajando. Al terminar, Claudes se reinicia para instalarla; si alguna sesión está trabajando, pregunta antes de cerrar. Al volver se abren tus pestañas y cada sesión retoma su conversación. La versión que ya tenías queda guardada como copia.
+- **Actualizaciones desde GitHub.** Si en GitHub hay una versión mayor que la instalada, aparece el botón «Actualizar a vX.Y.Z» en la barra superior. Al pulsarlo se muestran los cambios de todas las versiones posteriores a la tuya, agrupados por versión. Con «Cancel» no se toca nada: actualizar no es obligatorio y el botón sigue ahí. Con «Update», ClaudHome descarga el código, genera el ejecutable nuevo y comprueba que haya un acceso directo en el escritorio (si falta, lo crea). Todo esto ocurre en segundo plano y puedes seguir trabajando. Al terminar, ClaudHome se reinicia para instalarla; si alguna sesión está trabajando, pregunta antes de cerrar. Al volver se abren tus pestañas y cada sesión retoma su conversación. La versión que ya tenías queda guardada como copia.
 - **Dictado por voz.** El micrófono de la barra superior activa el dictado de Claude Code: amarillo oscuro = activado, gris oscuro = desactivado. Activado, mantén pulsada la barra espaciadora en una sesión para hablar; al soltarla deja de grabar y el texto queda en el cuadro de Claude para revisarlo y enviarlo con `Intro`. Desactivado, la barra espaciadora solo escribe espacios. Vale al momento para todas las pestañas. Necesita una sesión de Claude Code iniciada con cuenta de Claude.ai y permiso de micrófono para las aplicaciones de escritorio en Windows.
 - **Imágenes con Codex.** El indicador de la barra superior muestra si Codex está instalado con una suscripción de ChatGPT. Al activarlo, las sesiones de Claude reciben la herramienta `generar_imagen`, que pide la imagen a Codex y la guarda en la carpeta de la sesión.
 - **Estado de cada sesión.** Aro girando = trabajando, punto coral = te necesita o ha terminado sin que lo vieras, círculo hueco = en reposo. Si no estás mirando esa pestaña, salta además una notificación de Windows.
@@ -38,6 +40,7 @@ La primera vez, `npm start` descarga el binario de Electron. Para tener un ejecu
 - **Recientes.** Al cerrar una pestaña queda en el botón «+» para reabrirla con su conversación.
 - **Restaurar.** Al arrancar vuelven las pestañas que tenías; cada sesión se inicia la primera vez que la abres.
 - **Zoom por pestaña.**
+- **Arcoíris en el nombre.** Cada 3 minutos, o al pulsar sobre «ClaudHome», un arcoíris suave recorre el nombre. Con «reducir animaciones» activado en Windows no aparece.
 
 ## Atajos
 
@@ -65,8 +68,8 @@ Los atajos de la app usan `Ctrl+Mayús` para no pisar los de Claude Code (`Ctrl+
 - Electron + xterm.js + node-pty. Cada pestaña lanza `claude.exe` en una pseudoterminal.
 - **Conversaciones.** Cada pestaña recuerda el identificador de su conversación y la retoma con `claude --resume <id>`. Si esa conversación ya no existe, empieza una nueva. La opción «Continuar la última conversación de esa carpeta» solo se aplica al crear la pestaña.
 - **Estado.** Cada sesión arranca con `--settings <archivo>`, que añade hooks HTTP hacia un servidor local de la app (`src/main/hooks.js`). No se modifica tu configuración de Claude Code y tus hooks y mods siguen funcionando.
-- **Dictado.** El mismo archivo de `--settings` activa el [dictado de Claude Code](https://code.claude.com/docs/en/voice-dictation) en modo «mantener» (`voice.enabled`, `voice.mode: "hold"`): la grabación y la transcripción las hace Claude Code. Claude Code reconoce la tecla mantenida por sus repeticiones, así que el botón del micrófono solo decide si las repeticiones de la barra espaciadora llegan a la sesión. Por eso se aplica al momento, sin reiniciar nada. Si tu configuración de Claude Code no fija `language`, Claudes añade `"language": "spanish"` para que el dictado sea en español; ese ajuste también hace que Claude responda en español. Si pones tu propio `language` en `~/.claude/settings.json`, se usa el tuyo.
-- **Actualización.** Solo en el ejecutable instalado. Al arrancar y cada 6 horas, compara `version` de `package.json` en la rama `main` de GitHub con la instalada. Los cambios que enseña salen de las secciones de `CHANGELOG.md` en `main` posteriores a la versión instalada; al ejecutar desde el código se lee el `CHANGELOG.md` local. Para actualizar descarga el código de `main` en `%LOCALAPPDATA%\Claudes-update` y ejecuta `npm ci` y `scripts/package.mjs` con el Node.js del equipo. Después comprueba el acceso directo del escritorio. Windows no deja sustituir un programa abierto, así que al cerrarse Claudes lanza `src/main/install-update.js` con ese mismo `node.exe`. Ese instalador espera a que Claudes termine, renombra la carpeta del programa a `<carpeta>.anterior`, pone la nueva en su sitio y, si se eligió reiniciar, vuelve a abrir Claudes. Si algo falla, recupera la anterior. Cada actualización deja su registro en `logs\actualizacion-<fecha>.log`, y al volver a abrir Claudes un aviso dice si se instaló.
+- **Dictado.** El mismo archivo de `--settings` activa el [dictado de Claude Code](https://code.claude.com/docs/en/voice-dictation) en modo «mantener» (`voice.enabled`, `voice.mode: "hold"`): la grabación y la transcripción las hace Claude Code. Claude Code reconoce la tecla mantenida por sus repeticiones, así que el botón del micrófono solo decide si las repeticiones de la barra espaciadora llegan a la sesión. Por eso se aplica al momento, sin reiniciar nada. Si tu configuración de Claude Code no fija `language`, ClaudHome añade `"language": "spanish"` para que el dictado sea en español; ese ajuste también hace que Claude responda en español. Si pones tu propio `language` en `~/.claude/settings.json`, se usa el tuyo.
+- **Actualización.** Solo en el ejecutable instalado. Al arrancar y cada 6 horas, compara `version` de `package.json` en la rama `main` de GitHub con la instalada. Los cambios que enseña salen de las secciones de `CHANGELOG.md` en `main` posteriores a la versión instalada; al ejecutar desde el código se lee el `CHANGELOG.md` local. Para actualizar descarga el código de `main` en `%LOCALAPPDATA%\Claudes-update` y ejecuta `npm ci` y `scripts/package.mjs` con el Node.js del equipo. Después comprueba el acceso directo del escritorio. Windows no deja sustituir un programa abierto, así que al cerrarse ClaudHome lanza `src/main/install-update.js` con ese mismo `node.exe`. Ese instalador espera a que ClaudHome termine, renombra la carpeta del programa a `<carpeta>.anterior`, pone la nueva en su sitio y, si se eligió reiniciar, vuelve a abrir Claudes. Si algo falla, recupera la anterior. Cada actualización deja su registro en `logs\actualizacion-<fecha>.log`, y al volver a abrir ClaudHome un aviso dice si se instaló.
 - **Cierre ordenado.** La app envía `Esc` (interrumpe el turno), escribe la petición de resumen y espera el hook `Stop`; después deja que Claude salga solo con `Ctrl+C`. Gasta un turno corto de Claude por sesión.
 - **Codex.** `codex login status` dice si hay sesión de ChatGPT. La herramienta es un servidor MCP local (`src/main/mcp.js`) que se pasa a cada sesión con `--mcp-config`; al llamarla, la app ejecuta `codex exec` en modo solo lectura y copia la imagen resultante a la carpeta de la sesión. Cada imagen consume una generación del plan de Codex. Las sesiones abiertas antes de activar el indicador necesitan reiniciarse para recibir la herramienta (la app lo ofrece).
 - **Registros.** Con la depuración activada, cada arranque de Claude lleva `--debug-file` y escribe en `%APPDATA%\Claudes\logs\<fecha>-<hora>-<pestaña>.log` (horas en UTC, formato de Claude Code). La app añade su propio `claudes-<fecha>.log` (hora local) con arranques, hooks recibidos, cambios de estado, notificaciones, peticiones a Codex y errores. Se borran a la semana o al pasar de 300 MB. El interruptor afecta a las sesiones que se abran o reinicien después de cambiarlo.
@@ -107,18 +110,18 @@ Con `CLAUDES_USER_DATA`, la actualización trabaja en `<datos>\actualizacion` en
 
 ## Publicar una versión
 
-Las instalaciones de Claudes detectan una versión nueva cuando `version` de `package.json` en `main` es mayor que la suya. Antes de pulsar «Update» enseñan lo que trae cada versión según `CHANGELOG.md`. Para publicar una:
+Las instalaciones de ClaudHome detectan una versión nueva cuando `version` de `package.json` en `main` es mayor que la suya. Antes de pulsar «Update» enseñan lo que trae cada versión según `CHANGELOG.md`. Para publicar una:
 
 1. Añade arriba de `CHANGELOG.md` su sección: `## X.Y.Z — AAAA-MM-DD` y un punto (`- `) por cambio, escrito para quien usa la app.
 2. Sube la versión y publícala:
 
 ```
-npm version 0.5.0 --no-git-tag-version
-git commit -am "Claudes 0.5.0: …"
+npm version 0.6.0 --no-git-tag-version
+git commit -am "ClaudHome 0.6.0: …"
 git push origin main
 ```
 
-Una versión anterior a la 0.2.0 no tiene actualizador: se actualiza a mano una vez (`npm run package` con Claudes cerrado).
+Una versión anterior a la 0.2.0 no tiene actualizador: se actualiza a mano una vez (`npm run package` con ClaudHome cerrado).
 
 ## Licencia
 

@@ -114,7 +114,7 @@ class HookServer {
       if (this.blockPrompts && eventName === 'UserPromptSubmit') {
         // Modo de pruebas: el mensaje se rechaza antes de llegar al modelo.
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ decision: 'block', reason: 'Claudes en modo de pruebas: mensaje no enviado.' }));
+        res.end(JSON.stringify({ decision: 'block', reason: 'ClaudHome en modo de pruebas: mensaje no enviado.' }));
       } else {
         // Respuesta vacía: Claude Code la trata como «sin nada que decir».
         res.writeHead(200);

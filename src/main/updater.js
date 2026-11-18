@@ -219,7 +219,7 @@ class Updater {
   async start() {
     if (['working', 'ready'].includes(this.state.status)) return;
     if (!this.app.isPackaged) {
-      this.set({ status: 'error', error: 'La actualización solo funciona en el Claudes instalado, no al ejecutarlo desde el código.' });
+      this.set({ status: 'error', error: 'La actualización solo funciona en el ClaudHome instalado, no al ejecutarlo desde el código.' });
       return;
     }
     if (!fs.existsSync(path.join(this.installDir, 'resources', 'app.asar'))) {
@@ -322,7 +322,7 @@ class Updater {
       } catch { /* acceso directo ilegible: se ignora */ }
     }
     fs.mkdirSync(desktop, { recursive: true });
-    const file = path.join(desktop, 'Claudes.lnk');
+    const file = path.join(desktop, 'ClaudHome.lnk');
     const ok = this.shell.writeShortcutLink(file, 'create', {
       target,
       cwd: this.installDir,

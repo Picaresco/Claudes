@@ -917,17 +917,17 @@
     if (u.status === 'working') {
       icon.innerHTML = SVG.working;
       label.textContent = `${u.step}…`;
-      button.title = `Generando Claudes ${u.latest} en segundo plano. Puedes seguir trabajando.`;
+      button.title = `Generando ClaudHome ${u.latest} en segundo plano. Puedes seguir trabajando.`;
     } else if (u.status === 'ready') {
       icon.innerHTML = SVG.update;
       label.textContent = 'Reiniciar para actualizar';
-      button.title = `Claudes ${u.latest} está lista. Pulsa para cerrar y volver a abrir Claudes con la versión nueva: tus pestañas se restauran.`;
+      button.title = `ClaudHome ${u.latest} está lista. Pulsa para cerrar y volver a abrir ClaudHome con la versión nueva: tus pestañas se restauran.`;
     } else {
       icon.innerHTML = SVG.update;
       label.textContent = `Actualizar a v${u.latest}`;
       button.title = u.status === 'error'
         ? `El último intento ha fallado: ${u.error} Pulsa para reintentar.`
-        : `Hay una versión nueva de Claudes en GitHub (tienes la ${u.current}). Pulsa para ver qué cambia y decidir si actualizar.`;
+        : `Hay una versión nueva de ClaudHome en GitHub (tienes la ${u.current}). Pulsa para ver qué cambia y decidir si actualizar.`;
     }
   }
 
@@ -1008,7 +1008,7 @@
     if (accepted) {
       renderUpdate(await api.updateStart());
       if (updateInfo.status === 'working') {
-        toast(`Generando Claudes ${updateInfo.latest} en segundo plano. Puedes seguir trabajando; al terminar, Claudes se reiniciará para instalarla.`);
+        toast(`Generando ClaudHome ${updateInfo.latest} en segundo plano. Puedes seguir trabajando; al terminar, ClaudHome se reiniciará para instalarla.`);
       }
     }
     focusTerminal();
@@ -1035,6 +1035,28 @@
       ? 'Micrófono activado: mantén pulsada la barra espaciadora para dictar y suéltala para terminar.'
       : 'Micrófono desactivado: la barra espaciadora vuelve a escribir solo espacios.');
     focusTerminal();
+  }
+
+  // ── Arcoíris del nombre ──────────────────────────────────────────
+  // Cada 3 minutos, o al pulsar sobre el nombre, un arcoíris suave lo recorre.
+  // Con «reducir animaciones» activado en Windows no se muestra.
+
+  const RAINBOW_EVERY = 3 * 60 * 1000;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  function rainbow() {
+    const name = $('#brand-name');
+    if (reducedMotion.matches) return;
+    name.classList.remove('rainbow');
+    void name.offsetWidth; // vuelve a empezar si ya estaba pasando
+    name.classList.add('rainbow');
+  }
+
+  function wireRainbow() {
+    const name = $('#brand-name');
+    name.addEventListener('click', rainbow);
+    name.addEventListener('animationend', () => name.classList.remove('rainbow'));
+    setInterval(rainbow, RAINBOW_EVERY);
   }
 
   // ── Registro de depuración ───────────────────────────────────────
@@ -1202,7 +1224,7 @@
   function renderToolbar() {
     const tab = byId(S.activeId);
     $('#toolbar').hidden = !tab;
-    document.title = tab ? `${tab.name} · Claudes` : 'Claudes'; // lo que se ve en la barra de tareas
+    document.title = tab ? `${tab.name} · ClaudHome` : 'ClaudHome'; // lo que se ve en la barra de tareas
     if (!tab) return;
     applySwatch($('#tb-swatch'), tab.color);
     $('#tb-name').textContent = tab.name;
@@ -1978,6 +2000,7 @@
     ]).catch(() => { /* se usarán las fuentes de reserva */ });
 
     wireChrome();
+    wireRainbow();
     wireTabs();
     wireDialog();
     wireKeyboard();
@@ -1996,8 +2019,8 @@
       // Resultado de la actualización instalada al cerrar la vez anterior.
       if (u && u.result) {
         toast(u.result.ok
-          ? `Claudes se ha actualizado a la versión ${u.result.version}.`
-          : `No se ha podido instalar Claudes ${u.result.version}. Los detalles están en la carpeta de registros.`);
+          ? `ClaudHome se ha actualizado a la versión ${u.result.version}.`
+          : `No se ha podido instalar ClaudHome ${u.result.version}. Los detalles están en la carpeta de registros.`);
       }
     }).catch(() => { /* sin botón de actualizar */ });
     // Los errores de la interfaz también quedan en el registro de la app.

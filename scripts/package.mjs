@@ -32,7 +32,7 @@ const paths = await packager({
     /\.pdb$/,
     /\.map$/,
   ],
-  win32metadata: { FileDescription: 'Claudes', ProductName: 'Claudes' },
+  win32metadata: { FileDescription: 'ClaudHome', ProductName: 'ClaudHome' },
 });
 
 console.log('Empaquetado en:', paths.join(', '));

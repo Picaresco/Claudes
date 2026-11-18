@@ -48,6 +48,28 @@ h1, p { margin: 0; }
 }
 .brand { display: flex; align-items: center; gap: 8px; flex: none; padding: 0 10px 0 16px; font-weight: 600; }
 .brand-version { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--mute); }
+/* Arcoíris del nombre: cada 3 minutos, o al pulsarlo, lo recorre un arcoíris suave.
+   El nombre no arrastra la ventana para que el clic le llegue. */
+.brand-name {
+  --rb-sat: 60%;
+  --rb-light: 76%;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+}
+.brand-name.rainbow {
+  background: linear-gradient(90deg, var(--txt) 0 14%,
+    hsl(0 var(--rb-sat) var(--rb-light)) 22%, hsl(30 var(--rb-sat) var(--rb-light)) 32%,
+    hsl(55 var(--rb-sat) var(--rb-light)) 42%, hsl(140 var(--rb-sat) var(--rb-light)) 52%,
+    hsl(205 var(--rb-sat) var(--rb-light)) 62%, hsl(265 var(--rb-sat) var(--rb-light)) 72%,
+    hsl(0 var(--rb-sat) var(--rb-light)) 80%, var(--txt) 88% 100%);
+  background-size: 500% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brand-rainbow 3s ease-in-out both;
+}
+@keyframes brand-rainbow { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@media (prefers-reduced-motion: reduce) { .brand-name.rainbow { animation: none; background: none; color: inherit; } }
 .brand-version:empty { display: none; }
 #tabs {
   display: flex;

@@ -117,8 +117,8 @@ async function refreshCodex() {
 // Lo que ocurre cuando Claude llama a la herramienta «generar_imagen».
 async function codexTool(tabId, _name, args) {
   const cwd = tabFolders.get(tabId);
-  if (!cwd) throw new Error('Esta sesión ya no está abierta en Claudes.');
-  if (!codexState.enabled) throw new Error('Las imágenes con Codex están desactivadas en Claudes (indicador «Codex» de la barra superior).');
+  if (!cwd) throw new Error('Esta sesión ya no está abierta en ClaudHome.');
+  if (!codexState.enabled) throw new Error('Las imágenes con Codex están desactivadas en ClaudHome (indicador «Codex» de la barra superior).');
   codexState.busy += 1;
   send('codex:changed', codexInfo());
   const startedAt = Date.now();
@@ -432,7 +432,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     show: false,
-    title: 'Claudes',
+    title: 'ClaudHome',
     icon: path.join(__dirname, '..', '..', 'build', 'icon.ico'),
     backgroundColor: '#0C0E11',
     titleBarStyle: 'hidden',
@@ -633,7 +633,7 @@ function registerIpc() {
 
   ipcMain.on('notify', (_e, o) => {
     if (!o || !Notification.isSupported()) return;
-    const notification = new Notification({ title: String(o.title || 'Claudes'), body: String(o.body || ''), silent: true });
+    const notification = new Notification({ title: String(o.title || 'ClaudHome'), body: String(o.body || ''), silent: true });
     liveNotifications.add(notification); // sin esta referencia, el clic se pierde
     notification.on('click', () => { showWindow(); send('notify:click', o.tabId); });
     notification.on('close', () => liveNotifications.delete(notification));
@@ -761,7 +761,7 @@ if (!app.requestSingleInstanceLock()) {
     appLog(`──── Claudes ${app.getVersion()} arranca (Electron ${process.versions.electron}, ${app.isPackaged ? 'ejecutable' : 'desde el código'}) ────`);
     process.on('uncaughtException', (err) => {
       appLog(`ERROR sin capturar en el proceso principal: ${(err && err.stack) || err}`);
-      dialog.showErrorBox('Error en Claudes', String((err && err.stack) || err));
+      dialog.showErrorBox('Error en ClaudHome', String((err && err.stack) || err));
     });
     process.on('unhandledRejection', (reason) => {
       appLog(`promesa rechazada sin capturar en el proceso principal: ${(reason && reason.stack) || reason}`);
