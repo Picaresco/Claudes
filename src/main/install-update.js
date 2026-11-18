@@ -32,10 +32,17 @@ function alive(id) {
   try { process.kill(id, 0); return true; } catch (err) { return err.code === 'EPERM'; }
 }
 
+// Claudes se reabre a través del Explorador, como con un doble clic: así arranca
+// con el entorno normal del usuario y fuera de cualquier job de quien lanzó este
+// instalador. Con una carpeta de datos de prueba se abre directamente para que
+// conserve CLAUDES_USER_DATA y no choque con el Claudes de verdad.
 function open(dir) {
   if (relaunch !== '1') return;
   try {
-    const child = spawn(path.join(dir, exe), [], { cwd: dir, detached: true, stdio: 'ignore' });
+    const app = path.join(dir, exe);
+    const child = process.env.CLAUDES_USER_DATA
+      ? spawn(app, [], { cwd: dir, detached: true, stdio: 'ignore' })
+      : spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'explorer.exe'), [app], { cwd: dir, detached: true, stdio: 'ignore' });
     child.on('error', (err) => note(`no se pudo abrir Claudes: ${err.message}`));
     child.unref();
     note('Claudes se vuelve a abrir');
