@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Actualización desde GitHub: estado, generar la versión nueva y reiniciar para instalarla.
   updateGet: () => ipcRenderer.invoke('update:get'),
+  updateChanges: () => ipcRenderer.invoke('update:changes'),
   updateStart: () => ipcRenderer.invoke('update:start'),
   updateRestart: () => ipcRenderer.send('update:restart'),
   onUpdateChanged: on('update:changed'),

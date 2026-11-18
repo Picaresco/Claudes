@@ -91,7 +91,7 @@
   const fontSizeFor = (zoom) => Math.max(8, Math.round(BASE_FONT * (zoom || 1)));
   const visibleIds = () => (S.split ? [S.split.left, S.split.right] : S.activeId ? [S.activeId] : []);
   const isWatched = (view) => winFocused && visibleIds().includes(view.tab.id);
-  const dialogOpen = () => $('#dlg-new').open;
+  const dialogOpen = () => $('#dlg-new').open || $('#dlg-update').open;
 
   function newId() {
     if (crypto.randomUUID) return crypto.randomUUID();
@@ -927,17 +927,89 @@
       label.textContent = `Actualizar a v${u.latest}`;
       button.title = u.status === 'error'
         ? `El último intento ha fallado: ${u.error} Pulsa para reintentar.`
-        : `Hay una versión nueva de Claudes en GitHub (tienes la ${u.current}). Pulsa para descargarla y generar el ejecutable; puedes seguir trabajando mientras tanto.`;
+        : `Hay una versión nueva de Claudes en GitHub (tienes la ${u.current}). Pulsa para ver qué cambia y decidir si actualizar.`;
     }
   }
 
+  // Un punto del historial de cambios: lo que va entre `comillas invertidas` se ve como código.
+  function appendInline(node, text) {
+    String(text).split('`').forEach((part, i) => {
+      if (part) node.append(i % 2 ? el('code', '', part) : document.createTextNode(part));
+    });
+  }
+
+  function fillChanges(changes) {
+    const n = changes.versions.length;
+    $('#upd-summary').textContent = `Tienes la versión ${changes.current}. `
+      + (n > 1 ? `Hay ${n} versiones nuevas, hasta la ${changes.latest}. Esto es lo que cambia:` : `Esto es lo que trae la ${changes.latest}:`);
+    const box = $('#upd-changes');
+    if (!n) {
+      box.replaceChildren(el('p', 'upd-empty', changes.error || 'No hay notas de cambios para estas versiones.'));
+      return;
+    }
+    box.replaceChildren(...changes.versions.map((v) => {
+      const section = el('section', 'upd-version');
+      const head = el('h2', '', `v${v.version}`);
+      if (v.date) head.append(el('span', 'upd-date', v.date));
+      const list = el('ul');
+      for (const item of v.items) {
+        const li = el('li');
+        appendInline(li, item);
+        list.append(li);
+      }
+      if (!v.items.length) list.append(el('li', '', 'Sin notas.'));
+      section.append(head, list);
+      return section;
+    }));
+  }
+
+  // Enseña los cambios de las versiones pendientes y espera la respuesta:
+  // true con «Update»; false con «Cancel» o Esc (no se toca nada).
+  function askToUpdate() {
+    const dialog = $('#dlg-update');
+    const ok = $('#upd-ok');
+    const cancel = $('#upd-cancel');
+    $('#upd-summary').textContent = `Tienes la versión ${updateInfo.current}; la última es la ${updateInfo.latest}.`;
+    $('#upd-changes').replaceChildren(el('p', 'upd-empty', 'Cargando la lista de cambios…'));
+    ok.disabled = true;
+    dialog.showModal();
+    cancel.focus();
+    const fallback = { current: updateInfo.current, latest: updateInfo.latest, versions: [], error: 'No se ha podido descargar la lista de cambios.' };
+    api.updateChanges().catch(() => fallback).then((changes) => {
+      if (!dialog.open) return;
+      fillChanges(changes || fallback);
+      ok.disabled = false;
+      ok.focus();
+    });
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (accepted) => {
+        if (done) return;
+        done = true;
+        ok.removeEventListener('click', onOk);
+        cancel.removeEventListener('click', onCancel);
+        dialog.removeEventListener('close', onCancel);
+        if (dialog.open) dialog.close();
+        resolve(accepted);
+      };
+      const onOk = () => finish(true);
+      const onCancel = () => finish(false);
+      ok.addEventListener('click', onOk);
+      cancel.addEventListener('click', onCancel);
+      dialog.addEventListener('close', onCancel);
+    });
+  }
+
   async function clickUpdate() {
-    if (!updateInfo) return;
+    if (!updateInfo || $('#dlg-update').open) return;
     if (updateInfo.status === 'ready') { api.updateRestart(); return; }
     if (updateInfo.status === 'working') return;
-    renderUpdate(await api.updateStart());
-    if (updateInfo.status === 'working') {
-      toast(`Descargando y generando Claudes ${updateInfo.latest}. Puedes seguir trabajando: tarda unos minutos y te avisará al terminar.`);
+    const accepted = await askToUpdate();
+    if (accepted) {
+      renderUpdate(await api.updateStart());
+      if (updateInfo.status === 'working') {
+        toast(`Generando Claudes ${updateInfo.latest} en segundo plano. Puedes seguir trabajando; al terminar, Claudes se reiniciará para instalarla.`);
+      }
     }
     focusTerminal();
   }

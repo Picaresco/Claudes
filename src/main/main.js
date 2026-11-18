@@ -175,27 +175,12 @@ function sessionSettings() {
 }
 
 // ── Actualización ──────────────────────────────────────────────────
-// La versión nueva se genera en segundo plano; para instalarla hay que cerrar
-// Claudes, así que se pregunta si reiniciar ya o dejarlo para cuando se cierre.
-
-async function offerRestart(info) {
-  if (process.env.CLAUDES_UPDATE_AUTO) { restartToUpdate(); return; } // solo para pruebas automáticas
-  if (!win) return;
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'info',
-    message: `Claudes ${info.latest} está lista para instalarse`,
-    detail: 'Para instalarla hay que cerrar Claudes un momento. Al volver se abren tus pestañas y cada sesión retoma su conversación. '
-      + 'Con «Al cerrar Claudes» se instalará la próxima vez que lo cierres.',
-    buttons: ['Reiniciar ahora', 'Al cerrar Claudes'],
-    defaultId: 0,
-    cancelId: 1,
-    noLink: true,
-  });
-  if (response === 0) restartToUpdate();
-}
+// La interfaz enseña los cambios y solo con «Update» se genera la versión nueva,
+// en segundo plano. Al terminar, Claudes se reinicia para instalarla.
 
 // Cierra Claudes por el camino normal (pregunta si hay sesiones trabajando) y,
-// al salir, el instalador pone la versión nueva y vuelve a abrirlo.
+// al salir, el instalador pone la versión nueva y vuelve a abrirlo. Si en esa
+// pregunta se elige «Cancelar», la versión queda lista y se instala al cerrar.
 function restartToUpdate() {
   if (!updater || updater.state.status !== 'ready') return;
   updater.relaunch = true;
@@ -635,6 +620,7 @@ function registerIpc() {
 
   // Actualización desde GitHub.
   ipcMain.handle('update:get', () => updater.info());
+  ipcMain.handle('update:changes', () => updater.changes());
   ipcMain.handle('update:start', () => {
     updater.start(); // tarda minutos: el avance llega por update:changed
     return updater.info();
@@ -814,7 +800,7 @@ if (!app.requestSingleInstanceLock()) {
         // Solo para pruebas automáticas: actualizar en cuanto haya versión nueva.
         if (process.env.CLAUDES_UPDATE_AUTO && info.status === 'available') setImmediate(() => updater.start());
       },
-      onReady: offerRestart,
+      onReady: restartToUpdate, // ya se aceptó con «Update»
     });
     updater.noteAttempt(store.get('updateAttempt', null));
     store.set('updateAttempt', null);

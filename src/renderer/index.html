@@ -160,6 +160,21 @@
   </form>
 </dialog>
 
+<dialog id="dlg-update" aria-labelledby="dlg-update-title">
+  <div class="dlg-update">
+    <div class="dlg-head">
+      <h1 id="dlg-update-title">Actualizar Claudes</h1>
+      <p id="upd-summary"></p>
+    </div>
+    <div id="upd-changes" class="upd-changes"></div>
+    <p class="upd-note">Al pulsar «Update» se descarga y se genera en segundo plano. Al terminar, Claudes se reinicia y vuelve a abrir tus pestañas, cada una con su conversación.</p>
+    <div class="dlg-actions">
+      <button id="upd-cancel" type="button" class="btn">Cancel</button>
+      <button id="upd-ok" type="button" class="btn btn-primary">Update</button>
+    </div>
+  </div>
+</dialog>
+
 <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>

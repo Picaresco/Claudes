@@ -34,6 +34,27 @@ function compareVersions(a, b) {
   return 0;
 }
 
+// Secciones de CHANGELOG.md: «## X.Y.Z — fecha» seguido de un punto («- ») por cambio.
+// Una línea sangrada continúa el punto anterior.
+function parseChangelog(text) {
+  const versions = [];
+  let section = null;
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const head = /^##\s+v?(\d+\.\d+\.\d+)\s*(?:[—–-]+\s*(.*))?$/.exec(line.trim());
+    if (head) {
+      section = { version: head[1], date: (head[2] || '').trim(), items: [] };
+      versions.push(section);
+      continue;
+    }
+    if (/^#{1,2}\s/.test(line)) { section = null; continue; }
+    if (!section) continue;
+    const item = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (item) section.items.push(item[1].trim());
+    else if (/^\s{2,}\S/.test(line) && section.items.length) section.items[section.items.length - 1] += ` ${line.trim()}`;
+  }
+  return versions;
+}
+
 const two = (n) => String(n).padStart(2, '0');
 const stamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
 const clock = (d = new Date()) => `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
@@ -166,6 +187,32 @@ class Updater {
     if (available && latest !== this.state.latest) this.log(`actualización: hay una versión nueva en GitHub (${latest}; instalada ${this.current})`);
     this.set({ status: available ? 'available' : 'idle', latest, error: '', step: '' });
     return this.info();
+  }
+
+  // Cambios de las versiones posteriores a la instalada, hasta la publicada, de la
+  // más nueva a la más antigua. Desde el código se lee el CHANGELOG.md local.
+  async changes() {
+    const latest = this.state.latest;
+    const result = { current: this.current, latest, versions: [], error: '' };
+    let text = '';
+    try {
+      const local = path.join(this.app.getAppPath(), 'CHANGELOG.md');
+      if (!this.app.isPackaged && fs.existsSync(local)) {
+        text = fs.readFileSync(local, 'utf8');
+      } else {
+        const res = await this.net.fetch(`https://raw.githubusercontent.com/${REPO}/${BRANCH}/CHANGELOG.md`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`GitHub ha respondido ${res.status}`);
+        text = await res.text();
+      }
+    } catch (err) {
+      this.log(`actualización: no se pudo leer la lista de cambios (${err.message})`);
+      result.error = 'No se ha podido descargar la lista de cambios.';
+      return result;
+    }
+    result.versions = parseChangelog(text)
+      .filter((v) => compareVersions(v.version, this.current) > 0 && (!latest || compareVersions(v.version, latest) <= 0))
+      .sort((a, b) => compareVersions(b.version, a.version));
+    return result;
   }
 
   // Descarga, genera el ejecutable y deja la versión nueva lista para instalar.
@@ -315,4 +362,4 @@ class Updater {
   }
 }
 
-module.exports = { Updater, compareVersions };
+module.exports = { Updater, compareVersions, parseChangelog };
