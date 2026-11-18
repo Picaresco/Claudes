@@ -144,8 +144,9 @@ class HookServer {
     req.on('error', () => { /* conexión cortada: se ignora */ });
   }
 
-  // Escribe el archivo de ajustes de una pestaña y devuelve su ruta.
-  settingsFile(tabId) {
+  // Escribe el archivo de ajustes de una pestaña y devuelve su ruta. `extra`
+  // añade otros ajustes de Claude Code para esa sesión (por ejemplo, el dictado).
+  settingsFile(tabId, extra = {}) {
     const hooks = {};
     for (const event of EVENTS) {
       const url = `http://127.0.0.1:${this.port}/hook/${this.token}/${tabId}/${event}`;
@@ -153,7 +154,7 @@ class HookServer {
     }
     fs.mkdirSync(this.dir, { recursive: true });
     const file = path.join(this.dir, `${tabId}.json`);
-    fs.writeFileSync(file, JSON.stringify({ hooks }, null, 2));
+    fs.writeFileSync(file, JSON.stringify({ ...extra, hooks }, null, 2));
     return file;
   }
 

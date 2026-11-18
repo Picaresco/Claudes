@@ -139,6 +139,37 @@ async function codexTool(tabId, _name, args) {
   }
 }
 
+// ── Dictado por voz ────────────────────────────────────────────────
+// Cada sesión arranca con el dictado de Claude Code activado en modo «mantener»:
+// Claude graba mientras se mantiene pulsada la barra espaciadora y para al soltarla.
+// Claude Code reconoce la tecla mantenida por sus repeticiones, así que el botón
+// del micrófono de la interfaz decide si esas repeticiones le llegan. Apagado, una
+// pulsación larga es un solo espacio y nunca se graba. Como no hace falta reiniciar
+// nada, el botón vale al momento para todas las pestañas.
+
+let voiceEnabled = false;
+
+// Idioma fijado por el usuario en su configuración de Claude Code, si lo hay.
+function userLanguage() {
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  try {
+    const raw = fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8').replace(/^﻿/, '');
+    const { language } = JSON.parse(raw) || {};
+    return typeof language === 'string' && language.trim() ? language : null;
+  } catch {
+    return null; // sin archivo o ilegible
+  }
+}
+
+// Ajustes de Claude Code que Claudes añade a cada sesión.
+function sessionSettings() {
+  const settings = { voice: { enabled: true, mode: 'hold' } };
+  // Sin idioma, Claude Code dicta en inglés. Ese mismo ajuste fija el idioma de las
+  // respuestas; si el usuario ya ha elegido uno, se respeta el suyo.
+  if (!userLanguage()) settings.language = 'spanish';
+  return settings;
+}
+
 // Variables que una sesión de Claude Code pone a sus procesos hijos. Si Claudes
 // se lanza desde dentro de una, no deben heredarse a las sesiones de las pestañas.
 const SESSION_MARKERS = [
@@ -261,7 +292,7 @@ async function createPty(o) {
     return { ok: false, error: 'No encuentro Claude Code en este equipo (el comando «claude» no está instalado o no está en el PATH).' };
   }
   const chosen = sessions.plan({ cwd: o.cwd, sessionId: o.sessionId, mode: o.mode, exclude: o.exclude });
-  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id)];
+  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings())];
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
 
   // Con las imágenes de Codex activadas, la sesión arranca con la herramienta «generar_imagen».
@@ -559,6 +590,15 @@ function registerIpc() {
     return codexInfo();
   });
 
+  // Micrófono para dictar: la interfaz lo aplica a las teclas; aquí solo se recuerda.
+  ipcMain.handle('voice:get', () => ({ enabled: voiceEnabled }));
+  ipcMain.handle('voice:set', (_e, on) => {
+    voiceEnabled = Boolean(on);
+    store.set('voiceDictation', voiceEnabled);
+    appLog(`micrófono para dictar ${voiceEnabled ? 'activado' : 'desactivado'}`);
+    return { enabled: voiceEnabled };
+  });
+
   ipcMain.on('status:summary', (_e, value) => {
     summary = { working: Math.max(0, Number(value && value.working) || 0) };
   });
@@ -717,6 +757,7 @@ if (!app.requestSingleInstanceLock()) {
     await hookServer.start();
     cleanPastedImages();
     codexState.enabled = store.get('codexImages', false) === true;
+    voiceEnabled = store.get('voiceDictation', false) === true;
     refreshCodex().catch(() => { /* se reintentará al consultar el estado */ });
     registerIpc();
     createWindow();

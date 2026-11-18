@@ -47,6 +47,8 @@ h1, p { margin: 0; }
   -webkit-app-region: drag;
 }
 .brand { display: flex; align-items: center; gap: 8px; flex: none; padding: 0 10px 0 16px; font-weight: 600; }
+.brand-version { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--mute); }
+.brand-version:empty { display: none; }
 #tabs {
   display: flex;
   align-items: flex-end;
@@ -126,6 +128,27 @@ h1, p { margin: 0; }
 .recent-forget { display: flex; align-items: center; justify-content: center; flex: none; width: 36px; color: var(--mute); border-radius: 6px; visibility: hidden; }
 .recent:hover .recent-forget, .recent-forget:focus-visible { visibility: visible; }
 .recent-forget:hover { color: var(--txt); }
+
+/* Micrófono para dictar: gris oscuro y hueco = apagado; amarillo oscuro y relleno = activado. */
+.mic-btn {
+  --mic-off: #5C636E;
+  --mic-on: #B8860B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  margin-right: 8px;
+  border-radius: 8px;
+  color: var(--mic-off);
+  -webkit-app-region: no-drag;
+}
+.mic-btn:hover { color: #7A818C; background: rgba(255, 255, 255, 0.06); }
+.mic-btn[aria-pressed="true"] { color: var(--mic-on); }
+.mic-btn[aria-pressed="true"]:hover { color: #CC9A1A; }
+.mic-btn[aria-pressed="true"] .mic-body { fill: currentColor; }
 
 /* Indicador de Codex: punto hueco = detectado o no disponible (lo dice el texto),
    punto relleno = imágenes activadas, aro girando = generando una imagen. */

@@ -43,6 +43,10 @@ contextBridge.exposeInMainWorld('api', {
   codexSetEnabled: (on) => ipcRenderer.invoke('codex:setEnabled', Boolean(on)),
   onCodexChanged: on('codex:changed'),
 
+  // Micrófono para dictar con la barra espaciadora mantenida.
+  voiceGet: () => ipcRenderer.invoke('voice:get'),
+  voiceSet: (on) => ipcRenderer.invoke('voice:set', Boolean(on)),
+
   // Registro de depuración: interruptor, acceso a los archivos y anotaciones de la interfaz.
   debugGet: () => ipcRenderer.invoke('debug:get'),
   debugSet: (on) => ipcRenderer.invoke('debug:set', Boolean(on)),

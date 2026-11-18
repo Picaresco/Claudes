@@ -82,6 +82,7 @@
   let saveTimer = null;
   let fitQueued = false;
   let toastTimer = null;
+  let voiceOn = false; // micrófono para dictar (botón de la barra superior)
 
   const panes = {};
   const byId = (id) => S.tabs.find((t) => t.id === id) || null;
@@ -216,6 +217,10 @@
         if (e.type === 'keydown') { e.preventDefault(); api.ptyWrite(ptyId, '\n'); }
         return false;
       }
+      // Con el micrófono apagado, mantener la barra espaciadora escribe un solo
+      // espacio: sin sus repeticiones, Claude Code no detecta la pulsación larga
+      // con la que empieza a dictar. Encendido, le llegan y Claude graba.
+      if (isClaude && !voiceOn && e.repeat && e.key === ' ') { e.preventDefault(); return false; }
       if (e.type !== 'keydown') return true;
       if (plainCtrl && key === 'c' && term.hasSelection()) { e.preventDefault(); copySelection(term); return false; }
       if (plainCtrl && key === 'v') { e.preventDefault(); paste(term); return false; }
@@ -604,6 +609,29 @@
     await Promise.race([gone, sleep(5000)]); // Claude tarda unos 3 s en cerrarse
     console.log(`[cierre] ${view.tab.name}: salida ${exited ? 'ordenada' : 'forzada'}`);
     api.log(`cierre ordenado de «${view.tab.name}»: salida ${exited ? 'por sí mismo' : 'forzada por la app'}`);
+  }
+
+  // ── Micrófono para dictar ────────────────────────────────────────
+  // El dictado lo hace Claude Code: mientras se mantiene pulsada la barra
+  // espaciadora graba, y al soltarla escribe lo dictado en su cuadro. El botón
+  // solo decide si la pulsación larga le llega (ver wireKeys).
+
+  function renderVoice(state) {
+    voiceOn = Boolean(state && state.enabled);
+    const button = $('#mic-btn');
+    button.hidden = false;
+    button.setAttribute('aria-pressed', String(voiceOn));
+    button.title = voiceOn
+      ? 'Micrófono activado: mantén pulsada la barra espaciadora en la sesión para dictar; al soltarla deja de grabar. Pulsa para desactivarlo.'
+      : 'Micrófono desactivado. Pulsa para activarlo y dictar manteniendo pulsada la barra espaciadora.';
+  }
+
+  async function toggleVoice() {
+    renderVoice(await api.voiceSet(!voiceOn));
+    toast(voiceOn
+      ? 'Micrófono activado: mantén pulsada la barra espaciadora para dictar y suéltala para terminar.'
+      : 'Micrófono desactivado: la barra espaciadora vuelve a escribir solo espacios.');
+    focusTerminal();
   }
 
   // ── Registro de depuración ───────────────────────────────────────
@@ -1393,6 +1421,7 @@
     });
 
     $('#codex-chip').addEventListener('click', toggleCodex);
+    $('#mic-btn').addEventListener('click', toggleVoice);
     $('#sb-debug').addEventListener('click', toggleDebug);
 
     new ResizeObserver(queueFit).observe($('#workspace'));
@@ -1519,6 +1548,7 @@
 
   async function init() {
     info = await api.info();
+    $('#app-version').textContent = info.version ? `v${info.version}` : '';
     restore(await api.loadState());
 
     // xterm mide la letra al abrirse: las fuentes tienen que estar cargadas antes.
@@ -1540,6 +1570,7 @@
     api.onCodexChanged(renderCodex);
     api.codexStatus(false).then(renderCodex).catch(() => { /* sin indicador hasta la próxima comprobación */ });
     api.debugGet().then(renderDebug).catch(() => { /* sin interruptor de depuración */ });
+    api.voiceGet().then(renderVoice).catch(() => { /* sin botón de micrófono */ });
     // Los errores de la interfaz también quedan en el registro de la app.
     window.addEventListener('error', (e) => api.log(`ERROR: ${e.message} (${String(e.filename).split('/').pop()}:${e.lineno})`));
     window.addEventListener('unhandledrejection', (e) => api.log(`promesa rechazada: ${(e.reason && e.reason.stack) || e.reason}`));
