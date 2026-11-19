@@ -55,6 +55,7 @@
     failed: { icon: 'failed', label: 'Se ha detenido por un error', tone: 'warn' },
     closing: { icon: 'starting', label: 'Guardando su estado para cerrar' },
     exited: { icon: 'off', label: 'Sesión cerrada' },
+    sleeping: { icon: 'off', label: 'Dormida para ahorrar memoria: se retoma al abrirla' },
   };
 
   // Lo que se le escribe a Claude cuando se cierra una sesión que está trabajando.
@@ -1012,6 +1013,7 @@
 
     terms.set(tab.id, view.term);
     view.term.onData((data) => {
+      view.lastActive = Date.now();
       if (view.started) api.ptyWrite(tab.id, data);
       else if (view.exited && data === '\r') { view.term.reset(); startClaude(view); }
     });
@@ -1110,6 +1112,7 @@
     view.startedAt = Date.now();
     view.images = new Map(); // otra sesión de Claude: su numeración de imágenes empieza de nuevo
     view.usage = null; // llenado de la conversación: llega con la línea de estado
+    view.keepAwake = false; // pasa a true si Claude deja algo en marcha (no se duerme)
     setStatus(view, 'starting');
     // Una misma conversación no se abre en dos pestañas a la vez.
     const exclude = S.tabs.filter((t) => t.id !== tab.id && t.sessionId).map((t) => t.sessionId);
@@ -1146,6 +1149,40 @@
     view.mode = 'resume';
     if (visibleIds().includes(id) && view.opened) startClaude(view);
     else setStatus(view, 'asleep');
+  }
+
+  // ── Sesiones dormidas ────────────────────────────────────────────
+  // Una sesión que lleva un rato esperando tu mensaje en una pestaña que no estás
+  // viendo se cierra para liberar memoria: Claude y sus servidores MCP ocupan en
+  // torno a 1 GB por sesión. La conversación queda guardada y se retoma sola al
+  // abrir la pestaña, como al arrancar ClaudHome. No se duerme si está trabajando,
+  // si te necesita o tiene algo que no has visto, ni si Claude dejó algo en marcha
+  // (una tarea en segundo plano, una vigilancia o una tarea programada).
+  let sleepAfterMs = 45 * 60 * 1000;
+
+  function sleepIdleSessions() {
+    const now = Date.now();
+    const shown = visibleIds();
+    for (const view of views.values()) {
+      if (shown.includes(view.tab.id)) { view.lastActive = now; continue; }
+      if (!view.started || view.closing || view.keepAwake || view.status !== 'idle') continue;
+      if (now - (view.lastActive || now) >= sleepAfterMs) putToSleep(view);
+    }
+  }
+
+  async function putToSleep(view) {
+    const id = view.tab.id;
+    api.log(`«${view.tab.name}» se duerme tras ${Math.round((Date.now() - view.lastActive) / 60000)} min sin actividad`);
+    view.started = false;
+    view.exited = false;
+    view.goingToSleep = true; // si abres la pestaña mientras se cierra, arranca al terminar
+    await api.ptyKill(id);
+    view.goingToSleep = false;
+    if (!views.has(id)) return;
+    view.term.reset();
+    view.mode = 'resume';
+    if (visibleIds().includes(id) && view.opened) startClaude(view);
+    else setStatus(view, 'sleeping');
   }
 
   // ── Codex ────────────────────────────────────────────────────────
@@ -1248,7 +1285,7 @@
     }
     syncExtra(view);
     fitView(view);
-    if (!view.started && !view.exited) startClaude(view);
+    if (!view.started && !view.exited && !view.goingToSleep) startClaude(view);
   }
 
   function queueFit() {
@@ -1301,6 +1338,7 @@
   function setStatus(view, status) {
     // Mientras guarda su estado para cerrar, la pestaña se queda en ese estado.
     if (view.closing && status !== 'closing') return;
+    view.lastActive = Date.now();
     if (view.status === status) return;
     api.log(`estado de «${view.tab.name}»: ${view.status} → ${status}`);
     view.status = status;
@@ -1694,6 +1732,10 @@
   function onHook(tabId, ev) {
     const view = views.get(tabId);
     if (!view || !view.started || !ev) return;
+    if (ev.background && !view.keepAwake) {
+      view.keepAwake = true; // ha dejado algo en marcha: esta sesión no se duerme
+      api.log(`«${view.tab.name}» deja ${ev.toolName} en marcha: no se dormirá`);
+    }
     // /clear abre una conversación con otro identificador: la pestaña lo sigue.
     if (ev.sessionId && (ev.event === 'UserPromptSubmit' || ev.event === 'Stop') && ev.sessionId !== view.tab.sessionId) {
       view.tab.sessionId = ev.sessionId;
@@ -1873,11 +1915,13 @@
     let attn = 0;
     let done = 0;
     let failed = 0;
+    let sleeping = 0;
     for (const view of views.values()) {
       if (view.status === 'working' || view.status === 'closing') working += 1;
       if (view.status === 'needs') { waiting += 1; attn += 1; }
       if (view.status === 'done') done += 1;
       if (view.status === 'failed') failed += 1;
+      if (view.status === 'sleeping') sleeping += 1;
     }
     const n = S.tabs.length;
     $('#sb-count').textContent = n === 0 ? 'Sin sesiones abiertas' : n === 1 ? '1 sesión abierta' : `${n} sesiones abiertas`;
@@ -1901,6 +1945,12 @@
     failedEl.hidden = failed === 0;
     failedEl.innerHTML = SVG.failed;
     failedEl.append(failed === 1 ? '1 con error' : `${failed} con error`);
+
+    const sleepingEl = $('#sb-sleeping');
+    sleepingEl.hidden = sleeping === 0;
+    sleepingEl.innerHTML = SVG.off;
+    sleepingEl.append(sleeping === 1 ? '1 dormida' : `${sleeping} dormidas`);
+    sleepingEl.title = `Sesiones que llevaban ${Math.round(sleepAfterMs / 60000)} min esperando sin que las miraras: se han cerrado para liberar memoria y se retoman solas al abrir su pestaña.`;
 
     const tab = byId(S.activeId);
     const zoom = $('#sb-zoom');
@@ -2621,6 +2671,8 @@
   async function init() {
     info = await api.info();
     $('#app-version').textContent = info.version ? `v${info.version}` : '';
+    sleepAfterMs = (info.sleepMinutes || 45) * 60 * 1000;
+    setInterval(sleepIdleSessions, Math.min(60 * 1000, Math.max(1000, sleepAfterMs / 4)));
     // Solo al ejecutar desde el código: pegar texto en la pestaña activa como si
     // viniera del portapapeles, para las pruebas automáticas (CLAUDES_TEST_JS).
     if (info.dev) {

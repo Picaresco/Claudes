@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.8.0 — 2026-11-20
+- Las sesiones que llevan 45 minutos esperando tu mensaje en una pestaña que no estás viendo se duermen para liberar memoria: cada una ocupa en torno a 1 GB con sus servidores MCP. La conversación queda guardada y se retoma sola al abrir la pestaña.
+- Nunca se duerme una sesión que está trabajando, que te necesita, que ha terminado sin que lo vieras, que tiene un error o que ha dejado algo en marcha (una tarea en segundo plano o programada). La barra inferior cuenta las sesiones dormidas.
+
 ## 0.7.0 — 2026-11-19
 - Enlaces web en el contexto del proyecto: botón «Añadir enlace…» en el panel, o arrastra el enlace desde el navegador al panel o a la sesión. Cada enlace muestra el título de la página y Claude lo abre cuando le hace falta, sin pedir permiso.
 - Si una página pide iniciar sesión, la tarjeta lo avisa: Claude no podrá leerla, así que conviene guardarla como PDF y añadir el PDF.

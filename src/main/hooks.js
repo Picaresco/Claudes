@@ -39,6 +39,15 @@ function toolInputSummary(tool, input) {
   return null;
 }
 
+// ¿La herramienta deja algo en marcha más allá de la respuesta (una tarea en segundo
+// plano, una vigilancia, una tarea programada)? Entonces la sesión no se debe dormir.
+const LONG_LIVED_TOOLS = new Set(['Monitor', 'CronCreate', 'ScheduleWakeup']);
+function leavesRunning(tool, input) {
+  if (typeof tool !== 'string') return false;
+  if (LONG_LIVED_TOOLS.has(tool)) return true;
+  return Boolean(input && typeof input === 'object' && input.run_in_background);
+}
+
 // Valor de una clave de un JSON que puede venir cortado (de los avisos grandes solo
 // se lee el principio): busca «"clave":» y lee el valor si está entero.
 function jsonField(text, key) {
@@ -223,6 +232,7 @@ class HookServer {
           message: typeof payload.message === 'string' ? payload.message.slice(0, 300) : null,
           toolName: typeof payload.tool_name === 'string' ? payload.tool_name : null,
           toolInput: toolInputSummary(payload.tool_name, payload.tool_input),
+          background: leavesRunning(payload.tool_name, payload.tool_input),
           // Tras ejecutar una herramienta, el tamaño del aviso ≈ lo que recibió Claude.
           size: eventName === 'PostToolUse' ? total : null,
           prompt: typeof payload.prompt === 'string' ? payload.prompt.slice(0, 80) : null,

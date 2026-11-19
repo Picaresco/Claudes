@@ -577,6 +577,8 @@ function registerIpc() {
     claudeFound: Boolean(sessions.findClaude()),
     windowsBuild: Number(os.release().split('.')[2]) || 0,
     dev: DEV,
+    // Minutos sin actividad tras los que se duerme una sesión que no estás viendo.
+    sleepMinutes: Number(process.env.CLAUDES_SLEEP_MINUTES) > 0 ? Number(process.env.CLAUDES_SLEEP_MINUTES) : 45,
   }));
 
   ipcMain.handle('state:load', () => store.get('ui', null));
