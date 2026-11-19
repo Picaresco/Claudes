@@ -14,6 +14,7 @@ const { Updater } = require('./updater');
 const { createPreview } = require('./preview');
 const { createContext } = require('./context');
 const { NetLog } = require('./netlog');
+const { Limits } = require('./limits');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -28,6 +29,7 @@ let updater = null;
 let previewer = null;
 let contexts = null; // contexto del proyecto de cada pestaña (context.js)
 let netlog = null; // «Log»: lo que ha visto Claude y lo que sale hacia internet (netlog.js)
+let limits = null; // límites de uso del plan y tokens gastados en cada periodo (limits.js)
 let summary = { working: 0 };
 let closeApproved = false; // el usuario ya ha decidido cerrar aunque haya sesiones trabajando
 let closeDialogOpen = false;
@@ -101,6 +103,7 @@ const safeFileName = (name) => (String(name || '').replace(/[<>:"/\\|?*\x00-\x1f
 
 const CODEX_SERVER = 'codex-imagenes'; // nombre del servidor MCP: la herramienta se ve como mcp__codex-imagenes__generar_imagen
 const tabFolders = new Map(); // id de pestaña → carpeta de su sesión
+const tabSessions = new Map(); // id de pestaña → conversación de Claude que tiene abierta
 let codexState = { installed: false, loggedIn: false, mode: null, enabled: false, busy: 0, checkedAt: 0 };
 
 // Solo se usa con sesión de ChatGPT: es la suscripción lo que se quiere aprovechar.
@@ -196,6 +199,50 @@ function usageFrom(data) {
 }
 const lastUsage = new Map(); // pestaña → último uso enviado a la interfaz
 
+// ── Plugins que trae ClaudHome ─────────────────────────────────────
+// explanatory-output-style, de Anthropic: mientras trabaja, Claude explica con
+// bloques «★ Insight» las decisiones que toma y lo que va viendo del proyecto. Cada
+// sesión lo carga con --plugin-dir, sin instalar nada en Claude Code. Su hook es un
+// script de bash que Claude Code ejecuta con Git Bash: sin Git Bash no se carga,
+// porque cada sesión empezaría con un error.
+
+const BUNDLED_PLUGINS = ['explanatory-output-style'];
+const OFFICIAL_MARKETPLACE = 'claude-plugins-official';
+let pluginDirs = []; // { name, dir } de los plugins listos para pasar a las sesiones
+
+// Copia una carpeta. Desde el ejecutable, los plugins están dentro de app.asar, que
+// Claude Code no puede leer, así que se copian a la carpeta de datos de la app.
+function copyDir(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, entry.name);
+    const to = path.join(dst, entry.name);
+    if (entry.isDirectory()) copyDir(from, to);
+    else fs.writeFileSync(to, fs.readFileSync(from));
+  }
+}
+
+function preparePlugins() {
+  const target = path.join(app.getPath('userData'), 'plugins');
+  pluginDirs = [];
+  for (const name of BUNDLED_PLUGINS) {
+    try {
+      copyDir(path.join(__dirname, '..', 'plugins', name), path.join(target, name));
+      pluginDirs.push({ name, dir: path.join(target, name) });
+    } catch (err) {
+      appLog(`plugin ${name}: no se ha podido preparar (${err.message})`);
+    }
+  }
+}
+
+// Plugins de ClaudHome para una sesión, salvo los que el usuario ya tenga activados
+// en su Claude Code (se cargarían dos veces).
+function sessionPlugins() {
+  if (!gitBash) return [];
+  const enabled = userSettings().enabledPlugins || {};
+  return pluginDirs.filter((p) => enabled[`${p.name}@${OFFICIAL_MARKETPLACE}`] !== true);
+}
+
 // ── Actualización ──────────────────────────────────────────────────
 // La interfaz enseña los cambios y solo con «Update» se genera la versión nueva,
 // en segundo plano. Al terminar, Claudes se reinicia para instalarla.
@@ -217,11 +264,14 @@ const SESSION_MARKERS = [
   'CLAUDE_CODE_EXECPATH', 'AI_AGENT', 'ELECTRON_RUN_AS_NODE',
 ];
 
+// Git Bash: donde lo deja su instalador o junto al git.exe del PATH (Git\cmd\git.exe → Git\bin\bash.exe).
 const gitBash = [
   process.env.CLAUDE_CODE_GIT_BASH_PATH,
   'C:\\Program Files\\Git\\bin\\bash.exe',
   'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
   path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Git', 'bin', 'bash.exe'),
+  ...String(process.env.PATH || '').split(';').filter((dir) => dir && fs.existsSync(path.join(dir, 'git.exe')))
+    .map((dir) => path.join(dir, '..', 'bin', 'bash.exe')),
 ].find((p) => p && fs.existsSync(p)) || null;
 
 function shellList() {
@@ -342,12 +392,15 @@ async function createPty(o) {
   const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, ctx.allow))];
   lastUsage.delete(o.id);
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
+  const plugins = sessionPlugins();
+  for (const plugin of plugins) args.push('--plugin-dir', plugin.dir);
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
 
   // Con las imágenes de Codex activadas, la sesión arranca con la herramienta «generar_imagen».
   if (codexState.enabled && !codexState.checkedAt) await refreshCodex();
   const withCodex = codexState.enabled && codexUsable();
   tabFolders.set(o.id, o.cwd);
+  tabSessions.set(o.id, chosen.sessionId);
   if (withCodex) {
     args.push('--mcp-config', hookServer.mcpFile(o.id, CODEX_SERVER));
     // Una imagen puede tardar más que el límite por defecto de una herramienta.
@@ -364,6 +417,7 @@ async function createPty(o) {
   }
   appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
     + `${withCodex ? ' · con Codex' : ''}${ctx.promptFile ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
+    + `${plugins.length ? ` · plugins: ${plugins.map((p) => p.name).join(', ')}` : ''}`
     + `${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
   const env = childEnv(extraEnv);
   if (/\.(cmd|bat)$/i.test(exe)) {
@@ -608,6 +662,7 @@ function registerIpc() {
       hookServer.forget(id);
       contexts.forget(id);
       tabFolders.delete(id);
+      tabSessions.delete(id);
       tabNames.delete(id);
       tabLogs.delete(id);
     }
@@ -662,6 +717,9 @@ function registerIpc() {
     return updater.info();
   });
   ipcMain.on('update:restart', restartToUpdate);
+
+  // Límites de uso del plan (5 horas y semanal) y tokens gastados en cada periodo.
+  ipcMain.handle('limits:get', () => (limits ? limits.snapshot() : null));
 
   ipcMain.on('status:summary', (_e, value) => {
     summary = { working: Math.max(0, Number(value && value.working) || 0) };
@@ -836,6 +894,9 @@ if (!app.requestSingleInstanceLock()) {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
       if (netlog) netlog.fromHook(tabId, event);
+      // Con /clear la pestaña pasa a otra conversación: los hooks llevan la actual.
+      if (event.sessionId && tabFolders.has(tabId)) tabSessions.set(tabId, event.sessionId);
+      if (limits && (event.event === 'Stop' || event.event === 'StopFailure')) limits.refreshSoon();
       send('hook', tabId, event);
     });
     // Solo para pruebas: los mensajes se bloquean antes de llegar al modelo (no gastan tokens).
@@ -843,7 +904,12 @@ if (!app.requestSingleInstanceLock()) {
     // Si el contexto del proyecto cambió con la sesión abierta, se le da a Claude con el siguiente mensaje.
     contexts = createContext({ app, net, log: appLog });
     // Uso del contexto de cada sesión: se avisa a la interfaz cuando cambia el porcentaje.
+    // Límites de uso del plan: llegan con los mismos datos, en cualquier pestaña. También
+    // se cuentan los tokens de la conversación de cada pestaña.
+    limits = new Limits({ store, send, log: appLog, openSessions: () => tabSessions });
     hookServer.onStatus = (tabId, data) => {
+      limits.fromStatus(data);
+      limits.refreshSoon();
       const usage = usageFrom(data);
       if (!usage) return;
       const last = lastUsage.get(tabId);
@@ -891,13 +957,17 @@ if (!app.requestSingleInstanceLock()) {
       tabName: (id) => tabNames.get(id) || null,
       cwdOf: (id) => tabFolders.get(id) || null,
     });
+    preparePlugins();
+    appLog(gitBash ? `plugins para las sesiones: ${pluginDirs.map((p) => p.name).join(', ') || 'ninguno'}` : 'sin Git Bash: las sesiones arrancan sin plugins');
     registerIpc();
     createWindow();
+    limits.start();
   });
 
   app.on('window-all-closed', () => {
     killAll();
     if (hookServer) hookServer.stop();
+    if (limits) limits.stop();
     // Con una versión nueva lista, se instala ahora que Claudes se cierra.
     const attempt = updater ? updater.installOnQuit() : null;
     if (attempt && store) store.set('updateAttempt', attempt);

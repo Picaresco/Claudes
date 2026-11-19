@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.9.0 — 2026-11-20
+- Claude explica lo que hace: las sesiones llevan el plugin explanatory-output-style de Anthropic, y mientras trabaja Claude añade bloques «★ Insight» con el porqué de sus decisiones y lo que va viendo del proyecto. Gasta algo más de tokens. Necesita Git Bash, que se instala con Git para Windows.
+- La barra inferior muestra el límite semanal de tu plan de Claude: el porcentaje usado, los tokens usados en la semana y cuándo se renueva. Si tu plan tiene también límite de 5 horas, se añade su porcentaje.
+- Junto al llenado de la conversación aparecen los tokens que lleva usados, incluidos los de sus subagentes. Al pasar el ratón se ve el desglose de los tokens.
+
 ## 0.8.0 — 2026-11-20
 - Las sesiones que llevan 45 minutos esperando tu mensaje en una pestaña que no estás viendo se duermen para liberar memoria: cada una ocupa en torno a 1 GB con sus servidores MCP. La conversación queda guardada y se retoma sola al abrir la pestaña.
 - Nunca se duerme una sesión que está trabajando, que te necesita, que ha terminado sin que lo vieras, que tiene un error o que ha dejado algo en marcha (una tarea en segundo plano o programada). La barra inferior cuenta las sesiones dormidas.

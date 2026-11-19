@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('api', {
 
   onHook: on('hook'),
   onUsage: on('session:usage'), // (tabId, { size, used, pct }) cuánto ocupa la conversación
+  // Límites de uso del plan: { five_hour, seven_day }, cada uno { pct, resetsAt, expired, tokens }.
+  limitsGet: () => ipcRenderer.invoke('limits:get'),
+  onLimits: on('limits:update'),
   onNotifyClick: on('notify:click'),
   notify: (options) => ipcRenderer.send('notify', options),
   setSummary: (summary) => ipcRenderer.send('status:summary', summary),
