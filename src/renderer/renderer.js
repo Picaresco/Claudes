@@ -172,6 +172,14 @@
       linkHandler: { activate: (_event, uri) => { if (/^https?:\/\//i.test(uri)) api.openPath(uri); } },
     });
     term.loadAddon(new WebLinksAddon.WebLinksAddon((_event, uri) => api.openPath(uri)));
+    // Anchos de carácter modernos: los emojis (la marca verde U+2705, el candado
+    // U+1F512…) ocupan 2 columnas y los compuestos (con tono de piel, ZWJ) cuentan
+    // como uno, igual que los calculan Claude Code y Windows Terminal. Con la tabla
+    // Unicode 6 que trae xterm por defecto ocupaban 1, y cada uno descuadraba una
+    // columna lo que Claude Code redibuja (tablas torcidas, letras que saltaban al
+    // final de la línea anterior).
+    term.loadAddon(new UnicodeGraphemesAddon.UnicodeGraphemesAddon());
+    term.unicode.activeVersion = '15-graphemes';
     return term;
   }
 
