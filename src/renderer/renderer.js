@@ -259,22 +259,23 @@
       if (term.hasSelection()) copySelection(term);
       else paste(term, isClaude ? view : null);
     });
-    // Soltar archivos sobre la terminal pega sus rutas.
-    host.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-    });
-    host.addEventListener('drop', (e) => {
-      if (!e.dataTransfer || !e.dataTransfer.files.length) return;
-      e.preventDefault();
-      const files = [...e.dataTransfer.files].map((file) => api.pathForFile(file)).filter(Boolean);
-      if (!files.length) return;
-      const before = isClaude ? imageLabelCounts(term) : null;
-      term.paste(joinPaths(files));
-      term.focus();
-      if (isClaude) learnImageLabels(view, files, before);
-    });
+    // Soltar archivos sobre la terminal extra pega sus rutas. Sobre la de Claude se
+    // elige entre pegarlos o añadirlos al contexto del proyecto (wireDropChoice).
+    if (!isClaude) {
+      host.addEventListener('dragover', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      });
+      host.addEventListener('drop', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        const files = droppedPaths(e);
+        if (!files.length) return;
+        term.paste(joinPaths(files));
+        term.focus();
+      });
+    }
     host.addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
@@ -534,6 +535,325 @@
     card.style.top = `${y}px`;
   }
 
+  // ── Contexto del proyecto ────────────────────────────────────────
+  // Cada pestaña puede tener una nota y una lista de documentos y carpetas que
+  // Claude tiene presentes en todas sus sesiones. Aquí se editan; el proceso
+  // principal (src/main/context.js) se los da a Claude.
+
+  const MAX_CONTEXT_ITEMS = 100;
+  const emptyContext = () => ({ note: '', items: [] });
+
+  function cleanContext(raw) {
+    const ctx = emptyContext();
+    if (!raw || typeof raw !== 'object') return ctx;
+    ctx.note = typeof raw.note === 'string' ? raw.note.slice(0, 8000) : '';
+    const seen = new Set();
+    for (const item of Array.isArray(raw.items) ? raw.items : []) {
+      if (!item || typeof item.path !== 'string' || !item.path || seen.has(item.path.toLowerCase())) continue;
+      seen.add(item.path.toLowerCase());
+      ctx.items.push({ path: item.path, enabled: item.enabled !== false });
+      if (ctx.items.length >= MAX_CONTEXT_ITEMS) break;
+    }
+    return ctx;
+  }
+
+  function ensureContext(tab) {
+    if (!tab.context) tab.context = emptyContext();
+    return tab.context;
+  }
+
+  // Lo que indica el número del botón «Contexto»: documentos activos y la nota.
+  function contextCount(tab) {
+    const ctx = tab.context || emptyContext();
+    return ctx.items.filter((i) => i.enabled !== false).length + (ctx.note.trim() ? 1 : 0);
+  }
+
+  function hasFiles(e) {
+    return Boolean(e.dataTransfer) && [...e.dataTransfer.types].includes('Files');
+  }
+
+  function droppedPaths(e) {
+    return [...e.dataTransfer.files].map((file) => api.pathForFile(file)).filter(Boolean);
+  }
+
+  const CTX_HOW = {
+    carpeta: 'Claude puede leer todo lo que hay dentro',
+    PDF: 'Claude lo lee cuando le hace falta',
+    Word: 'Pasado a texto; Claude lo lee cuando le hace falta',
+    imagen: 'Claude la mira cuando le hace falta',
+    texto: 'Claude lo lee cuando le hace falta',
+    archivo: 'Claude intentará abrirlo con sus herramientas',
+  };
+  const CTX_KIND = { PDF: 'PDF', Word: 'Word', imagen: 'Imagen', texto: 'Texto' };
+  const FOLDER_ICON = '<svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4.5h4.2l1.3 1.6h7.5v6.9h-13z"/></svg>';
+  const MISSING_ICON = '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.8M8 11.1v.1"/></svg>';
+
+  function buildContextPanel(view) {
+    const panel = el('aside', 'ctx');
+    panel.hidden = true;
+    panel.setAttribute('aria-label', 'Contexto del proyecto');
+
+    const head = el('div', 'ctx-head');
+    const titles = el('div', 'ctx-titles');
+    view.ctxTitle = el('h2', '', 'Contexto del proyecto');
+    view.ctxSub = el('p', 'ctx-sub', `Claude lo tiene presente en cada sesión de «${view.tab.name}»`);
+    titles.append(view.ctxTitle, view.ctxSub);
+    const close = el('button', 'icon-btn ctx-close');
+    close.innerHTML = SVG.close;
+    close.title = 'Cerrar el panel';
+    close.setAttribute('aria-label', 'Cerrar el panel de contexto');
+    close.addEventListener('click', () => toggleContext(view, false));
+    head.append(titles, close);
+
+    const body = el('div', 'ctx-body');
+    const noteLabel = el('label', 'ctx-label', 'Nota para Claude');
+    view.ctxNote = el('textarea', 'ctx-note');
+    view.ctxNote.id = `ctx-note-${view.tab.id}`;
+    noteLabel.htmlFor = view.ctxNote.id;
+    view.ctxNote.placeholder = 'De qué va el proyecto, normas, cómo quieres que responda…';
+    view.ctxNote.maxLength = 8000;
+    view.ctxNote.addEventListener('input', () => {
+      ensureContext(view.tab).note = view.ctxNote.value;
+      contextChanged(view, false);
+    });
+    view.ctxDocsLabel = el('div', 'ctx-label', 'Documentos');
+    view.ctxItems = el('div', 'ctx-items');
+    const drop = el('div', 'ctx-drop');
+    const row = el('div', 'ctx-drop-row');
+    const addFiles = el('button', 'btn', 'Añadir archivos…');
+    const addFolder = el('button', 'btn', 'Añadir carpeta…');
+    addFiles.addEventListener('click', async () => addToContext(view, await api.contextPick('files')));
+    addFolder.addEventListener('click', async () => addToContext(view, await api.contextPick('folder')));
+    row.append(addFiles, addFolder);
+    drop.append(el('span', '', 'Arrastra aquí archivos o carpetas'), row);
+    body.append(noteLabel, view.ctxNote, view.ctxDocsLabel, view.ctxItems, drop);
+
+    // Vista alternativa: el texto exacto que recibe Claude.
+    const sent = el('div', 'ctx-body');
+    sent.hidden = true;
+    view.ctxPrompt = el('pre', 'ctx-prompt');
+    sent.append(el('div', 'ctx-label', 'Así se lo cuenta ClaudHome a Claude'), view.ctxPrompt);
+    view.ctxSent = sent;
+
+    const foot = el('div', 'ctx-foot');
+    const toggleSent = el('button', 'ctx-link', 'Ver lo que recibe Claude →');
+    toggleSent.addEventListener('click', () => {
+      const showSent = sent.hidden;
+      sent.hidden = !showSent;
+      body.hidden = showSent;
+      toggleSent.textContent = showSent ? '← Volver al contexto' : 'Ver lo que recibe Claude →';
+      view.ctxTitle.textContent = showSent ? 'Lo que recibe Claude' : 'Contexto del proyecto';
+      if (showSent) refreshContextPrompt(view);
+    });
+    foot.append(toggleSent, el('span', '', 'Se aplica al empezar la sesión. Si lo cambias con la sesión abierta, Claude se entera con tu siguiente mensaje.'));
+
+    panel.append(head, body, sent, foot);
+
+    // Soltar archivos o carpetas sobre el panel los añade.
+    panel.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      panel.classList.add('drag');
+    });
+    panel.addEventListener('dragleave', (e) => { if (!panel.contains(e.relatedTarget)) panel.classList.remove('drag'); });
+    panel.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      panel.classList.remove('drag');
+      addToContext(view, droppedPaths(e));
+    });
+    return panel;
+  }
+
+  // Muestra u oculta el panel según la pestaña y, si se ve, lo rellena.
+  function syncContextPanel(view) {
+    view.ctxEl.hidden = !view.tab.contextOpen;
+    if (!view.tab.contextOpen) return;
+    if (document.activeElement !== view.ctxNote) view.ctxNote.value = ensureContext(view.tab).note;
+    renderContextItems(view);
+    if (!view.ctxSent.hidden) refreshContextPrompt(view);
+  }
+
+  function toggleContext(view = views.get(S.activeId), open) {
+    if (!view) return;
+    view.tab.contextOpen = open === undefined ? !view.tab.contextOpen : Boolean(open);
+    syncContextPanel(view);
+    renderToolbar();
+    save();
+    requestAnimationFrame(() => {
+      fitView(view);
+      if (!view.tab.contextOpen && view.tab.id === S.activeId) focusTerminal();
+    });
+  }
+
+  async function refreshContextPrompt(view) {
+    let text = '';
+    try { text = await api.contextPrompt(view.tab.id, view.tab.name, ensureContext(view.tab)); } catch { /* sin vista */ }
+    view.ctxPrompt.textContent = text || 'Esta pestaña no tiene contexto: Claude no recibe nada adicional.';
+  }
+
+  const contextTimers = new Map();
+
+  // Algo ha cambiado: se guarda, se repinta y se avisa al proceso principal (que
+  // se lo dará a Claude en su siguiente mensaje si la sesión está abierta).
+  function contextChanged(view, listChanged = true) {
+    save();
+    renderToolbar();
+    if (listChanged) renderContextItems(view);
+    clearTimeout(contextTimers.get(view.tab.id));
+    contextTimers.set(view.tab.id, setTimeout(() => {
+      api.contextUpdate(view.tab.id, view.tab.name, ensureContext(view.tab)).catch(() => { /* se aplicará al reiniciar */ });
+      if (!view.ctxSent.hidden) refreshContextPrompt(view);
+    }, 400));
+  }
+
+  function addToContext(view, paths) {
+    const list = (paths || []).filter((p) => typeof p === 'string' && p);
+    if (!list.length) return;
+    const ctx = ensureContext(view.tab);
+    const have = new Set(ctx.items.map((i) => i.path.toLowerCase()));
+    let added = 0;
+    for (const p of list) {
+      if (have.has(p.toLowerCase()) || ctx.items.length >= MAX_CONTEXT_ITEMS) continue;
+      ctx.items.push({ path: p, enabled: true });
+      have.add(p.toLowerCase());
+      added += 1;
+    }
+    contextChanged(view);
+    if (!view.tab.contextOpen) toggleContext(view, true);
+    toast(added === 0 ? 'Eso ya estaba en el contexto del proyecto.'
+      : added === 1 ? 'Añadido al contexto del proyecto.' : `${added} elementos añadidos al contexto del proyecto.`);
+  }
+
+  async function renderContextItems(view) {
+    const ctx = ensureContext(view.tab);
+    const token = (view.ctxToken || 0) + 1;
+    view.ctxToken = token;
+    view.ctxDocsLabel.textContent = ctx.items.length ? `Documentos · ${ctx.items.length}` : 'Documentos';
+    if (!ctx.items.length) {
+      view.ctxItems.replaceChildren(el('p', 'ctx-empty', 'Todavía no hay documentos. Añade PDF, Word, imágenes, textos o carpetas que ayuden a Claude a entender el proyecto.'));
+      return;
+    }
+    let infos = [];
+    try { infos = await api.contextDescribe(ctx.items); } catch { /* se pinta sin datos */ }
+    if (token !== view.ctxToken) return; // ya hay un repintado más nuevo
+    view.ctxItems.replaceChildren(...ctx.items.map((item, i) => contextCard(view, item, infos[i] || { path: item.path, name: item.path, exists: false })));
+  }
+
+  function contextCard(view, item, info) {
+    const on = item.enabled !== false;
+    const card = el('div', 'ctx-item');
+    card.classList.toggle('off', !on);
+    card.classList.toggle('missing', !info.exists);
+    card.title = info.exists ? `${item.path}\nDoble clic para abrirlo` : item.path;
+    const thumb = el('div', 'ctx-thumb');
+    const meta = el('span', 'ctx-meta');
+    const how = el('span', 'ctx-how');
+    const body = el('div', 'ctx-info');
+    body.append(el('strong', '', info.name || item.path), meta, how);
+
+    if (!info.exists) {
+      thumb.innerHTML = MISSING_ICON;
+      thumb.dataset.kind = 'missing';
+      meta.textContent = 'No encontrado';
+      how.textContent = '¿Se ha movido o borrado? Claude no lo recibe.';
+    } else if (info.isDir) {
+      thumb.innerHTML = FOLDER_ICON;
+      thumb.dataset.kind = 'dir';
+      meta.textContent = `Carpeta · ${info.many ? 'más de 2000 archivos' : `${info.files} archivo${info.files === 1 ? '' : 's'}`}`;
+      how.textContent = on ? CTX_HOW.carpeta : 'Desactivada: Claude no la recibe';
+    } else {
+      thumb.dataset.kind = 'file';
+      const ext = (info.name.includes('.') ? info.name.split('.').pop() : '').toUpperCase();
+      meta.textContent = `${CTX_KIND[info.kind] || ext || 'Archivo'} · ${formatSize(info.size)}`;
+      how.textContent = on ? (CTX_HOW[info.kind] || CTX_HOW.archivo) : 'Desactivado: Claude no lo recibe';
+      // Miniatura y datos de la vista previa (páginas de un PDF, tamaño de una imagen).
+      api.preview(item.path).then((data) => {
+        if (!data || !card.isConnected) return;
+        if (data.kind === 'text') {
+          thumb.dataset.kind = 'text';
+          thumb.replaceChildren(...Array.from({ length: 6 }, () => el('i')));
+        } else if (data.image) {
+          const img = el('img');
+          img.alt = '';
+          img.src = data.image;
+          thumb.dataset.kind = data.kind;
+          thumb.replaceChildren(img);
+        }
+        const extra = [];
+        if (data.pages) extra.push(data.pages === 1 ? '1 página' : `${data.pages} páginas`);
+        if (data.width && data.height) extra.push(`${data.width} × ${data.height}`);
+        if (extra.length) meta.textContent += ` · ${extra.join(' · ')}`;
+      }).catch(() => { /* sin miniatura */ });
+    }
+
+    const side = el('div', 'ctx-side');
+    const toggle = el('button', 'ctx-switch');
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-checked', String(on));
+    toggle.setAttribute('aria-label', `${on ? 'Desactivar' : 'Activar'} ${info.name || item.path}`);
+    toggle.title = on ? 'Activado: Claude lo recibe. Pulsa para desactivarlo sin quitarlo.' : 'Desactivado. Pulsa para activarlo.';
+    toggle.addEventListener('click', () => { item.enabled = !on; contextChanged(view); });
+    const remove = el('button', 'ctx-remove');
+    remove.innerHTML = SVG.close;
+    remove.title = 'Quitar del contexto';
+    remove.setAttribute('aria-label', `Quitar ${info.name || item.path} del contexto`);
+    remove.addEventListener('click', () => {
+      const ctx = ensureContext(view.tab);
+      ctx.items = ctx.items.filter((x) => x !== item);
+      contextChanged(view);
+    });
+    side.append(toggle, remove);
+    card.append(thumb, body, side);
+    if (info.exists) card.addEventListener('dblclick', (e) => { if (!e.target.closest('button')) api.openPath(item.path); });
+    return card;
+  }
+
+  // Soltar archivos sobre la sesión de Claude: elegir entre pegarlos en el mensaje
+  // (como siempre) o añadirlos al contexto del proyecto.
+  function wireDropChoice(view, wrap) {
+    const overlay = el('div', 'drop-choice');
+    overlay.hidden = true;
+    const zone = (title, text) => {
+      const node = el('div', 'drop-zone');
+      node.append(el('strong', '', title), el('span', '', text));
+      return node;
+    };
+    const pasteZone = zone('Pegar en el mensaje', 'Como siempre: la ruta (o la imagen) va en lo que estás escribiendo, solo para esta pregunta.');
+    const ctxZone = zone('Añadir al contexto del proyecto', 'Se queda guardado en esta pestaña y Claude lo tendrá presente en todas las sesiones.');
+    overlay.append(pasteZone, ctxZone);
+    wrap.append(overlay);
+    let hideTimer = null;
+    wrap.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      overlay.hidden = false;
+      const target = e.target instanceof Element ? e.target.closest('.drop-zone') : null;
+      pasteZone.classList.toggle('hot', target === pasteZone);
+      ctxZone.classList.toggle('hot', target === ctxZone);
+      // Mientras se arrastra llegan avisos sin parar; si dejan de llegar, el ratón ya no está aquí.
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => { overlay.hidden = true; }, 250);
+    });
+    wrap.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      clearTimeout(hideTimer);
+      overlay.hidden = true;
+      const files = droppedPaths(e);
+      if (!files.length) return;
+      const target = e.target instanceof Element ? e.target.closest('.drop-zone') : null;
+      if (target === ctxZone) { addToContext(view, files); return; }
+      const before = imageLabelCounts(view.term);
+      view.term.paste(joinPaths(files));
+      view.term.focus();
+      learnImageLabels(view, files, before);
+    });
+  }
+
   function createView(tab, mode) {
     const view = {
       tab, mode, status: 'asleep', started: false, opened: false, exited: false,
@@ -541,6 +861,7 @@
       images: new Map(), // n de [Image #n] → imagen pegada, mientras dura la sesión de Claude
     };
     view.el = el('div', 'tabview');
+    view.main = el('div', 'tabmain'); // Claude y, debajo, la terminal extra
     const wrap = el('div', 'term-wrap');
     view.host = el('div', 'term-host');
     wrap.append(view.host);
@@ -548,7 +869,11 @@
     view.fit = new FitAddon.FitAddon();
     view.term.loadAddon(view.fit);
     view.extraEl = buildExtraPanel(view);
-    view.el.append(wrap, view.extraEl);
+    view.main.append(wrap, view.extraEl);
+    view.ctxEl = buildContextPanel(view); // a la derecha: contexto del proyecto
+    view.el.append(view.main, view.ctxEl);
+    wireDropChoice(view, wrap);
+    if (tab.contextOpen) syncContextPanel(view);
 
     terms.set(tab.id, view.term);
     view.term.onData((data) => {
@@ -653,7 +978,7 @@
     // Una misma conversación no se abre en dos pestañas a la vez.
     const exclude = S.tabs.filter((t) => t.id !== tab.id && t.sessionId).map((t) => t.sessionId);
     const res = await api.ptyCreate({
-      id: tab.id, kind: 'claude', name: tab.name, cwd: tab.cwd, sessionId: tab.sessionId, mode, exclude,
+      id: tab.id, kind: 'claude', name: tab.name, cwd: tab.cwd, sessionId: tab.sessionId, mode, exclude, context: tab.context,
       cols: view.term.cols, rows: view.term.rows,
     });
     if (!views.has(tab.id)) { api.ptyKill(tab.id); return; } // se cerró mientras arrancaba
@@ -1231,6 +1556,12 @@
     $('#tb-path').textContent = tab.cwd;
     $('#tb-path').title = tab.cwd;
     $('#btn-terminal').setAttribute('aria-pressed', String(Boolean(tab.extraOpen)));
+    $('#btn-context').setAttribute('aria-pressed', String(Boolean(tab.contextOpen)));
+    const ctxCount = contextCount(tab);
+    $('#ctx-count').hidden = ctxCount === 0;
+    $('#ctx-count').textContent = String(ctxCount);
+    const ctxView = views.get(tab.id);
+    if (ctxView && ctxView.ctxSub) ctxView.ctxSub.textContent = `Claude lo tiene presente en cada sesión de «${tab.name}»`;
     const activeView = views.get(tab.id);
     $('#tb-codex').hidden = !(activeView && activeView.codex && activeView.started && codexInfo && codexInfo.active);
     $('#btn-swap').hidden = !S.split;
@@ -1374,6 +1705,8 @@
       zoom: fields.zoom || 1,
       extraOpen: false,
       extraHeight: fields.extraHeight || 0,
+      context: cleanContext(fields.context),
+      contextOpen: false,
     };
     S.tabs.push(tab);
     createView(tab, mode);
@@ -1384,7 +1717,7 @@
   function addRecent(tab) {
     const same = (r) => r.cwd.toLowerCase() === tab.cwd.toLowerCase() && r.name === tab.name;
     S.recents = [
-      { name: tab.name, cwd: tab.cwd, color: tab.color, shell: tab.shell, sessionId: tab.sessionId, zoom: tab.zoom, extraHeight: tab.extraHeight },
+      { name: tab.name, cwd: tab.cwd, color: tab.color, shell: tab.shell, sessionId: tab.sessionId, zoom: tab.zoom, extraHeight: tab.extraHeight, context: tab.context },
       ...S.recents.filter((r) => !same(r)),
     ].slice(0, MAX_RECENTS);
   }
@@ -1557,14 +1890,14 @@
     save();
   }
 
-  function focusSide(side) {
+  function focusSide(side, focus = true) {
     if (!S.split || S.focusSide === side) return;
     S.focusSide = side;
     S.activeId = S.split[side];
     touchMru(S.activeId);
     renderAll();
     acknowledge();
-    focusTerminal();
+    if (focus) focusTerminal();
     save();
   }
 
@@ -1808,7 +2141,8 @@
     for (const side of SIDES) {
       const node = $(`.pane[data-side="${side}"]`);
       panes[side] = { el: node, head: $('.pane-head', node), body: $('.pane-body', node) };
-      node.addEventListener('mousedown', () => focusSide(side), true);
+      // Al pulsar en el panel de contexto, el foco se queda allí (no salta a la terminal).
+      node.addEventListener('mousedown', (e) => focusSide(side, !(e.target instanceof Element && e.target.closest('.ctx'))), true);
     }
 
     $('#btn-plus').addEventListener('click', () => ($('#plus-menu').hidden ? openPlusMenu() : closePlusMenu()));
@@ -1828,9 +2162,9 @@
     }, true);
 
     $('#btn-terminal').addEventListener('click', () => toggleExtra());
+    $('#btn-context').addEventListener('click', () => toggleContext());
     $('#btn-split').addEventListener('click', toggleSplit);
     $('#btn-swap').addEventListener('click', swapSides);
-    $('#btn-newconv').addEventListener('click', () => newConversation());
     $('#btn-folder').addEventListener('click', () => { const tab = byId(S.activeId); if (tab) api.openPath(tab.cwd); });
     $('#tb-name').addEventListener('dblclick', () => startRename(S.activeId));
     $('#sb-zoom').addEventListener('click', () => { const view = views.get(S.activeId); if (view) setZoom(view, 1); focusTerminal(); });
@@ -1904,7 +2238,7 @@
       if (dialogOpen()) return;
       if (e.key === 'Escape' && !$('#plus-menu').hidden) { closePlusMenu(); focusTerminal(); e.preventDefault(); e.stopPropagation(); return; }
       // En un campo de texto de la app (no en la terminal) las teclas son suyas.
-      if (e.target instanceof HTMLElement && e.target.matches('input, select')) return;
+      if (e.target instanceof HTMLElement && e.target.matches('input, select, textarea')) return;
 
       const key = e.key;
       const lower = key.toLowerCase();
@@ -1955,6 +2289,8 @@
         zoom: clamp(Number(raw.zoom) || 1, 0.6, 2.4),
         extraOpen: Boolean(raw.extraOpen),
         extraHeight: Number(raw.extraHeight) || 0,
+        context: cleanContext(raw.context),
+        contextOpen: Boolean(raw.contextOpen),
       });
     }
     for (const raw of Array.isArray(saved.recents) ? saved.recents : []) {
@@ -1967,6 +2303,7 @@
         sessionId: typeof raw.sessionId === 'string' ? raw.sessionId : null,
         zoom: clamp(Number(raw.zoom) || 1, 0.6, 2.4),
         extraHeight: Number(raw.extraHeight) || 0,
+        context: cleanContext(raw.context),
       });
     }
     S.activeId = typeof saved.activeId === 'string' ? saved.activeId : null;
@@ -1987,6 +2324,10 @@
         pasteText: (text) => {
           const view = views.get(S.activeId);
           return view ? pasteClip(view.term, view, { files: [], text, imagePath: null }) : null;
+        },
+        addContext: (paths) => {
+          const view = views.get(S.activeId);
+          if (view) addToContext(view, paths);
         },
       };
     }

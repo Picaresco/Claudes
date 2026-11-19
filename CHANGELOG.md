@@ -4,6 +4,12 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.6.0 — 2026-11-19
+- Contexto del proyecto: el botón «Contexto» de cada pestaña abre un panel con una nota para Claude y los documentos (PDF, Word, imágenes, textos) y carpetas que debe tener presentes en todas las sesiones. Claude los lee cuando le hacen falta, sin pedir permiso.
+- Al soltar archivos sobre la sesión puedes elegir entre pegarlos en el mensaje, como siempre, o añadirlos al contexto del proyecto.
+- «Ver lo que recibe Claude» muestra exactamente lo que se le pasa. Si cambias el contexto con la sesión abierta, Claude se entera con tu siguiente mensaje.
+- Se quita el botón «Nueva conversación»: `/clear` hace lo mismo, y la opción sigue en el menú del botón derecho de la pestaña.
+
 ## 0.5.0 — 2026-11-19
 - La app pasa a llamarse ClaudHome: así aparece en la ventana, en la barra de tareas, en los avisos y en GitHub.
 - Solo cambia el nombre que se ve. El ejecutable, las carpetas, tus pestañas y tus ajustes siguen igual.

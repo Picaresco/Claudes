@@ -12,6 +12,7 @@ const sessions = require('./sessions');
 const codex = require('./codex');
 const { Updater } = require('./updater');
 const { createPreview } = require('./preview');
+const { createContext } = require('./context');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -24,6 +25,7 @@ let store = null;
 let hookServer = null;
 let updater = null;
 let previewer = null;
+let contexts = null; // contexto del proyecto de cada pestaña (context.js)
 let summary = { working: 0 };
 let closeApproved = false; // el usuario ya ha decidido cerrar aunque haya sesiones trabajando
 let closeDialogOpen = false;
@@ -165,12 +167,14 @@ function userLanguage() {
   }
 }
 
-// Ajustes de Claude Code que Claudes añade a cada sesión.
-function sessionSettings() {
+// Ajustes de Claude Code que Claudes añade a cada sesión. `allow` son las reglas
+// para leer sin preguntar los documentos del contexto del proyecto.
+function sessionSettings(allow = []) {
   const settings = { voice: { enabled: true, mode: 'hold' } };
   // Sin idioma, Claude Code dicta en inglés. Ese mismo ajuste fija el idioma de las
   // respuestas; si el usuario ya ha elegido uno, se respeta el suyo.
   if (!userLanguage()) settings.language = 'spanish';
+  if (allow.length) settings.permissions = { allow };
   return settings;
 }
 
@@ -309,7 +313,15 @@ async function createPty(o) {
     return { ok: false, error: 'No encuentro Claude Code en este equipo (el comando «claude» no está instalado o no está en el PATH).' };
   }
   const chosen = sessions.plan({ cwd: o.cwd, sessionId: o.sessionId, mode: o.mode, exclude: o.exclude });
-  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings())];
+  // Contexto del proyecto de la pestaña: resumen para Claude y permiso para leer sus documentos.
+  let ctx = { promptFile: null, allow: [] };
+  try {
+    ctx = await contexts.prepare(o.id, o.name, o.context);
+  } catch (err) {
+    appLog(`contexto de ${tabLabel(o.id)}: no se pudo preparar (${err.message})`);
+  }
+  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(ctx.allow))];
+  if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
 
   // Con las imágenes de Codex activadas, la sesión arranca con la herramienta «generar_imagen».
@@ -331,7 +343,8 @@ async function createPty(o) {
     tabLogs.set(o.id, logFile);
   }
   appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
-    + `${withCodex ? ' · con Codex' : ''}${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
+    + `${withCodex ? ' · con Codex' : ''}${ctx.promptFile ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
+    + `${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
   const env = childEnv(extraEnv);
   if (/\.(cmd|bat)$/i.test(exe)) {
     // Instalación por npm: claude es un .cmd y hay que lanzarlo a través de cmd.exe.
@@ -571,6 +584,7 @@ function registerIpc() {
     await killPty(id);
     if (typeof id === 'string' && !id.includes(':')) {
       hookServer.forget(id);
+      contexts.forget(id);
       tabFolders.delete(id);
       tabNames.delete(id);
       tabLogs.delete(id);
@@ -653,6 +667,27 @@ function registerIpc() {
   // Vista previa de los archivos sobre los que se pasa el ratón en la terminal.
   ipcMain.handle('preview:file', (_e, target) => previewer.preview(target));
   ipcMain.handle('preview:existing', (_e, list) => previewer.existing(list));
+
+  // Contexto del proyecto: datos de cada elemento para el panel, cambios, lo que
+  // recibe Claude y los diálogos para añadir archivos o carpetas.
+  ipcMain.handle('context:describe', (_e, items) => contexts.describe(items));
+  ipcMain.handle('context:prompt', async (_e, tabId, name, context) => (await contexts.build(String(tabId), name, context)).text);
+  ipcMain.handle('context:update', async (_e, tabId, name, context) => {
+    if (typeof tabId !== 'string') return false;
+    const result = await contexts.update(tabId, name, context);
+    // Con la sesión abierta se reescriben sus ajustes con los permisos nuevos (por si
+    // Claude Code los recarga); el resumen se lo da el hook con el siguiente mensaje.
+    if (ptys.has(tabId)) hookServer.settingsFile(tabId, sessionSettings(result.allow));
+    return true;
+  });
+  ipcMain.handle('context:pick', async (_e, kind) => {
+    const folder = kind === 'folder';
+    const result = await dialog.showOpenDialog(win, {
+      title: folder ? 'Añadir una carpeta al contexto del proyecto' : 'Añadir archivos al contexto del proyecto',
+      properties: folder ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
 
   ipcMain.handle('fs:isDir', (_e, target) => {
     try { return typeof target === 'string' && fs.statSync(target).isDirectory(); } catch { return false; }
@@ -773,6 +808,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     // Solo para pruebas: los mensajes se bloquean antes de llegar al modelo (no gastan tokens).
     hookServer.blockPrompts = DEV && Boolean(process.env.CLAUDES_BLOCK_PROMPTS);
+    // Si el contexto del proyecto cambió con la sesión abierta, se le da a Claude con el siguiente mensaje.
+    contexts = createContext({ app, log: appLog });
+    hookServer.respond = (tabId, eventName) => (eventName === 'UserPromptSubmit' ? contexts.pendingUpdate(tabId) : null);
     hookServer.mcp = createMcp({
       name: 'claudes-codex',
       version: app.getVersion(),

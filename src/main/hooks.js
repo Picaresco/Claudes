@@ -28,6 +28,7 @@ class HookServer {
     this.token = crypto.randomBytes(16).toString('hex');
     this.blockPrompts = false;
     this.mcp = null; // función (tabId, cuerpo) → { status, json }; la pone quien ofrezca herramientas
+    this.respond = null; // función (tabId, evento) → objeto con el que contestar al hook, o null
     this.port = 0;
     this.server = null;
   }
@@ -116,9 +117,17 @@ class HookServer {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ decision: 'block', reason: 'ClaudHome en modo de pruebas: mensaje no enviado.' }));
       } else {
-        // Respuesta vacía: Claude Code la trata como «sin nada que decir».
-        res.writeHead(200);
-        res.end();
+        let answer = null;
+        try { answer = this.respond ? this.respond(tabId, eventName) : null; } catch { answer = null; }
+        if (answer) {
+          // Por ejemplo, contexto adicional para Claude junto con el mensaje del usuario.
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(answer));
+        } else {
+          // Respuesta vacía: Claude Code la trata como «sin nada que decir».
+          res.writeHead(200);
+          res.end();
+        }
       }
       const head = Buffer.concat(chunks).toString('utf8');
       let payload = {};

@@ -40,6 +40,12 @@ contextBridge.exposeInMainWorld('api', {
   // y, de una lista de rutas candidatas, las que existen.
   preview: (file) => ipcRenderer.invoke('preview:file', file),
   existingFiles: (list) => ipcRenderer.invoke('preview:existing', list),
+
+  // Contexto del proyecto de una pestaña (nota y documentos que Claude tiene presentes).
+  contextDescribe: (items) => ipcRenderer.invoke('context:describe', items),
+  contextUpdate: (tabId, name, context) => ipcRenderer.invoke('context:update', tabId, name, context),
+  contextPrompt: (tabId, name, context) => ipcRenderer.invoke('context:prompt', tabId, name, context),
+  contextPick: (kind) => ipcRenderer.invoke('context:pick', kind),
   openPath: (target) => ipcRenderer.send('shell:openPath', target),
 
   // Codex: detección de la suscripción e interruptor de «imágenes con Codex».
