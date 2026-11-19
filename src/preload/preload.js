@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('api', {
   onPtyExit: on('pty:exit'),
 
   onHook: on('hook'),
+  onUsage: on('session:usage'), // (tabId, { size, used, pct }) cuánto ocupa la conversación
   onNotifyClick: on('notify:click'),
   notify: (options) => ipcRenderer.send('notify', options),
   setSummary: (summary) => ipcRenderer.send('status:summary', summary),
@@ -46,6 +47,13 @@ contextBridge.exposeInMainWorld('api', {
   contextUpdate: (tabId, name, context) => ipcRenderer.invoke('context:update', tabId, name, context),
   contextPrompt: (tabId, name, context) => ipcRenderer.invoke('context:prompt', tabId, name, context),
   contextPick: (kind) => ipcRenderer.invoke('context:pick', kind),
+  contextLink: (url) => ipcRenderer.invoke('context:link', url),
+
+  // Registro de llamadas al exterior («Log»).
+  netlogGet: () => ipcRenderer.invoke('netlog:get'),
+  netlogOpenFile: () => ipcRenderer.send('netlog:openFile'),
+  onNetlogEntry: on('netlog:entry'),
+  onNetlogUpdate: on('netlog:update'),
   openPath: (target) => ipcRenderer.send('shell:openPath', target),
 
   // Codex: detección de la suscripción e interruptor de «imágenes con Codex».

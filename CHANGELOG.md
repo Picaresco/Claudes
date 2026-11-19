@@ -4,6 +4,14 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.7.0 — 2026-11-19
+- Enlaces web en el contexto del proyecto: botón «Añadir enlace…» en el panel, o arrastra el enlace desde el navegador al panel o a la sesión. Cada enlace muestra el título de la página y Claude lo abre cuando le hace falta, sin pedir permiso.
+- Si una página pide iniciar sesión, la tarjeta lo avisa: Claude no podrá leerla, así que conviene guardarla como PDF y añadir el PDF.
+- Llenado de la conversación: una barrita en cada pestaña (verde, ámbar o coral) y el porcentaje en la barra inferior indican cuánto ocupa la conversación de su ventana de contexto, para saber cuándo usar `/compact` o `/clear`.
+- El punto de cada pestaña dice más. Verde girando: está trabajando. Verde fijo: está activa, esperando tu mensaje. Verde parpadeando: ha terminado sin que lo vieras. Rojo parpadeando: te necesita. Ámbar: se ha detenido por un error. Gris girando: está arrancando o cerrándose. Punteado: no está iniciada.
+- La pestaña ya no parpadea: el aviso lo da el punto. La barra inferior cuenta las sesiones que te necesitan, las que han terminado y las que tienen un error.
+- Nuevo botón «Log»: muestra lo que sale de este equipo a través de Claude. Por un lado, lo que ha visto (archivos leídos, salidas de comandos, respuestas de los MCP), que se envía a Anthropic con la conversación. Por otro, lo que sale directamente a internet (páginas web, búsquedas, MCP remotos, comandos con red). Incluye el tamaño aproximado, filtros por pestaña, tipo y texto, y un archivo diario. Las contraseñas y los tokens se tapan.
+
 ## 0.6.1 — 2026-11-19
 - Arreglado: cuando Claude escribía emojis (marcas de verificación, candados…), las tablas salían torcidas y algunas líneas perdían su primera letra, que aparecía al final de la línea anterior. La terminal cuenta ahora el ancho de los emojis igual que Claude Code y Windows Terminal.
 

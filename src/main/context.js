@@ -8,6 +8,8 @@
 // - Para que pueda leerlos sin pedir permiso, cada documento o carpeta lleva su
 //   regla Read(...) en los ajustes de la sesión (permissions.allow).
 // - Los Word se pasan a texto (Claude no lee .docx) y se guardan junto al resumen.
+// - También admite enlaces web: Claude los abre con WebFetch cuando le hacen falta,
+//   con permiso por dominio (WebFetch(domain:…)). Al añadirlos se lee el título.
 // - Si el contexto cambia con la sesión abierta, el hook UserPromptSubmit le da
 //   a Claude el resumen nuevo con el siguiente mensaje (pendingUpdate).
 const fs = require('fs');
@@ -110,14 +112,36 @@ async function countFiles(dir) {
 
 const safeName = (name) => name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80);
 
+const isLink = (item) => Boolean(item) && typeof item.url === 'string';
+
+function hostOf(url) {
+  try { return new URL(url).hostname; } catch { return ''; }
+}
+
+// Título de una página: og:title o <title>, sin entidades HTML.
+function parseTitle(html) {
+  const decode = (s) => s
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+  const og = /<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["']/i.exec(html)
+    || /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:title["']/i.exec(html);
+  const tag = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const raw = (og && og[1]) || (tag && tag[1]) || '';
+  const title = decode(raw).replace(/\s+/g, ' ').trim();
+  return title ? title.slice(0, 160) : null;
+}
+
 // Lo que se compara para saber si el contexto ha cambiado (el nombre de la pestaña no cuenta).
 function signature(context) {
   const note = String((context && context.note) || '').trim();
-  const items = ((context && context.items) || []).filter((i) => i && i.enabled !== false).map((i) => i.path);
+  const items = ((context && context.items) || []).filter((i) => i && i.enabled !== false)
+    .map((i) => (isLink(i) ? `${i.url} ${i.title || ''}` : i.path));
   return crypto.createHash('sha1').update(JSON.stringify({ note, items })).digest('hex');
 }
 
-function createContext({ app, log }) {
+function createContext({ app, net, log }) {
   const baseDir = () => path.join(app.getPath('userData'), 'contexto');
   const dirFor = (tabId) => path.join(baseDir(), String(tabId).replace(/[^\w-]/g, '_'));
   const sessions = new Map(); // pestaña → { delivered, current, text }
@@ -126,6 +150,10 @@ function createContext({ app, log }) {
   async function describe(items) {
     const list = Array.isArray(items) ? items.slice(0, MAX_ITEMS) : [];
     return Promise.all(list.map(async (item) => {
+      if (isLink(item)) {
+        const host = hostOf(item.url);
+        return { url: item.url, isLink: true, exists: Boolean(host), kind: 'web', host, name: item.title || host || item.url };
+      }
       const target = item && typeof item.path === 'string' ? item.path : '';
       const info = { path: target, name: path.basename(target.replace(/[\\/]+$/, '')) || target, exists: false, isDir: false, kind: 'archivo', size: 0, files: 0 };
       try {
@@ -161,12 +189,20 @@ function createContext({ app, log }) {
   // Resumen que recibe Claude, reglas de lectura y firma del contexto.
   async function build(tabId, tabName, context) {
     const note = String((context && context.note) || '').trim().slice(0, MAX_NOTE);
-    const enabled = ((context && context.items) || []).filter((i) => i && i.enabled !== false && typeof i.path === 'string');
+    const enabled = ((context && context.items) || []).filter((i) => i && i.enabled !== false && (isLink(i) || typeof i.path === 'string'));
     const infos = (await describe(enabled)).filter((i) => i.exists);
     const allow = [];
     const lines = [];
+    const links = [];
     let wordDir = false;
     for (const info of infos) {
+      if (info.isLink) {
+        const item = enabled.find((i) => isLink(i) && i.url === info.url);
+        links.push(`- ${info.url}${item && item.title ? ` — «${item.title}»` : ''}`);
+        const rule = `WebFetch(domain:${info.host})`;
+        if (!allow.includes(rule)) allow.push(rule);
+        continue;
+      }
       const rule = readRule(info.path, info.isDir);
       if (rule) allow.push(rule);
       if (info.isDir) {
@@ -181,7 +217,7 @@ function createContext({ app, log }) {
       }
     }
     if (wordDir) { const rule = readRule(dirFor(tabId), true); if (rule) allow.push(rule); }
-    if (!note && !lines.length) return { text: '', allow, hash: signature(context) };
+    if (!note && !lines.length && !links.length) return { text: '', allow, hash: signature(context) };
     const parts = [
       `# Contexto del proyecto «${tabName || 'sin nombre'}»`,
       'El usuario ha preparado este contexto en ClaudHome para esta pestaña. Tenlo presente durante toda la sesión.',
@@ -189,6 +225,9 @@ function createContext({ app, log }) {
     if (note) parts.push(`## Nota del usuario\n${note}`);
     if (lines.length) {
       parts.push(`## Documentos de referencia\nNo hace falta leerlos de antemano: ábrelos con la herramienta Read cuando sean relevantes para lo que te pidan.\n${lines.join('\n')}`);
+    }
+    if (links.length) {
+      parts.push(`## Enlaces de referencia\nPáginas web que el usuario considera útiles para este proyecto. No hace falta abrirlas de antemano: ábrelas con la herramienta WebFetch cuando sean relevantes.\n${links.join('\n')}`);
     }
     return { text: `${parts.join('\n\n')}\n`, allow, hash: signature(context) };
   }
@@ -234,13 +273,64 @@ function createContext({ app, log }) {
     return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext } };
   }
 
+  // Descarga el principio de una página siguiendo las redirecciones a mano: así se
+  // sabe dónde termina (net.fetch de Electron no informa de la dirección final).
+  // Usa la red de Chromium, con el proxy del sistema.
+  function download(url) {
+    return new Promise((resolve) => {
+      let finalUrl = url;
+      let hops = 0;
+      let done = false;
+      const finish = (result) => { if (!done) { done = true; clearTimeout(timer); resolve(result); } };
+      const request = net.request({ url, redirect: 'manual' });
+      const timer = setTimeout(() => { request.abort(); finish({ error: 'La página no responde.' }); }, 10000);
+      request.on('redirect', (_status, _method, redirectUrl) => {
+        hops += 1;
+        if (hops > 8) { request.abort(); finish({ error: 'Demasiadas redirecciones.' }); return; }
+        finalUrl = redirectUrl;
+        request.followRedirect();
+      });
+      request.on('response', (response) => {
+        const chunks = [];
+        let size = 0;
+        response.on('data', (chunk) => { if (size < 400000) { chunks.push(chunk); size += chunk.length; } });
+        response.on('end', () => {
+          const type = [].concat(response.headers['content-type'] || '').join(';');
+          finish({ status: response.statusCode, type, body: Buffer.concat(chunks).toString('utf8'), finalUrl });
+        });
+        response.on('error', (err) => finish({ error: `No se ha podido leer (${err.message}).` }));
+      });
+      request.on('error', (err) => finish({ error: `No se ha podido abrir (${err.message}).` }));
+      request.end();
+    });
+  }
+
+  // Al añadir un enlace: título de la página y si parece pedir iniciar sesión
+  // (en ese caso Claude no podrá leerla). Lo pide este equipo, como lo haría Claude.
+  async function linkInfo(url) {
+    let target;
+    try { target = new URL(String(url).trim()); } catch { return { ok: false, error: 'No es una dirección web válida.' }; }
+    if (!/^https?:$/.test(target.protocol)) return { ok: false, error: 'Solo se admiten enlaces http:// o https://.' };
+    const res = await download(target.href);
+    if (res.error) return { ok: false, error: res.error };
+    let title = null;
+    if (/html/i.test(res.type)) title = parseTitle(res.body);
+    else if (/pdf/i.test(res.type)) title = decodeURIComponent(new URL(res.finalUrl).pathname.split('/').pop() || '') || null;
+    const where = (() => { try { const u = new URL(res.finalUrl); return `${u.hostname}${u.pathname}`; } catch { return ''; } })();
+    const movedToLogin = res.finalUrl !== target.href && /(login|signin|sign-in|logon|auth|sso|adfs|oauth)/i.test(where);
+    const login = res.status === 401 || res.status === 403 || movedToLogin;
+    const ok = res.status >= 200 && res.status < 400 && !login;
+    // Con login o con error, el título sería el de la pantalla de acceso o de error: no sirve.
+    return { ok, status: res.status, title: ok ? title : null, finalUrl: res.finalUrl, login };
+  }
+
   // Pestaña cerrada: se borra lo generado (se rehace si se reabre desde Recientes).
   function forget(tabId) {
     sessions.delete(tabId);
     fs.rm(dirFor(tabId), { recursive: true, force: true }, () => { /* en uso */ });
   }
 
-  return { describe, build, prepare, update, pendingUpdate, forget };
+  return { describe, build, prepare, update, pendingUpdate, linkInfo, forget };
 }
 
-module.exports = { createContext, docxToText, readRule };
+module.exports = { createContext, docxToText, readRule, parseTitle };

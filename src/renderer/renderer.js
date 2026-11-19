@@ -28,24 +28,32 @@
   const SIDES = ['left', 'right'];
 
   const SVG = {
-    working: '<svg class="spin" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#3A414D" stroke-width="2"/><path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="#E7E9EC" stroke-width="2" stroke-linecap="round"/></svg>',
-    attn: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.5" fill="#FF8A65" fill-opacity="0.3"/><circle cx="8" cy="8" r="4" fill="#FF8A65"/></svg>',
-    idle: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" fill="none" stroke="#8B929D" stroke-width="1.5"/></svg>',
+    // Estado de la sesión: verde = activa (girando si trabaja, parpadeando si ha
+    // terminado sin que lo vieras), rojo parpadeando = te necesita, ámbar = se ha
+    // detenido por un error, gris girando = arrancando, punteado = sin iniciar o cerrada.
+    working: '<svg class="spin" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#3A414D" stroke-width="2"/><path d="M8 2a6 6 0 0 1 0 12" fill="none" stroke="#7FD4A0" stroke-width="2" stroke-linecap="round"/></svg>',
+    starting: '<svg class="spin" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#3A414D" stroke-width="2"/><path d="M8 2a6 6 0 0 1 0 12" fill="none" stroke="#8B929D" stroke-width="2" stroke-linecap="round"/></svg>',
+    attn: '<svg class="dot-attn" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.5" fill="#F26B6B" fill-opacity="0.28"/><circle cx="8" cy="8" r="4.2" fill="#F26B6B"/></svg>',
+    done: '<svg class="dot-attn" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.5" fill="#7FD4A0" fill-opacity="0.28"/><circle cx="8" cy="8" r="4.2" fill="#7FD4A0"/></svg>',
+    failed: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#F2B866" fill-opacity="0.22"/><circle cx="8" cy="8" r="4.2" fill="#F2B866"/></svg>',
+    idle: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#7FD4A0" fill-opacity="0.18"/><circle cx="8" cy="8" r="4.2" fill="#7FD4A0"/></svg>',
     off: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" fill="none" stroke="#8B929D" stroke-width="1.5" stroke-dasharray="2.4 2.4"/></svg>',
     close: '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg>',
     update: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8.5M4.5 7L8 10.5 11.5 7M2.5 13.5h11"/></svg>',
     terminal: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4.5 6l2.5 2-2.5 2M8.5 10.5h3"/></svg>',
   };
 
-  // El color distingue la pestaña; la forma del icono, su estado.
+  // El color de la pestaña la distingue; el punto, su estado. «tone» marca los estados
+  // que piden que mires la pestaña (y con qué color se escribe su nombre en la cabecera).
   const STATUS = {
     asleep: { icon: 'off', label: 'Sin iniciar' },
-    starting: { icon: 'idle', label: 'Iniciando' },
-    idle: { icon: 'idle', label: 'En reposo' },
+    starting: { icon: 'starting', label: 'Iniciando' },
+    idle: { icon: 'idle', label: 'Activa, esperando tu mensaje' },
     working: { icon: 'working', label: 'Trabajando' },
-    needs: { icon: 'attn', label: 'Te necesita' },
-    done: { icon: 'attn', label: 'Ha terminado' },
-    closing: { icon: 'working', label: 'Guardando su estado para cerrar' },
+    needs: { icon: 'attn', label: 'Te necesita', tone: 'alert' },
+    done: { icon: 'done', label: 'Ha terminado', tone: 'done' },
+    failed: { icon: 'failed', label: 'Se ha detenido por un error', tone: 'warn' },
+    closing: { icon: 'starting', label: 'Guardando su estado para cerrar' },
     exited: { icon: 'off', label: 'Sesión cerrada' },
   };
 
@@ -91,7 +99,7 @@
   const fontSizeFor = (zoom) => Math.max(8, Math.round(BASE_FONT * (zoom || 1)));
   const visibleIds = () => (S.split ? [S.split.left, S.split.right] : S.activeId ? [S.activeId] : []);
   const isWatched = (view) => winFocused && visibleIds().includes(view.tab.id);
-  const dialogOpen = () => $('#dlg-new').open || $('#dlg-update').open;
+  const dialogOpen = () => $('#dlg-new').open || $('#dlg-update').open || $('#dlg-log').open;
 
   function newId() {
     if (crypto.randomUUID) return crypto.randomUUID();
@@ -557,12 +565,35 @@
     ctx.note = typeof raw.note === 'string' ? raw.note.slice(0, 8000) : '';
     const seen = new Set();
     for (const item of Array.isArray(raw.items) ? raw.items : []) {
-      if (!item || typeof item.path !== 'string' || !item.path || seen.has(item.path.toLowerCase())) continue;
-      seen.add(item.path.toLowerCase());
-      ctx.items.push({ path: item.path, enabled: item.enabled !== false });
+      if (!item) continue;
+      if (typeof item.url === 'string') {
+        // Enlace web: { url, title, warning, enabled }.
+        const url = webUrl(item.url);
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        ctx.items.push({
+          url,
+          title: typeof item.title === 'string' ? item.title.slice(0, 160) : null,
+          warning: item.warning === 'login' || item.warning === 'error' ? item.warning : null,
+          enabled: item.enabled !== false,
+        });
+      } else if (typeof item.path === 'string' && item.path && !seen.has(item.path.toLowerCase())) {
+        seen.add(item.path.toLowerCase());
+        ctx.items.push({ path: item.path, enabled: item.enabled !== false });
+      }
       if (ctx.items.length >= MAX_CONTEXT_ITEMS) break;
     }
     return ctx;
+  }
+
+  // La dirección normalizada si es un enlace http(s); si no, null.
+  function webUrl(text) {
+    try {
+      const url = new URL(String(text).trim());
+      return /^https?:$/.test(url.protocol) ? url.href : null;
+    } catch {
+      return null;
+    }
   }
 
   function ensureContext(tab) {
@@ -584,6 +615,17 @@
     return [...e.dataTransfer.files].map((file) => api.pathForFile(file)).filter(Boolean);
   }
 
+  // Un enlace arrastrado desde el navegador.
+  function hasLink(e) {
+    return Boolean(e.dataTransfer) && [...e.dataTransfer.types].includes('text/uri-list');
+  }
+
+  function droppedLinks(e) {
+    const list = (e.dataTransfer.getData('text/uri-list') || '').split(/\r?\n/).map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
+    const plain = (e.dataTransfer.getData('text/plain') || '').trim();
+    return (list.length ? list : [plain]).map(webUrl).filter(Boolean);
+  }
+
   const CTX_HOW = {
     carpeta: 'Claude puede leer todo lo que hay dentro',
     PDF: 'Claude lo lee cuando le hace falta',
@@ -591,9 +633,11 @@
     imagen: 'Claude la mira cuando le hace falta',
     texto: 'Claude lo lee cuando le hace falta',
     archivo: 'Claude intentará abrirlo con sus herramientas',
+    web: 'Claude la abre cuando le hace falta',
   };
   const CTX_KIND = { PDF: 'PDF', Word: 'Word', imagen: 'Imagen', texto: 'Texto' };
   const FOLDER_ICON = '<svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4.5h4.2l1.3 1.6h7.5v6.9h-13z"/></svg>';
+  const WEB_ICON = '<svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c1.9 1.8 2.8 3.9 2.8 6.3S9.9 12.5 8 14.3M8 1.7C6.1 3.5 5.2 5.6 5.2 8s.9 4.5 2.8 6.3"/></svg>';
   const MISSING_ICON = '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.8M8 11.1v.1"/></svg>';
 
   function buildContextPanel(view) {
@@ -624,16 +668,45 @@
       ensureContext(view.tab).note = view.ctxNote.value;
       contextChanged(view, false);
     });
-    view.ctxDocsLabel = el('div', 'ctx-label', 'Documentos');
+    view.ctxDocsLabel = el('div', 'ctx-label', 'Documentos y enlaces');
     view.ctxItems = el('div', 'ctx-items');
     const drop = el('div', 'ctx-drop');
     const row = el('div', 'ctx-drop-row');
     const addFiles = el('button', 'btn', 'Añadir archivos…');
     const addFolder = el('button', 'btn', 'Añadir carpeta…');
+    const addLink = el('button', 'btn', 'Añadir enlace…');
     addFiles.addEventListener('click', async () => addToContext(view, await api.contextPick('files')));
     addFolder.addEventListener('click', async () => addToContext(view, await api.contextPick('folder')));
-    row.append(addFiles, addFolder);
-    drop.append(el('span', '', 'Arrastra aquí archivos o carpetas'), row);
+    row.append(addFiles, addFolder, addLink);
+    // Campo para escribir o pegar la dirección de una página web.
+    const linkForm = el('form', 'ctx-link-form');
+    linkForm.hidden = true;
+    linkForm.noValidate = true;
+    const linkInput = el('input');
+    linkInput.type = 'url';
+    linkInput.placeholder = 'https://…';
+    linkInput.spellcheck = false;
+    linkInput.setAttribute('aria-label', 'Dirección de la página web');
+    const linkOk = el('button', 'btn', 'Añadir');
+    linkOk.type = 'submit';
+    const linkCancel = el('button', 'btn', 'Cancelar');
+    linkCancel.type = 'button';
+    linkForm.append(linkInput, linkOk, linkCancel);
+    const closeLinkForm = () => { linkForm.hidden = true; row.hidden = false; };
+    addLink.addEventListener('click', () => {
+      row.hidden = true;
+      linkForm.hidden = false;
+      linkInput.value = '';
+      linkInput.focus();
+    });
+    linkCancel.addEventListener('click', closeLinkForm);
+    linkInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeLinkForm(); } });
+    linkForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (addLinks(view, linkInput.value.split(/\s+/).filter(Boolean))) closeLinkForm();
+      else linkInput.focus();
+    });
+    drop.append(el('span', '', 'Arrastra aquí archivos, carpetas o enlaces'), row, linkForm);
     body.append(noteLabel, view.ctxNote, view.ctxDocsLabel, view.ctxItems, drop);
 
     // Vista alternativa: el texto exacto que recibe Claude.
@@ -657,20 +730,21 @@
 
     panel.append(head, body, sent, foot);
 
-    // Soltar archivos o carpetas sobre el panel los añade.
+    // Soltar archivos, carpetas o enlaces (desde el navegador) sobre el panel los añade.
     panel.addEventListener('dragover', (e) => {
-      if (!hasFiles(e)) return;
+      if (!hasFiles(e) && !hasLink(e)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       panel.classList.add('drag');
     });
     panel.addEventListener('dragleave', (e) => { if (!panel.contains(e.relatedTarget)) panel.classList.remove('drag'); });
     panel.addEventListener('drop', (e) => {
-      if (!hasFiles(e)) return;
+      if (!hasFiles(e) && !hasLink(e)) return;
       e.preventDefault();
       e.stopPropagation();
       panel.classList.remove('drag');
-      addToContext(view, droppedPaths(e));
+      if (hasFiles(e)) addToContext(view, droppedPaths(e));
+      else addLinks(view, droppedLinks(e));
     });
     return panel;
   }
@@ -721,7 +795,7 @@
     const list = (paths || []).filter((p) => typeof p === 'string' && p);
     if (!list.length) return;
     const ctx = ensureContext(view.tab);
-    const have = new Set(ctx.items.map((i) => i.path.toLowerCase()));
+    const have = new Set(ctx.items.filter((i) => i.path).map((i) => i.path.toLowerCase()));
     let added = 0;
     for (const p of list) {
       if (have.has(p.toLowerCase()) || ctx.items.length >= MAX_CONTEXT_ITEMS) continue;
@@ -735,13 +809,48 @@
       : added === 1 ? 'Añadido al contexto del proyecto.' : `${added} elementos añadidos al contexto del proyecto.`);
   }
 
+  // Añade enlaces web. Devuelve false si alguno no era una dirección válida.
+  function addLinks(view, texts) {
+    const ctx = ensureContext(view.tab);
+    const have = new Set(ctx.items.filter((i) => i.url).map((i) => i.url));
+    const added = [];
+    let invalid = 0;
+    for (const text of texts || []) {
+      const url = webUrl(text);
+      if (!url) { invalid += 1; continue; }
+      if (have.has(url) || ctx.items.length >= MAX_CONTEXT_ITEMS) continue;
+      const item = { url, title: null, warning: null, enabled: true };
+      ctx.items.push(item);
+      have.add(url);
+      added.push(item);
+    }
+    if (!added.length) {
+      toast(invalid ? 'Eso no es una dirección web: tiene que empezar por http:// o https://.' : 'Ese enlace ya estaba en el contexto del proyecto.');
+      return invalid === 0;
+    }
+    contextChanged(view);
+    if (!view.tab.contextOpen) toggleContext(view, true);
+    toast((added.length === 1 ? 'Enlace añadido al contexto del proyecto.' : `${added.length} enlaces añadidos al contexto del proyecto.`)
+      + (invalid ? ` ${invalid === 1 ? 'Uno no era' : `${invalid} no eran`} una dirección web y no se ha añadido.` : ''));
+    // Título de cada página y aviso si pide iniciar sesión (Claude no podría leerla).
+    for (const item of added) {
+      api.contextLink(item.url).then((info) => {
+        if (!info) return;
+        item.title = info.title || null;
+        item.warning = info.login ? 'login' : info.ok ? null : 'error';
+        contextChanged(view);
+      }).catch(() => { /* sin título */ });
+    }
+    return invalid === 0;
+  }
+
   async function renderContextItems(view) {
     const ctx = ensureContext(view.tab);
     const token = (view.ctxToken || 0) + 1;
     view.ctxToken = token;
-    view.ctxDocsLabel.textContent = ctx.items.length ? `Documentos · ${ctx.items.length}` : 'Documentos';
+    view.ctxDocsLabel.textContent = ctx.items.length ? `Documentos y enlaces · ${ctx.items.length}` : 'Documentos y enlaces';
     if (!ctx.items.length) {
-      view.ctxItems.replaceChildren(el('p', 'ctx-empty', 'Todavía no hay documentos. Añade PDF, Word, imágenes, textos o carpetas que ayuden a Claude a entender el proyecto.'));
+      view.ctxItems.replaceChildren(el('p', 'ctx-empty', 'Todavía no hay nada. Añade PDF, Word, imágenes, textos, carpetas o enlaces web que ayuden a Claude a entender el proyecto.'));
       return;
     }
     let infos = [];
@@ -752,17 +861,26 @@
 
   function contextCard(view, item, info) {
     const on = item.enabled !== false;
+    const target = item.url || item.path; // dirección web o ruta del archivo
     const card = el('div', 'ctx-item');
     card.classList.toggle('off', !on);
     card.classList.toggle('missing', !info.exists);
-    card.title = info.exists ? `${item.path}\nDoble clic para abrirlo` : item.path;
+    card.title = info.exists ? `${target}\n${item.url ? 'Doble clic para abrirla en el navegador' : 'Doble clic para abrirlo'}` : target;
     const thumb = el('div', 'ctx-thumb');
     const meta = el('span', 'ctx-meta');
     const how = el('span', 'ctx-how');
     const body = el('div', 'ctx-info');
-    body.append(el('strong', '', info.name || item.path), meta, how);
+    body.append(el('strong', '', info.name || target), meta, how);
 
-    if (!info.exists) {
+    if (info.isLink) {
+      thumb.innerHTML = WEB_ICON;
+      thumb.dataset.kind = 'web';
+      meta.textContent = `Web · ${info.host}`;
+      const warning = item.warning === 'login' ? 'Parece que pide iniciar sesión: Claude no podrá leerla.'
+        : item.warning === 'error' ? 'No se ha podido abrir desde aquí; puede que Claude tampoco.' : '';
+      card.classList.toggle('missing', Boolean(warning));
+      how.textContent = !on ? 'Desactivado: Claude no la recibe' : warning || CTX_HOW.web;
+    } else if (!info.exists) {
       thumb.innerHTML = MISSING_ICON;
       thumb.dataset.kind = 'missing';
       meta.textContent = 'No encontrado';
@@ -801,13 +919,13 @@
     const toggle = el('button', 'ctx-switch');
     toggle.setAttribute('role', 'switch');
     toggle.setAttribute('aria-checked', String(on));
-    toggle.setAttribute('aria-label', `${on ? 'Desactivar' : 'Activar'} ${info.name || item.path}`);
+    toggle.setAttribute('aria-label', `${on ? 'Desactivar' : 'Activar'} ${info.name || target}`);
     toggle.title = on ? 'Activado: Claude lo recibe. Pulsa para desactivarlo sin quitarlo.' : 'Desactivado. Pulsa para activarlo.';
     toggle.addEventListener('click', () => { item.enabled = !on; contextChanged(view); });
     const remove = el('button', 'ctx-remove');
     remove.innerHTML = SVG.close;
     remove.title = 'Quitar del contexto';
-    remove.setAttribute('aria-label', `Quitar ${info.name || item.path} del contexto`);
+    remove.setAttribute('aria-label', `Quitar ${info.name || target} del contexto`);
     remove.addEventListener('click', () => {
       const ctx = ensureContext(view.tab);
       ctx.items = ctx.items.filter((x) => x !== item);
@@ -815,7 +933,7 @@
     });
     side.append(toggle, remove);
     card.append(thumb, body, side);
-    if (info.exists) card.addEventListener('dblclick', (e) => { if (!e.target.closest('button')) api.openPath(item.path); });
+    if (info.exists) card.addEventListener('dblclick', (e) => { if (!e.target.closest('button')) api.openPath(target); });
     return card;
   }
 
@@ -829,13 +947,13 @@
       node.append(el('strong', '', title), el('span', '', text));
       return node;
     };
-    const pasteZone = zone('Pegar en el mensaje', 'Como siempre: la ruta (o la imagen) va en lo que estás escribiendo, solo para esta pregunta.');
+    const pasteZone = zone('Pegar en el mensaje', 'Como siempre: la ruta, la imagen o el enlace va en lo que estás escribiendo, solo para esta pregunta.');
     const ctxZone = zone('Añadir al contexto del proyecto', 'Se queda guardado en esta pestaña y Claude lo tendrá presente en todas las sesiones.');
     overlay.append(pasteZone, ctxZone);
     wrap.append(overlay);
     let hideTimer = null;
     wrap.addEventListener('dragover', (e) => {
-      if (!hasFiles(e)) return;
+      if (!hasFiles(e) && !hasLink(e)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       overlay.hidden = false;
@@ -847,13 +965,22 @@
       hideTimer = setTimeout(() => { overlay.hidden = true; }, 250);
     });
     wrap.addEventListener('drop', (e) => {
-      if (!hasFiles(e)) return;
+      if (!hasFiles(e) && !hasLink(e)) return;
       e.preventDefault();
       clearTimeout(hideTimer);
       overlay.hidden = true;
+      const target = e.target instanceof Element ? e.target.closest('.drop-zone') : null;
+      if (!hasFiles(e)) {
+        // Un enlace arrastrado desde el navegador.
+        const links = droppedLinks(e);
+        if (!links.length) return;
+        if (target === ctxZone) { addLinks(view, links); return; }
+        view.term.paste(`${links.join(' ')} `);
+        view.term.focus();
+        return;
+      }
       const files = droppedPaths(e);
       if (!files.length) return;
-      const target = e.target instanceof Element ? e.target.closest('.drop-zone') : null;
       if (target === ctxZone) { addToContext(view, files); return; }
       const before = imageLabelCounts(view.term);
       view.term.paste(joinPaths(files));
@@ -982,6 +1109,7 @@
     view.exited = false;
     view.startedAt = Date.now();
     view.images = new Map(); // otra sesión de Claude: su numeración de imágenes empieza de nuevo
+    view.usage = null; // llenado de la conversación: llega con la línea de estado
     setStatus(view, 'starting');
     // Una misma conversación no se abre en dos pestañas a la vez.
     const exclude = S.tabs.filter((t) => t.id !== tab.id && t.sessionId).map((t) => t.sessionId);
@@ -1074,7 +1202,7 @@
       return;
     }
     // La herramienta se entrega al arrancar Claude: las sesiones ya abiertas no la tienen.
-    const idle = [...views.values()].filter((v) => v.started && !v.codex && !v.closing && (v.status === 'idle' || v.status === 'done'));
+    const idle = [...views.values()].filter((v) => v.started && !v.codex && !v.closing && ['idle', 'done', 'failed'].includes(v.status));
     const busy = [...views.values()].filter((v) => v.started && !v.codex && !idle.includes(v)).length;
     if (!idle.length) {
       toast(busy ? 'Imágenes con Codex activadas. Las sesiones que están trabajando lo tendrán cuando las reinicies.' : 'Imágenes con Codex activadas.');
@@ -1370,6 +1498,117 @@
     focusTerminal();
   }
 
+  // ── «Log»: lo que sale de este equipo ────────────────────────────
+  // El proceso principal (netlog.js) apunta lo que ha visto Claude (se envía a
+  // Anthropic) y lo que sale directamente hacia internet; aquí se muestra,
+  // filtrado por pestaña, tipo o texto.
+
+  const netlog = []; // entradas, de la más antigua a la más nueva
+  const logFilter = { scope: 'tab', kind: '', text: '' };
+  let logTimer = null;
+
+  function netlogAdd(entry) {
+    if (!entry || typeof entry.id !== 'number') return;
+    const index = netlog.findIndex((e) => e.id === entry.id);
+    if (index >= 0) netlog[index] = entry;
+    else {
+      netlog.push(entry);
+      if (netlog.length > 3000) netlog.splice(0, netlog.length - 3000);
+    }
+    // Se repinta como mucho cuatro veces por segundo.
+    if (logTimer) return;
+    logTimer = setTimeout(() => {
+      logTimer = null;
+      renderToolbar();
+      if ($('#dlg-log').open) renderLog();
+    }, 250);
+  }
+
+  const logEntriesOf = (tabId) => netlog.filter((e) => e.tabId === tabId);
+  const clock = (ms) => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // ¿Pasa el filtro de tipo? «Hacia internet» = sale directamente a internet;
+  // «Archivos» incluye las búsquedas en archivos; «Webs y búsquedas», las de internet.
+  function logKindMatches(entry, kind) {
+    if (!kind) return true;
+    if (kind === 'external') return entry.external;
+    if (kind === 'archivo') return entry.kind === 'archivo' || entry.kind === 'grep';
+    if (kind === 'web') return entry.kind === 'web' || entry.kind === 'busqueda';
+    return entry.kind === kind;
+  }
+
+  const logSize = (bytes) => (!bytes ? '' : bytes < 1024 ? '< 1 KB' : `≈ ${formatSize(bytes)}`);
+
+  function renderLog() {
+    const tab = byId(S.activeId);
+    const words = logFilter.text.trim().toLowerCase();
+    const rows = netlog.filter((e) => (logFilter.scope === 'all' || (tab && e.tabId === tab.id))
+      && logKindMatches(e, logFilter.kind)
+      && (!words || `${e.tabName} ${e.what} ${e.target} ${e.detail} ${e.dest}`.toLowerCase().includes(words)));
+    const shown = rows.slice(-1000).reverse(); // las más nuevas arriba
+    $('#log-rows').replaceChildren(...shown.map((e) => {
+      const tr = el('tr');
+      tr.dataset.kind = e.kind;
+      tr.classList.toggle('external', Boolean(e.external));
+      const time = el('td', 'c-time', clock(e.time));
+      if (e.count > 1) {
+        time.append(el('span', 'log-times', ` ×${e.count}`));
+        time.title = `${e.count} veces; la última a las ${clock(e.last)}`;
+      }
+      const kind = el('td', 'c-kind');
+      kind.append(el('span', 'log-kind', e.what));
+      const target = el('td', 'c-target', e.target);
+      target.title = e.detail ? `${e.target}\n${e.detail}` : e.target;
+      const dest = el('td', 'c-dest', e.dest);
+      dest.title = e.external ? 'Sale directamente a internet y, además, Claude recibe el resultado' : 'Claude recibe el resultado y lo envía a Anthropic con la conversación';
+      tr.append(time, el('td', 'c-tab', e.tabName), kind, target, dest, el('td', 'c-size', logSize(e.size)));
+      return tr;
+    }));
+    const empty = $('#log-empty');
+    empty.hidden = rows.length > 0;
+    empty.textContent = netlog.length
+      ? 'No hay nada que coincida con el filtro.'
+      : 'Claude todavía no ha usado ninguna herramienta desde que se abrió ClaudHome.';
+    const bytes = rows.reduce((sum, e) => sum + (e.size || 0), 0);
+    $('#log-count').textContent = `${rows.length === 1 ? '1 entrada' : `${rows.length} entradas`}${bytes ? ` · ${logSize(bytes)} en total` : ''}`;
+    $('#dlg-log-title').textContent = logFilter.scope === 'all' || !tab ? 'Lo que sale de este equipo' : `Lo que sale de este equipo · ${tab.name}`;
+  }
+
+  function openLog() {
+    const dialog = $('#dlg-log');
+    if (!byId(S.activeId)) logFilter.scope = 'all';
+    for (const b of dialog.querySelectorAll('[data-scope]')) b.setAttribute('aria-pressed', String(b.dataset.scope === logFilter.scope));
+    for (const b of dialog.querySelectorAll('[data-kind]')) b.setAttribute('aria-pressed', String(b.dataset.kind === logFilter.kind));
+    $('#log-search').value = logFilter.text;
+    renderLog();
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function wireLog() {
+    const dialog = $('#dlg-log');
+    $('#btn-log').addEventListener('click', openLog);
+    $('#log-close').addEventListener('click', () => dialog.close());
+    $('#log-file').addEventListener('click', () => api.netlogOpenFile());
+    dialog.addEventListener('close', () => requestAnimationFrame(focusTerminal));
+    dialog.addEventListener('click', (e) => {
+      const scope = e.target.closest('[data-scope]');
+      const kind = e.target.closest('[data-kind]');
+      if (scope) {
+        logFilter.scope = scope.dataset.scope;
+        for (const b of dialog.querySelectorAll('[data-scope]')) b.setAttribute('aria-pressed', String(b === scope));
+        renderLog();
+      } else if (kind) {
+        logFilter.kind = kind.dataset.kind;
+        for (const b of dialog.querySelectorAll('[data-kind]')) b.setAttribute('aria-pressed', String(b === kind));
+        renderLog();
+      }
+    });
+    $('#log-search').addEventListener('input', (e) => { logFilter.text = e.target.value; renderLog(); });
+    api.onNetlogEntry(netlogAdd);
+    api.onNetlogUpdate(netlogAdd);
+    api.netlogGet().then((list) => { for (const entry of list || []) netlogAdd(entry); }).catch(() => { /* sin registro */ });
+  }
+
   // ── Arcoíris del nombre ──────────────────────────────────────────
   // Cada 3 minutos, o al pulsar sobre el nombre, un arcoíris suave lo recorre.
   // Con «reducir animaciones» activado en Windows no se muestra.
@@ -1427,15 +1666,20 @@
 
   function finished(view, failed) {
     if (view.closing) return;
-    if (isWatched(view)) { setStatus(view, 'idle'); return; }
     const was = view.status;
+    if (failed) {
+      // Un error (fallo de la API, límite de uso…) queda en ámbar hasta tu siguiente
+      // mensaje, aunque estés viendo la pestaña.
+      setStatus(view, 'failed');
+      if (was !== 'failed' && !isWatched(view)) {
+        api.notify({ tabId: view.tab.id, title: `${view.tab.name} se ha detenido`, body: 'Claude no ha podido completar la respuesta por un error.' });
+      }
+      return;
+    }
+    if (isWatched(view)) { setStatus(view, 'idle'); return; }
     setStatus(view, 'done');
     if (was === 'done') return;
-    api.notify({
-      tabId: view.tab.id,
-      title: failed ? `${view.tab.name} se ha detenido` : `${view.tab.name} ha terminado`,
-      body: failed ? 'Claude no ha podido completar la respuesta.' : 'Claude ha terminado y espera tu siguiente mensaje.',
-    });
+    api.notify({ tabId: view.tab.id, title: `${view.tab.name} ha terminado`, body: 'Claude ha terminado y espera tu siguiente mensaje.' });
   }
 
   // Lo que ya estás viendo deja de marcarse como pendiente.
@@ -1525,14 +1769,19 @@
     const hex = colorHex(tab.color);
     if (hex) node.style.setProperty('--c', hex);
     node.classList.toggle('shown', shown);
-    node.classList.toggle('attn', st.icon === 'attn');
+    node.classList.toggle('attn', Boolean(st.tone));
 
     const main = el('button', 'tab-main');
     main.setAttribute('role', 'tab');
     main.setAttribute('aria-selected', String(tab.id === S.activeId));
-    main.setAttribute('aria-label', `${tab.name}, ${st.label.toLowerCase()}`);
-    main.title = `${tab.name} · ${st.label}\n${tab.cwd}`;
+    const usage = view && view.usage && view.usage.pct !== null ? view.usage : null;
+    main.setAttribute('aria-label', `${tab.name}, ${st.label.toLowerCase()}${usage ? `, conversación al ${usage.pct} %` : ''}`);
+    main.title = `${tab.name} · ${st.label}\n${tab.cwd}${usage ? `\n${usageText(usage)}` : ''}`;
     main.innerHTML = SVG[st.icon];
+    // Los puntos de «te necesita» y «ha terminado» parpadean. La fase sale del reloj
+    // para que no vuelva a empezar cada vez que se repintan las pestañas.
+    const attnDot = main.querySelector('.dot-attn');
+    if (attnDot) attnDot.style.animationDelay = `-${Date.now() % 1200}ms`;
     main.append(el('span', 'tab-name', tab.name));
 
     const close = el('button', 'tab-close');
@@ -1541,7 +1790,25 @@
     close.innerHTML = SVG.close;
 
     node.append(main, close);
+    // Barrita de llenado de la conversación, en la parte de abajo de la pestaña.
+    if (usage) {
+      const bar = el('span', 'tab-usage');
+      bar.dataset.level = usageLevel(usage.pct);
+      const fill = el('i');
+      fill.style.width = `${clamp(usage.pct, 0, 100)}%`;
+      bar.append(fill);
+      node.append(bar);
+    }
     return node;
+  }
+
+  // Cuánto ocupa la conversación: «bajo» hasta el 60 %, «medio» hasta el 85 %, «alto» después.
+  const usageLevel = (pct) => (pct >= 85 ? 'high' : pct >= 60 ? 'mid' : 'low');
+  const nf = new Intl.NumberFormat('es-ES');
+
+  function usageText(usage) {
+    const tokens = usage.used !== null ? ` (${nf.format(usage.used)} de ${nf.format(usage.size)} tokens)` : '';
+    return `Conversación: ${usage.pct} % del contexto${tokens}`;
   }
 
   function renderTabs() {
@@ -1565,6 +1832,9 @@
     $('#tb-path').title = tab.cwd;
     $('#btn-terminal').setAttribute('aria-pressed', String(Boolean(tab.extraOpen)));
     $('#btn-context').setAttribute('aria-pressed', String(Boolean(tab.contextOpen)));
+    const logCount = logEntriesOf(tab.id).length;
+    $('#log-badge').hidden = logCount === 0;
+    $('#log-badge').textContent = logCount > 999 ? '999+' : String(logCount);
     const ctxCount = contextCount(tab);
     $('#ctx-count').hidden = ctxCount === 0;
     $('#ctx-count').textContent = String(ctxCount);
@@ -1584,7 +1854,8 @@
       pane.el.classList.toggle('focused', Boolean(S.split) && S.focusSide === side);
       if (!view) { pane.head.replaceChildren(); continue; }
       const st = STATUS[view.status];
-      const status = el('span', `ph-status${st.icon === 'attn' ? ' attn' : ''}`);
+      const status = el('span', 'ph-status');
+      if (st.tone) status.dataset.tone = st.tone;
       status.innerHTML = SVG[st.icon];
       status.append(st.label);
       pane.head.replaceChildren(
@@ -1600,10 +1871,13 @@
     let working = 0;
     let waiting = 0;
     let attn = 0;
+    let done = 0;
+    let failed = 0;
     for (const view of views.values()) {
       if (view.status === 'working' || view.status === 'closing') working += 1;
-      if (view.status === 'needs') waiting += 1;
-      if (view.status === 'needs' || view.status === 'done') attn += 1;
+      if (view.status === 'needs') { waiting += 1; attn += 1; }
+      if (view.status === 'done') done += 1;
+      if (view.status === 'failed') failed += 1;
     }
     const n = S.tabs.length;
     $('#sb-count').textContent = n === 0 ? 'Sin sesiones abiertas' : n === 1 ? '1 sesión abierta' : `${n} sesiones abiertas`;
@@ -1618,10 +1892,32 @@
     attnEl.innerHTML = SVG.attn;
     attnEl.append(attn === 1 ? '1 te necesita' : `${attn} te necesitan`);
 
+    const doneEl = $('#sb-done');
+    doneEl.hidden = done === 0;
+    doneEl.innerHTML = SVG.done;
+    doneEl.append(done === 1 ? '1 ha terminado' : `${done} han terminado`);
+
+    const failedEl = $('#sb-failed');
+    failedEl.hidden = failed === 0;
+    failedEl.innerHTML = SVG.failed;
+    failedEl.append(failed === 1 ? '1 con error' : `${failed} con error`);
+
     const tab = byId(S.activeId);
     const zoom = $('#sb-zoom');
     zoom.hidden = !tab;
     if (tab) zoom.textContent = `${Math.round((tab.zoom || 1) * 100)} %`;
+
+    // Llenado de la conversación de la pestaña activa.
+    const activeView = tab && views.get(tab.id);
+    const usage = activeView && activeView.usage && activeView.usage.pct !== null ? activeView.usage : null;
+    const usageEl = $('#sb-usage');
+    usageEl.hidden = !usage;
+    if (usage) {
+      usageEl.dataset.level = usageLevel(usage.pct);
+      $('#sb-usage-fill').style.width = `${clamp(usage.pct, 0, 100)}%`;
+      $('#sb-usage-text').textContent = `Conversación ${usage.pct} %`;
+      usageEl.title = `${usageText(usage)}.\nCuanto más llena, peor rinde Claude y más gasta: /compact la resume y sigue, /clear empieza de cero.`;
+    }
     $('#sb-hint').textContent = S.split
       ? 'Ctrl+Alt+flechas cambia de lado · Ctrl+Tab cambia de pestaña'
       : 'Ctrl+Tab cambia de pestaña · Ctrl+1…9 va directa';
@@ -2337,6 +2633,17 @@
           const view = views.get(S.activeId);
           if (view) addToContext(view, paths);
         },
+        addLinks: (urls) => {
+          const view = views.get(S.activeId);
+          return view ? addLinks(view, urls) : false;
+        },
+        // Pone una pestaña en un estado, para ver cómo se pinta.
+        showStatus: (index, status) => {
+          const tab = S.tabs[index];
+          const view = tab && views.get(tab.id);
+          if (view) setStatus(view, status);
+          return Boolean(view);
+        },
       };
     }
     restore(await api.loadState());
@@ -2350,6 +2657,7 @@
 
     wireChrome();
     wireRainbow();
+    wireLog();
     wireTabs();
     wireDialog();
     wireKeyboard();
@@ -2357,6 +2665,13 @@
     api.onPtyData((id, data) => { const term = terms.get(id); if (term) term.write(data); });
     api.onPtyExit(onPtyExit);
     api.onHook(onHook);
+    api.onUsage((tabId, usage) => {
+      const view = views.get(tabId);
+      if (!view) return;
+      view.usage = usage;
+      renderTabs();
+      renderStatusbar();
+    });
     api.onNotifyClick((tabId) => { if (byId(tabId)) activate(tabId); });
     api.onCodexChanged(renderCodex);
     api.codexStatus(false).then(renderCodex).catch(() => { /* sin indicador hasta la próxima comprobación */ });

@@ -67,6 +67,11 @@
       Contexto
       <span id="ctx-count" class="count" hidden></span>
     </button>
+    <button id="btn-log" class="btn" title="Log: lo que ha visto Claude en esta pestaña (y por tanto se ha enviado a Anthropic) y lo que ha salido directamente hacia internet">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c1.9 1.8 2.8 3.9 2.8 6.3S9.9 12.5 8 14.3M8 1.7C6.1 3.5 5.2 5.6 5.2 8s.9 4.5 2.8 6.3"/></svg>
+      Log
+      <span id="log-badge" class="count" hidden></span>
+    </button>
     <button id="btn-terminal" class="btn" aria-pressed="false" title="Mostrar u ocultar la terminal (Ctrl+ñ)">
       <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4.5 6l2.5 2-2.5 2M8.5 10.5h3"/></svg>
       Terminal
@@ -106,8 +111,11 @@
     <span id="sb-count"></span>
     <span id="sb-working" class="sb-item" hidden></span>
     <span id="sb-attn" class="sb-item sb-attn" hidden></span>
+    <span id="sb-done" class="sb-item sb-done" hidden></span>
+    <span id="sb-failed" class="sb-item sb-failed" hidden></span>
   </div>
   <div class="sb-right">
+    <span id="sb-usage" class="sb-usage" hidden><span class="sb-meter" aria-hidden="true"><i id="sb-usage-fill"></i></span><span id="sb-usage-text"></span></span>
     <button id="sb-debug" aria-pressed="false" hidden></button>
     <button id="sb-zoom" title="Tamaño del texto de esta pestaña. Ctrl + y Ctrl − lo cambian; pulsa para volver al 100 %." hidden></button>
     <span id="sb-hint">Ctrl+Tab cambia de pestaña · Ctrl+1…9 va directa</span>
@@ -159,6 +167,47 @@
       <button id="f-submit" type="submit" class="btn btn-primary">Abrir sesión</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="dlg-log" aria-labelledby="dlg-log-title">
+  <div class="dlg-log">
+    <div class="log-head">
+      <div class="log-titles">
+        <h1 id="dlg-log-title">Lo que sale de este equipo</h1>
+        <p>Todo lo que ve Claude se envía a Anthropic como parte de la conversación: archivos que lee, salidas de comandos y respuestas de los servidores MCP. Además, algunas herramientas salen directamente a internet: páginas web, búsquedas, MCP remotos y comandos con red.</p>
+      </div>
+      <button id="log-close" type="button" class="icon-btn" aria-label="Cerrar" title="Cerrar (Esc)">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg>
+      </button>
+    </div>
+    <div class="log-filters">
+      <div class="log-group" role="group" aria-label="Qué pestañas">
+        <button type="button" data-scope="tab" aria-pressed="true">Esta pestaña</button>
+        <button type="button" data-scope="all" aria-pressed="false">Todas</button>
+      </div>
+      <div class="log-group" role="group" aria-label="Qué mostrar">
+        <button type="button" data-kind="" aria-pressed="true">Todo</button>
+        <button type="button" data-kind="external" aria-pressed="false">Hacia internet</button>
+        <button type="button" data-kind="archivo" aria-pressed="false">Archivos</button>
+        <button type="button" data-kind="comando" aria-pressed="false">Comandos</button>
+        <button type="button" data-kind="mcp" aria-pressed="false">MCP</button>
+        <button type="button" data-kind="web" aria-pressed="false">Webs y búsquedas</button>
+      </div>
+      <input id="log-search" type="search" placeholder="Buscar…" spellcheck="false" aria-label="Buscar en el registro">
+    </div>
+    <div class="log-table-wrap">
+      <table class="log-table">
+        <thead><tr><th class="c-time">Hora</th><th class="c-tab">Pestaña</th><th class="c-kind">Tipo</th><th class="c-target">Qué</th><th class="c-dest">Sale hacia</th><th class="c-size">Tamaño</th></tr></thead>
+        <tbody id="log-rows"></tbody>
+      </table>
+      <p id="log-empty" class="log-empty" hidden></p>
+    </div>
+    <div class="log-foot">
+      <span id="log-count"></span>
+      <span class="log-note">Se apunta cuando la herramienta termina. El tamaño es aproximado: lo que recibió Claude de la herramienta. Las contraseñas y los tokens de los comandos y direcciones se tapan.</span>
+      <button id="log-file" type="button" class="btn">Abrir el archivo del registro</button>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="dlg-update" aria-labelledby="dlg-update-title">

@@ -13,6 +13,7 @@ const codex = require('./codex');
 const { Updater } = require('./updater');
 const { createPreview } = require('./preview');
 const { createContext } = require('./context');
+const { NetLog } = require('./netlog');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -26,6 +27,7 @@ let hookServer = null;
 let updater = null;
 let previewer = null;
 let contexts = null; // contexto del proyecto de cada pestaña (context.js)
+let netlog = null; // «Log»: lo que ha visto Claude y lo que sale hacia internet (netlog.js)
 let summary = { working: 0 };
 let closeApproved = false; // el usuario ya ha decidido cerrar aunque haya sesiones trabajando
 let closeDialogOpen = false;
@@ -155,28 +157,44 @@ async function codexTool(tabId, _name, args) {
 
 let voiceEnabled = false;
 
-// Idioma fijado por el usuario en su configuración de Claude Code, si lo hay.
-function userLanguage() {
+// Configuración de Claude Code del usuario (~/.claude/settings.json), o {}.
+function userSettings() {
   const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   try {
-    const raw = fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8').replace(/^﻿/, '');
-    const { language } = JSON.parse(raw) || {};
-    return typeof language === 'string' && language.trim() ? language : null;
+    return JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8').replace(/^﻿/, '')) || {};
   } catch {
-    return null; // sin archivo o ilegible
+    return {}; // sin archivo o ilegible
   }
 }
 
-// Ajustes de Claude Code que Claudes añade a cada sesión. `allow` son las reglas
-// para leer sin preguntar los documentos del contexto del proyecto.
-function sessionSettings(allow = []) {
+// Ajustes de Claude Code que Claudes añade a la sesión de una pestaña. `allow` son
+// las reglas para leer sin preguntar los documentos del contexto del proyecto.
+function sessionSettings(tabId, allow = []) {
+  const mine = userSettings();
   const settings = { voice: { enabled: true, mode: 'hold' } };
   // Sin idioma, Claude Code dicta en inglés. Ese mismo ajuste fija el idioma de las
   // respuestas; si el usuario ya ha elegido uno, se respeta el suyo.
-  if (!userLanguage()) settings.language = 'spanish';
+  if (!(typeof mine.language === 'string' && mine.language.trim())) settings.language = 'spanish';
   if (allow.length) settings.permissions = { allow };
+  // Línea de estado que solo le pasa a la app el uso del contexto (no muestra nada).
+  // Si el usuario tiene la suya, se respeta y la pestaña se queda sin indicador.
+  if (!mine.statusLine) settings.statusLine = { type: 'command', command: hookServer.statusLineCommand(tabId), padding: 0 };
   return settings;
 }
+
+// Cuánto ocupa la conversación, a partir de lo que Claude Code da a la línea de estado.
+function usageFrom(data) {
+  const window = data && data.context_window;
+  if (!window || !(window.context_window_size > 0)) return null;
+  const current = window.current_usage;
+  const used = current
+    ? (current.input_tokens || 0) + (current.cache_creation_input_tokens || 0) + (current.cache_read_input_tokens || 0)
+    : null;
+  let pct = typeof window.used_percentage === 'number' ? window.used_percentage : null;
+  if (pct === null && used !== null) pct = (used / window.context_window_size) * 100;
+  return { size: window.context_window_size, used, pct: pct === null ? null : Math.round(pct) };
+}
+const lastUsage = new Map(); // pestaña → último uso enviado a la interfaz
 
 // ── Actualización ──────────────────────────────────────────────────
 // La interfaz enseña los cambios y solo con «Update» se genera la versión nueva,
@@ -264,6 +282,7 @@ function spawnPty(id, file, args, options) {
     entry.waiters.forEach((done) => done());
     if (!entry.killed) send('pty:exit', id, exitCode);
   });
+  return entry;
 }
 
 // Termina un proceso y espera a que haya salido (o a un máximo de 2 s).
@@ -320,7 +339,8 @@ async function createPty(o) {
   } catch (err) {
     appLog(`contexto de ${tabLabel(o.id)}: no se pudo preparar (${err.message})`);
   }
-  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(ctx.allow))];
+  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, ctx.allow))];
+  lastUsage.delete(o.id);
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
 
@@ -677,8 +697,17 @@ function registerIpc() {
     const result = await contexts.update(tabId, name, context);
     // Con la sesión abierta se reescriben sus ajustes con los permisos nuevos (por si
     // Claude Code los recarga); el resumen se lo da el hook con el siguiente mensaje.
-    if (ptys.has(tabId)) hookServer.settingsFile(tabId, sessionSettings(result.allow));
+    if (ptys.has(tabId)) hookServer.settingsFile(tabId, sessionSettings(tabId, result.allow));
     return true;
+  });
+  ipcMain.handle('context:link', (_e, url) => contexts.linkInfo(url));
+
+  // «Log»: lo que ha visto Claude y lo que sale hacia internet.
+  ipcMain.handle('netlog:get', () => (netlog ? netlog.entries() : []));
+  ipcMain.on('netlog:openFile', () => {
+    const file = netlog && netlog.todayFile();
+    if (file && fs.existsSync(file)) shell.openPath(file);
+    else { fs.mkdirSync(logsDir(), { recursive: true }); shell.openPath(logsDir()); }
   });
   ipcMain.handle('context:pick', async (_e, kind) => {
     const folder = kind === 'folder';
@@ -804,12 +833,22 @@ if (!app.requestSingleInstanceLock()) {
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
+      if (netlog) netlog.fromHook(tabId, event);
       send('hook', tabId, event);
     });
     // Solo para pruebas: los mensajes se bloquean antes de llegar al modelo (no gastan tokens).
     hookServer.blockPrompts = DEV && Boolean(process.env.CLAUDES_BLOCK_PROMPTS);
     // Si el contexto del proyecto cambió con la sesión abierta, se le da a Claude con el siguiente mensaje.
-    contexts = createContext({ app, log: appLog });
+    contexts = createContext({ app, net, log: appLog });
+    // Uso del contexto de cada sesión: se avisa a la interfaz cuando cambia el porcentaje.
+    hookServer.onStatus = (tabId, data) => {
+      const usage = usageFrom(data);
+      if (!usage) return;
+      const last = lastUsage.get(tabId);
+      if (last && last.pct === usage.pct && last.size === usage.size) return;
+      lastUsage.set(tabId, usage);
+      send('session:usage', tabId, usage);
+    };
     hookServer.respond = (tabId, eventName) => (eventName === 'UserPromptSubmit' ? contexts.pendingUpdate(tabId) : null);
     hookServer.mcp = createMcp({
       name: 'claudes-codex',
@@ -843,6 +882,13 @@ if (!app.requestSingleInstanceLock()) {
     updater.noteAttempt(store.get('updateAttempt', null));
     store.set('updateAttempt', null);
     updater.schedule();
+    // «Log»: lo que ha visto Claude y lo que sale hacia internet, a partir de los hooks.
+    netlog = new NetLog({
+      logsDir,
+      send,
+      tabName: (id) => tabNames.get(id) || null,
+      cwdOf: (id) => tabFolders.get(id) || null,
+    });
     registerIpc();
     createWindow();
   });
