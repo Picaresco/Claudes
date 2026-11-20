@@ -37,6 +37,37 @@ h1, p { margin: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
+/* ── Animación de arranque (splash.js) ─────────────────────────── */
+/* Tapa la ventana desde el primer instante; la escena va en un escenario de 1280 × 800. */
+#splash { position: fixed; inset: 0; z-index: 200; overflow: hidden; background: rgb(12, 14, 17); }
+.splash-stage { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; transform-origin: 0 0; pointer-events: none; }
+.splash-stage > div { position: absolute; }
+.splash-rays {
+  left: -160px; top: -330px; width: 1600px; height: 1600px; opacity: 0;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 236, 205, 0.10) 0deg 5deg, transparent 5deg 15deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 58%);
+  mask-image: radial-gradient(circle, #000 0%, transparent 58%);
+}
+.splash-folder { left: 500px; top: 355px; width: 280px; height: 230px; transform-origin: 0 0; }
+.splash-folder svg { position: absolute; overflow: visible; }
+.splash-folder .front { transform-origin: 50% 100%; }
+.splash-light {
+  position: absolute; left: -230px; top: -150px; width: 740px; height: 560px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, rgba(255, 246, 228, 0.95), rgba(242, 184, 102, 0.45) 35%, rgba(141, 187, 250, 0.12) 68%, transparent);
+}
+.splash-word {
+  --s: 62%; --l: 78%;
+  font-size: 120px; font-weight: 600; line-height: 1; white-space: nowrap; transform-origin: 0 0; opacity: 0;
+  background: linear-gradient(90deg, var(--txt) 0 14%, hsl(0 var(--s) var(--l)) 22%, hsl(30 var(--s) var(--l)) 32%,
+    hsl(55 var(--s) var(--l)) 42%, hsl(140 var(--s) var(--l)) 52%, hsl(205 var(--s) var(--l)) 62%,
+    hsl(265 var(--s) var(--l)) 72%, hsl(0 var(--s) var(--l)) 80%, var(--txt) 88% 100%);
+  background-size: 500% 100%; background-position: 100% 0;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+#splash .splash-tab { position: absolute; margin: 0; opacity: 0; pointer-events: none; }
+/* Lo que «aterriza» (icono, nombre y pestañas) se esconde hasta que llega su copia. */
+.splash-landing { visibility: hidden !important; }
+
 /* ── Barra de pestañas ─────────────────────────────────────────── */
 #strip {
   display: flex;

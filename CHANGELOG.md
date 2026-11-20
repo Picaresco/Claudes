@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.10.0 — 2026-11-20
+- Nueva animación al abrir ClaudHome: la carpeta del icono se dibuja con un trazo de luz y se abre, de dentro salen volando tus pestañas hasta su sitio y la carpeta y el nombre se encogen hasta la cabecera. Dura 2,5 segundos y no retrasa nada. Un clic o una tecla la saltan, y con «reducir animaciones» de Windows no aparece.
+- El «Log» muestra al abrirlo solo lo del proyecto de la pestaña activa, aunque lo abrieras antes en otra pestaña. «Todos» enseña el de todos los proyectos, y la próxima vez vuelve a empezar por el proyecto.
+
 ## 0.9.0 — 2026-11-20
 - Claude explica lo que hace: las sesiones llevan el plugin explanatory-output-style de Anthropic, y mientras trabaja Claude añade bloques «★ Insight» con el porqué de sus decisiones y lo que va viendo del proyecto. Gasta algo más de tokens. Necesita Git Bash, que se instala con Git para Windows.
 - La barra inferior muestra el límite semanal de tu plan de Claude: el porcentaje usado, los tokens usados en la semana y cuándo se renueva. Si tu plan tiene también límite de 5 horas, se añade su porcentaje.

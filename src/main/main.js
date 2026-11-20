@@ -633,6 +633,11 @@ function registerIpc() {
     dev: DEV,
     // Minutos sin actividad tras los que se duerme una sesión que no estás viendo.
     sleepMinutes: Number(process.env.CLAUDES_SLEEP_MINUTES) > 0 ? Number(process.env.CLAUDES_SLEEP_MINUTES) : 45,
+    // Animación de arranque. Para pruebas: CLAUDES_NO_SPLASH la quita y, desde el código,
+    // CLAUDES_SPLASH_AT=<ms> la deja quieta en ese instante.
+    splash: !process.env.CLAUDES_NO_SPLASH,
+    splashAt: DEV && Number.isFinite(Number(process.env.CLAUDES_SPLASH_AT)) && process.env.CLAUDES_SPLASH_AT !== undefined
+      ? Number(process.env.CLAUDES_SPLASH_AT) : null,
   }));
 
   ipcMain.handle('state:load', () => store.get('ui', null));

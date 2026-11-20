@@ -14,6 +14,9 @@
 </head>
 <body>
 
+<!-- Animación de arranque (splash.js): tapa la ventana desde el primer instante. -->
+<div id="splash" aria-hidden="true"></div>
+
 <header id="strip">
   <div class="brand">
     <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 6h5l1.5-2.5H16V15H2z"/><path d="M2 9h14"/></svg>
@@ -67,7 +70,7 @@
       Contexto
       <span id="ctx-count" class="count" hidden></span>
     </button>
-    <button id="btn-log" class="btn" title="Log: lo que ha visto Claude en esta pestaña (y por tanto se ha enviado a Anthropic) y lo que ha salido directamente hacia internet">
+    <button id="btn-log" class="btn" title="Log: lo que ha visto Claude en este proyecto (y por tanto se ha enviado a Anthropic) y lo que ha salido directamente hacia internet. «Todos» enseña el de todos los proyectos">
       <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c1.9 1.8 2.8 3.9 2.8 6.3S9.9 12.5 8 14.3M8 1.7C6.1 3.5 5.2 5.6 5.2 8s.9 4.5 2.8 6.3"/></svg>
       Log
       <span id="log-badge" class="count" hidden></span>
@@ -183,9 +186,9 @@
       </button>
     </div>
     <div class="log-filters">
-      <div class="log-group" role="group" aria-label="Qué pestañas">
-        <button type="button" data-scope="tab" aria-pressed="true">Esta pestaña</button>
-        <button type="button" data-scope="all" aria-pressed="false">Todas</button>
+      <div class="log-group" role="group" aria-label="Qué proyectos">
+        <button type="button" data-scope="tab" aria-pressed="true">Este proyecto</button>
+        <button type="button" data-scope="all" aria-pressed="false">Todos</button>
       </div>
       <div class="log-group" role="group" aria-label="Qué mostrar">
         <button type="button" data-kind="" aria-pressed="true">Todo</button>
@@ -199,7 +202,7 @@
     </div>
     <div class="log-table-wrap">
       <table class="log-table">
-        <thead><tr><th class="c-time">Hora</th><th class="c-tab">Pestaña</th><th class="c-kind">Tipo</th><th class="c-target">Qué</th><th class="c-dest">Sale hacia</th><th class="c-size">Tamaño</th></tr></thead>
+        <thead><tr><th class="c-time">Hora</th><th class="c-tab">Proyecto</th><th class="c-kind">Tipo</th><th class="c-target">Qué</th><th class="c-dest">Sale hacia</th><th class="c-size">Tamaño</th></tr></thead>
         <tbody id="log-rows"></tbody>
       </table>
       <p id="log-empty" class="log-empty" hidden></p>
@@ -231,6 +234,7 @@
 <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
 <script src="../../node_modules/@xterm/addon-unicode-graphemes/lib/addon-unicode-graphemes.js"></script>
+<script src="splash.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

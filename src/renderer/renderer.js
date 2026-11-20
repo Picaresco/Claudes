@@ -1562,7 +1562,11 @@
     }, 250);
   }
 
-  const logEntriesOf = (tabId) => netlog.filter((e) => e.tabId === tabId);
+  // Del mismo proyecto: de la misma carpeta, aunque se abriera en otra pestaña.
+  // Las entradas sin carpeta se reconocen por su pestaña.
+  const samePath = (a, b) => String(a || '').replace(/[\\/]+$/, '').toLowerCase() === String(b || '').replace(/[\\/]+$/, '').toLowerCase();
+  const ofProject = (e, tab) => (e.cwd ? samePath(e.cwd, tab.cwd) : e.tabId === tab.id);
+  const logEntriesOf = (tab) => netlog.filter((e) => ofProject(e, tab));
   const clock = (ms) => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   // ¿Pasa el filtro de tipo? «Hacia internet» = sale directamente a internet;
@@ -1580,7 +1584,7 @@
   function renderLog() {
     const tab = byId(S.activeId);
     const words = logFilter.text.trim().toLowerCase();
-    const rows = netlog.filter((e) => (logFilter.scope === 'all' || (tab && e.tabId === tab.id))
+    const rows = netlog.filter((e) => (logFilter.scope === 'all' || (tab && ofProject(e, tab)))
       && logKindMatches(e, logFilter.kind)
       && (!words || `${e.tabName} ${e.what} ${e.target} ${e.detail} ${e.dest}`.toLowerCase().includes(words)));
     const shown = rows.slice(-1000).reverse(); // las más nuevas arriba
@@ -1614,7 +1618,8 @@
 
   function openLog() {
     const dialog = $('#dlg-log');
-    if (!byId(S.activeId)) logFilter.scope = 'all';
+    // Siempre empieza en el proyecto de la pestaña activa; «Todos» dura mientras está abierto.
+    logFilter.scope = byId(S.activeId) ? 'tab' : 'all';
     for (const b of dialog.querySelectorAll('[data-scope]')) b.setAttribute('aria-pressed', String(b.dataset.scope === logFilter.scope));
     for (const b of dialog.querySelectorAll('[data-kind]')) b.setAttribute('aria-pressed', String(b.dataset.kind === logFilter.kind));
     $('#log-search').value = logFilter.text;
@@ -1933,7 +1938,7 @@
     $('#tb-path').title = tab.cwd;
     $('#btn-terminal').setAttribute('aria-pressed', String(Boolean(tab.extraOpen)));
     $('#btn-context').setAttribute('aria-pressed', String(Boolean(tab.contextOpen)));
-    const logCount = logEntriesOf(tab.id).length;
+    const logCount = logEntriesOf(tab).length;
     $('#log-badge').hidden = logCount === 0;
     $('#log-badge').textContent = logCount > 999 ? '999+' : String(logCount);
     const ctxCount = contextCount(tab);
@@ -2737,6 +2742,9 @@
 
   async function init() {
     info = await api.info();
+    // Animación de arranque: corre por encima mientras la app se prepara debajo (no se espera).
+    if (info.splash === false) window.ClaudHomeSplash.remove($('#splash'));
+    else window.ClaudHomeSplash.play({ root: $('#splash'), freezeAt: info.splashAt }).catch(() => window.ClaudHomeSplash.remove($('#splash')));
     $('#app-version').textContent = info.version ? `v${info.version}` : '';
     sleepAfterMs = (info.sleepMinutes || 45) * 60 * 1000;
     setInterval(sleepIdleSessions, Math.min(60 * 1000, Math.max(1000, sleepAfterMs / 4)));

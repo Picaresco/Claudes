@@ -136,6 +136,7 @@ class NetLog {
       count: 1,
       tabId,
       tabName: this.tabName(tabId) || 'Pestaña',
+      cwd: this.cwdOf(tabId) || null, // carpeta del proyecto: el «Log» filtra por ella
       kind,
       what: KIND_LABEL[kind] || kind,
       target: safeTarget,
