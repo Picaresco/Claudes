@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.11.0 — 2026-11-21
+- Nuevo interruptor «Resumido» en la barra superior. Encendido, Claude responde corto y al grano. Apagado, como hasta ahora, explica sus decisiones y lo que va viendo del proyecto. Vale para todas las pestañas desde tu siguiente mensaje, sin reiniciar nada.
+- Las sesiones llevan encendido «You should know», que viene con Claude Code: un agente aparte te avisa con una tarjeta cuando pasa algo que conviene saber y se te podría escapar.
+
 ## 0.10.0 — 2026-11-20
 - Nueva animación al abrir ClaudHome: la carpeta del icono se dibuja con un trazo de luz y se abre, de dentro salen volando tus pestañas hasta su sitio y la carpeta y el nombre se encogen hasta la cabecera. Dura 2,5 segundos y no retrasa nada. Un clic o una tecla la saltan, y con «reducir animaciones» de Windows no aparece.
 - El «Log» muestra al abrirlo solo lo del proyecto de la pestaña activa, aunque lo abrieras antes en otra pestaña. «Todos» enseña el de todos los proyectos, y la próxima vez vuelve a empezar por el proyecto.

@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('api', {
   updateRestart: () => ipcRenderer.send('update:restart'),
   onUpdateChanged: on('update:changed'),
 
+  // Botón «Resumido»: respuestas cortas o con explicaciones, en todas las pestañas.
+  briefGet: () => ipcRenderer.invoke('brief:get'),
+  briefSet: (on) => ipcRenderer.invoke('brief:set', Boolean(on)),
+
   // Micrófono para dictar con la barra espaciadora mantenida.
   voiceGet: () => ipcRenderer.invoke('voice:get'),
   voiceSet: (on) => ipcRenderer.invoke('voice:set', Boolean(on)),

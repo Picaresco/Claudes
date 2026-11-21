@@ -1528,6 +1528,31 @@
       : 'Micrófono desactivado. Pulsa para activarlo y dictar manteniendo pulsada la barra espaciadora.';
   }
 
+  // ── Botón «Resumido» ─────────────────────────────────────────────
+  // Encendido: Claude responde corto y al grano. Apagado: explica sus decisiones y lo
+  // que va viendo del proyecto (bloques «★ Insight»). Vale para todas las pestañas
+  // desde el siguiente mensaje, sin reiniciar nada.
+
+  let briefOn = false;
+
+  function renderBrief(state) {
+    briefOn = Boolean(state && state.enabled);
+    const button = $('#brief-btn');
+    button.hidden = false;
+    button.setAttribute('aria-checked', String(briefOn));
+    button.title = briefOn
+      ? 'Resumido: activado. Claude responde corto y al grano. Pulsa para que vuelva a explicar sus decisiones y lo que ve del proyecto.'
+      : 'Resumido: desactivado. Claude explica sus decisiones y lo que va viendo del proyecto (bloques «★ Insight»). Pulsa para respuestas cortas y al grano.';
+  }
+
+  async function toggleBrief() {
+    renderBrief(await api.briefSet(!briefOn));
+    toast(briefOn
+      ? 'Respuestas resumidas: desde tu próximo mensaje, Claude irá al grano en todas las pestañas.'
+      : 'Respuestas con explicaciones: desde tu próximo mensaje, Claude contará sus decisiones y lo que ve del proyecto.');
+    focusTerminal();
+  }
+
   async function toggleVoice() {
     renderVoice(await api.voiceSet(!voiceOn));
     toast(voiceOn
@@ -2608,6 +2633,7 @@
 
     $('#codex-chip').addEventListener('click', toggleCodex);
     $('#mic-btn').addEventListener('click', toggleVoice);
+    $('#brief-btn').addEventListener('click', toggleBrief);
     $('#update-btn').addEventListener('click', clickUpdate);
     $('#sb-debug').addEventListener('click', toggleDebug);
 
@@ -2815,6 +2841,7 @@
     api.codexStatus(false).then(renderCodex).catch(() => { /* sin indicador hasta la próxima comprobación */ });
     api.debugGet().then(renderDebug).catch(() => { /* sin interruptor de depuración */ });
     api.voiceGet().then(renderVoice).catch(() => { /* sin botón de micrófono */ });
+    api.briefGet().then(renderBrief).catch(() => { /* sin botón «Resumido» */ });
     api.onUpdateChanged(renderUpdate);
     api.updateGet().then((u) => {
       renderUpdate(u);

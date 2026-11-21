@@ -179,6 +179,8 @@ function sessionSettings(tabId, allow = []) {
   // respuestas; si el usuario ya ha elegido uno, se respeta el suyo.
   if (!(typeof mine.language === 'string' && mine.language.trim())) settings.language = 'spanish';
   if (allow.length) settings.permissions = { allow };
+  // «You should know» encendido, salvo que el usuario lo haya activado o apagado él.
+  if (!Object.prototype.hasOwnProperty.call(mine.enabledPlugins || {}, YOU_SHOULD_KNOW)) settings.enabledPlugins = { [YOU_SHOULD_KNOW]: true };
   // Línea de estado que solo le pasa a la app el uso del contexto (no muestra nada).
   // Si el usuario tiene la suya, se respeta y la pestaña se queda sin indicador.
   if (!mine.statusLine) settings.statusLine = { type: 'command', command: hookServer.statusLineCommand(tabId), padding: 0 };
@@ -206,9 +208,62 @@ const lastUsage = new Map(); // pestaña → último uso enviado a la interfaz
 // script de bash que Claude Code ejecuta con Git Bash: sin Git Bash no se carga,
 // porque cada sesión empezaría con un error.
 
-const BUNDLED_PLUGINS = ['explanatory-output-style'];
+const EXPLAIN_PLUGIN = 'explanatory-output-style';
+const BUNDLED_PLUGINS = [EXPLAIN_PLUGIN];
 const OFFICIAL_MARKETPLACE = 'claude-plugins-official';
 let pluginDirs = []; // { name, dir } de los plugins listos para pasar a las sesiones
+
+// «You should know», integrado en Claude Code y apagado de serie: un agente aparte
+// avisa con tarjetas («Heads up», «You should know») de lo que conviene saber.
+// ClaudHome lo enciende en sus sesiones salvo que el usuario lo haya decidido en su
+// configuración. Los enabledPlugins de --settings se suman a los del usuario.
+const YOU_SHOULD_KNOW = 'cc-plugin-you-should-know@builtin';
+
+// ── Respuestas resumidas o con explicaciones ───────────────────────
+// El botón «Resumido» de la barra superior vale para todas las pestañas y al momento:
+// cada sesión recuerda qué estilo recibió y, si no coincide con el botón, se le dice
+// con el siguiente mensaje (hook UserPromptSubmit). Al arrancar, el modo explicativo
+// lo da el plugin; si no se puede cargar (sin Git Bash), lo da el hook con el mismo texto.
+
+let briefMode = false; // true: respuestas cortas y al grano
+const tabStyle = new Map(); // pestaña → 'explain' | 'brief' | null (lo que ya sabe su sesión)
+let explainText = ''; // las instrucciones del plugin explicativo, leídas de su script
+
+const BRIEF_TEXT = [
+  'ClaudHome · modo resumido: el usuario ha activado el botón «Resumido». A partir de este mensaje, tus respuestas deben ser cortas y al grano:',
+  '- Como mucho unas 80 palabras: de 2 a 5 frases, o una lista de 3 o 4 puntos breves. Solo te puedes alargar si la tarea lo necesita de verdad (código, comandos o una lista que el usuario haya pedido).',
+  '- No añadas bloques «★ Insight» ni explicaciones didácticas sobre el proyecto o tus decisiones, aunque instrucciones anteriores (el estilo «explanatory») lo pidan.',
+  '- Sin introducciones, sin resumen final y sin ofrecer más ayuda al terminar.',
+  '- Di lo esencial: qué has hecho o qué has encontrado, el resultado y, si hace falta, el siguiente paso. Nunca te calles errores, riesgos, cambios que no se pueden deshacer ni preguntas que necesiten su respuesta.',
+  'Si el usuario pide expresamente más detalle, dáselo.',
+].join('\n');
+
+// El texto que el plugin explicativo da a Claude, sacado de su session-start.sh.
+function readExplainText() {
+  try {
+    const script = fs.readFileSync(path.join(__dirname, '..', 'plugins', EXPLAIN_PLUGIN, 'hooks-handlers', 'session-start.sh'), 'utf8');
+    const json = /<<\s*'EOF'\s*\n([\s\S]*?)\nEOF/.exec(script);
+    return JSON.parse(json[1]).hookSpecificOutput.additionalContext;
+  } catch (err) {
+    appLog(`plugin ${EXPLAIN_PLUGIN}: no se ha podido leer su texto (${err.message})`);
+    return 'Explain your implementation choices and what you learn about the codebase as you work, in brief "★ Insight" blocks of 2-3 points before and after writing code.';
+  }
+}
+
+// Lo que hay que decirle a una sesión con el siguiente mensaje, si su estilo no es el del botón.
+function styleUpdate(tabId) {
+  if (!tabStyle.has(tabId)) return null; // no es una sesión de Claude de ClaudHome
+  const want = briefMode ? 'brief' : 'explain';
+  if (tabStyle.get(tabId) === want) return null;
+  tabStyle.set(tabId, want);
+  appLog(`estilo de ${tabLabel(tabId)}: pasa a ${want === 'brief' ? 'resumido' : 'explicativo'} con este mensaje`);
+  return want === 'brief'
+    ? BRIEF_TEXT
+    : `ClaudHome · modo explicativo: el usuario ha apagado el botón «Resumido». A partir de este mensaje sigue estas instrucciones, aunque antes te pidiera respuestas resumidas:\n\n${explainText}`;
+}
+
+// ¿Tiene el usuario el plugin explicativo instalado y activado en su Claude Code?
+const userExplains = () => (userSettings().enabledPlugins || {})[`${EXPLAIN_PLUGIN}@${OFFICIAL_MARKETPLACE}`] === true;
 
 // Copia una carpeta. Desde el ejecutable, los plugins están dentro de app.asar, que
 // Claude Code no puede leer, así que se copian a la carpeta de datos de la app.
@@ -236,11 +291,11 @@ function preparePlugins() {
 }
 
 // Plugins de ClaudHome para una sesión, salvo los que el usuario ya tenga activados
-// en su Claude Code (se cargarían dos veces).
+// en su Claude Code (se cargarían dos veces). Con «Resumido», sin el explicativo.
 function sessionPlugins() {
   if (!gitBash) return [];
   const enabled = userSettings().enabledPlugins || {};
-  return pluginDirs.filter((p) => enabled[`${p.name}@${OFFICIAL_MARKETPLACE}`] !== true);
+  return pluginDirs.filter((p) => enabled[`${p.name}@${OFFICIAL_MARKETPLACE}`] !== true && !(briefMode && p.name === EXPLAIN_PLUGIN));
 }
 
 // ── Actualización ──────────────────────────────────────────────────
@@ -394,6 +449,9 @@ async function createPty(o) {
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
   const plugins = sessionPlugins();
   for (const plugin of plugins) args.push('--plugin-dir', plugin.dir);
+  // Lo que la sesión sabe al arrancar: el plugin explicativo da ese estilo; si no se
+  // carga, el estilo que toque se le dice con el primer mensaje.
+  tabStyle.set(o.id, plugins.some((p) => p.name === EXPLAIN_PLUGIN) || userExplains() ? 'explain' : null);
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
 
   // Con las imágenes de Codex activadas, la sesión arranca con la herramienta «generar_imagen».
@@ -668,6 +726,7 @@ function registerIpc() {
       contexts.forget(id);
       tabFolders.delete(id);
       tabSessions.delete(id);
+      tabStyle.delete(id);
       tabNames.delete(id);
       tabLogs.delete(id);
     }
@@ -722,6 +781,15 @@ function registerIpc() {
     return updater.info();
   });
   ipcMain.on('update:restart', restartToUpdate);
+
+  // Botón «Resumido»: vale para todas las pestañas desde su siguiente mensaje.
+  ipcMain.handle('brief:get', () => ({ enabled: briefMode }));
+  ipcMain.handle('brief:set', (_e, on) => {
+    briefMode = Boolean(on);
+    store.set('briefMode', briefMode);
+    appLog(`respuestas ${briefMode ? 'resumidas' : 'con explicaciones'} (botón «Resumido»)`);
+    return { enabled: briefMode };
+  });
 
   // Límites de uso del plan (5 horas y semanal) y tokens gastados en cada periodo.
   ipcMain.handle('limits:get', () => (limits ? limits.snapshot() : null));
@@ -922,7 +990,17 @@ if (!app.requestSingleInstanceLock()) {
       lastUsage.set(tabId, usage);
       send('session:usage', tabId, usage);
     };
-    hookServer.respond = (tabId, eventName) => (eventName === 'UserPromptSubmit' ? contexts.pendingUpdate(tabId) : null);
+    // Con cada mensaje, lo que la sesión tenga que saber: el estilo del botón «Resumido»
+    // si ha cambiado y el contexto del proyecto si se cambió con la sesión abierta.
+    hookServer.respond = (tabId, eventName) => {
+      if (eventName !== 'UserPromptSubmit') return null;
+      const parts = [];
+      const style = styleUpdate(tabId);
+      if (style) parts.push(style);
+      const ctx = contexts.pendingUpdate(tabId);
+      if (ctx) parts.push(ctx.hookSpecificOutput.additionalContext);
+      return parts.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: parts.join('\n\n') } } : null;
+    };
     hookServer.mcp = createMcp({
       name: 'claudes-codex',
       version: app.getVersion(),
@@ -942,6 +1020,7 @@ if (!app.requestSingleInstanceLock()) {
     previewer.cleanTemp();
     codexState.enabled = store.get('codexImages', false) === true;
     voiceEnabled = store.get('voiceDictation', false) === true;
+    briefMode = store.get('briefMode', false) === true;
     refreshCodex().catch(() => { /* se reintentará al consultar el estado */ });
     updater = new Updater({
       app, net, shell, log: appLog, logsDir,
@@ -963,6 +1042,7 @@ if (!app.requestSingleInstanceLock()) {
       cwdOf: (id) => tabFolders.get(id) || null,
     });
     preparePlugins();
+    explainText = readExplainText();
     appLog(gitBash ? `plugins para las sesiones: ${pluginDirs.map((p) => p.name).join(', ') || 'ninguno'}` : 'sin Git Bash: las sesiones arrancan sin plugins');
     registerIpc();
     createWindow();
