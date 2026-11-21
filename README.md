@@ -98,7 +98,7 @@ Los atajos de la app usan `Ctrl+Mayús` para no pisar los de Claude Code (`Ctrl+
 - **Imágenes pegadas.** Una imagen copiada se guarda en `%TEMP%\Claudes-pegado` y se pega su ruta; se borran solas a la semana.
 - **Contexto del proyecto.** Se guarda con la pestaña en `state.json`; de los documentos solo se guarda su ruta, no se copian. Al arrancar la sesión, `src/main/context.js` escribe el resumen (la nota y la lista de documentos con su ruta) en `%APPDATA%\Claudes\contexto\<pestaña>\instrucciones.md`, y se pasa a Claude con `--append-system-prompt-file`. Los Word se pasan a texto en esa misma carpeta, porque Claude no lee `.docx`. Para que Claude lea los documentos sin preguntar, cada uno lleva una regla `Read(//c/…)` en los ajustes de la sesión, y cada dominio de los enlaces una `WebFetch(domain:…)`. El título y el aviso de inicio de sesión de un enlace se obtienen al añadirlo, con `net.request` de Electron (usa el proxy del sistema y sigue las redirecciones para ver dónde acaba la página). Si el contexto cambia con la sesión abierta, el hook `UserPromptSubmit` le da el resumen nuevo con el siguiente mensaje (`additionalContext`). No se usa `--add-dir`, porque Claude Code preguntaría al arrancar si confías en cada carpeta.
 - **Llenado de la conversación.** Cada sesión lleva una línea de estado (`statusLine` en su `--settings`) que no muestra nada: solo reenvía con `curl` a la app lo que Claude Code le pasa (`context_window.used_percentage` y el tamaño de la ventana). Si tienes tu propia línea de estado en `~/.claude/settings.json`, se respeta y esa sesión se queda sin indicador.
-- **Límite de uso y tokens.** La misma línea de estado trae `rate_limits.seven_day` y, en los planes que lo tienen, `rate_limits.five_hour` (`used_percentage` y `resets_at`), que Claude Code saca de las cabeceras de la última respuesta de la API. Son de la cuenta, así que vale lo que llegue de cualquier pestaña: dentro de un mismo periodo se queda el porcentaje más alto, y una renovación anterior a la conocida se descarta (una sesión parada puede repetir datos viejos). Se guarda en `state.json` para mostrarlo nada más abrir la app. Los tokens los cuenta `src/main/limits.js` en las conversaciones de `~/.claude/projects/**/*.jsonl`, sumando una sola vez cada respuesta (`message.id` + `requestId`). Las respuestas de los subagentes (`<conversación>\subagents\*.jsonl`) llevan el `sessionId` de su conversación y suman en ella. La conversación de cada pestaña es la del arranque y, tras un `/clear`, la que traen los hooks. Cada archivo se lee solo por donde iba la vez anterior; los de más de 8 días se saltan, salvo los de una pestaña abierta, y si uno saltado vuelve a crecer se lee entero. Recuenta como mucho cada 10 s tras una respuesta y cada minuto por su cuenta. Pasada la hora de renovación, cuenta desde entonces hasta que el siguiente mensaje traiga el porcentaje nuevo.
+- **Límite de uso y tokens.** La misma línea de estado trae `rate_limits.seven_day` y, en los planes que lo tienen, `rate_limits.five_hour` (`used_percentage` y `resets_at`), que Claude Code saca de las cabeceras de la última respuesta de la API. Son de la cuenta, así que vale lo que llegue de cualquier pestaña: dentro de un mismo periodo se queda el porcentaje más alto, y una renovación anterior a la conocida se descarta (una sesión parada puede repetir datos viejos). Se guarda en `state.json` para mostrarlo nada más abrir la app. Los tokens los cuenta `src/main/limits.js` en las conversaciones de `~/.claude/projects/**/*.jsonl`, sumando una sola vez cada respuesta (`message.id` + `requestId`). Las respuestas de los subagentes (`<conversación>\subagents\*.jsonl`) llevan el `sessionId` de su conversación y suman en ella. La conversación de cada pestaña es la del arranque y, tras un `/clear`, la que traen los hooks. Cada archivo se lee solo por donde iba la vez anterior; los de más de 8 días se saltan, salvo los de una pestaña abierta, y si uno saltado vuelve a crecer se lee entero. Tras una respuesta recuenta, como mucho cada 10 s, solo las conversaciones de las pestañas abiertas (y sus subagentes); la carpeta entera, que es donde aparece lo gastado fuera de ClaudHome, se recorre cada minuto. Pasada la hora de renovación, cuenta desde entonces hasta que el siguiente mensaje traiga el porcentaje nuevo.
 - **Plugins.** Los plugins que trae la app están en `src/plugins/`. Al arrancar se copian a `%APPDATA%\Claudes\plugins`, porque Claude Code no puede leerlos dentro de `app.asar`, y cada sesión los carga con `--plugin-dir`, sin instalar nada en tu Claude Code. El hook de `explanatory-output-style` es un script de bash que Claude Code ejecuta con Git Bash. Por eso solo se pasa si la app encuentra Git Bash (en su ruta de instalación o junto al `git.exe` del PATH) y si no lo tienes ya activado en tu `~/.claude/settings.json` (`enabledPlugins`).
 - **Interruptor «Resumido».** Se guarda en `state.json` (`briefMode`). El plugin explicativo solo actúa al arrancar (hook `SessionStart`), así que la app recuerda qué estilo tiene cada sesión. Si no coincide con el interruptor, se lo dice con el siguiente mensaje mediante el `additionalContext` del hook `UserPromptSubmit`, junto con el contexto del proyecto si también cambió. Con el interruptor encendido, las sesiones nuevas arrancan sin el plugin. Al volver al modo explicativo, el texto que recibe Claude es el del propio `session-start.sh` del plugin, que también se usa si el plugin no se pudo cargar (sin Git Bash).
 - **«You should know».** Es el plugin integrado `cc-plugin-you-should-know@builtin`, apagado de serie en Claude Code. ClaudHome lo enciende con `enabledPlugins` en los `--settings` de cada sesión, que se suman a los del usuario sin pisarlos. Si tu `~/.claude/settings.json` ya dice algo de ese plugin, no se toca.
@@ -113,13 +113,37 @@ Los atajos de la app usan `Ctrl+Mayús` para no pisar los de Claude Code (`Ctrl+
 - **Vista previa.** La terminal busca en cada línea rutas absolutas de Windows, con o sin comillas, incluidas las que Claude Code parte en dos líneas. Solo se marcan las que existen como archivo (`src/main/preview.js`). Claude Code numera las imágenes pegadas (`[Image #1]`, `[Image #2]`…) sin repetir número durante la sesión. Al pegar, la app mira qué etiqueta nueva aparece en pantalla y la asocia al archivo pegado; si Claude se reinicia, esa asociación se olvida. Las miniaturas de imágenes las da Windows (`nativeImage.createThumbnailFromPath`). La primera página de un PDF la dibuja el lector de PDF de Windows (`Windows.Data.Pdf`, en `src/main/pdf-page.ps1`), lanzado como comando codificado para no depender de la política de ejecución de scripts.
 - **Datos.** `%APPDATA%\Claudes\state.json` guarda pestañas, recientes, posición de la ventana y si las imágenes con Codex y el micrófono para dictar están activados.
 
+### Dónde está cada cosa
+
 ```
-src/main/      proceso principal: ventana, terminales, hooks, portapapeles, Codex, guardado, actualización
-src/preload/   puente entre la interfaz y el proceso principal
-src/renderer/  interfaz: pestañas, vista dividida, diálogos
-scripts/       icono, empaquetado, revisión del código y preparación de la publicación
-test/          pruebas automáticas (node --test)
+src/main/          proceso principal, una pieza por archivo
+  main.js            arranque, lanzamiento de las sesiones y canales con la interfaz
+  window.js          la ventana: tamaño recordado, aviso al cerrar, capturas de prueba
+  ptys.js            procesos de terminal (la sesión de Claude y la terminal extra)
+  shells.js          consolas disponibles y entorno de esos procesos
+  tabs.js            lo que se sabe de cada pestaña, en una sola tabla
+  style.js           plugins de las sesiones e interruptor «Resumido»
+  hooks.js           servidor local que recibe los avisos de Claude Code
+  context.js         contexto del proyecto
+  limits.js          límites del plan y recuento de tokens
+  netlog.js          «Log»
+  sessions.js        con qué conversación arranca cada pestaña
+  claude-config.js   lo que se lee de Claude Code (configuración, línea de estado)
+  clipboard.js       qué hay que pegar
+  applog.js          registro de depuración
+  updater.js, install-update.js   actualización
+  codex.js, mcp.js, preview.js, store.js
+src/preload/       puente entre la interfaz y el proceso principal
+src/renderer/      interfaz
+  renderer.js        entrada: restaura el estado guardado y conecta los módulos
+  splash.js          animación de arranque
+  ui/                un módulo por parte de la interfaz (pestañas, vistas, contexto, «Log»…)
+src/plugins/       plugins de Claude Code que la app da a sus sesiones
+scripts/           icono, empaquetado, revisión del código y preparación de la publicación
+test/              pruebas automáticas (node --test)
 ```
+
+La interfaz usa módulos nativos del navegador (`<script type="module">`), sin empaquetador: cada archivo de `ui/` exporta lo que usan los demás e importa lo que necesita. El estado compartido está en `ui/state.js`; una variable importada no se puede reasignar desde otro módulo, así que las que cambian desde fuera tienen su función `setX` junto a su definición.
 
 ## Desarrollo
 
@@ -130,7 +154,9 @@ npm run icon       # regenerar build/icon.ico
 npm run package    # generar dist/Claudes-win32-x64
 ```
 
-`npm test` no arranca la app ni necesita dependencias instaladas. Primero pasa `scripts/check.mjs`, que revisa la sintaxis de todos los archivos y la coherencia entre las tres partes de la app: que cada `#id` que usa la interfaz exista en `index.html`, que cada `api.x()` exista en `preload.js`, que cada canal tenga quien lo atienda en el proceso principal y que la versión tenga su sección en `CHANGELOG.md`. Después ejecuta las pruebas de `test/`, que cubren los módulos del proceso principal (hooks, contexto, límites y tokens, «Log», conversaciones, MCP, guardado) y la actualización completa contra un servidor local, incluido el instalador. GitHub las ejecuta en cada subida.
+`npm test` no arranca la app ni necesita dependencias instaladas. Primero pasa `scripts/check.mjs`, que revisa la sintaxis de todos los archivos y la coherencia entre las tres partes de la app: que cada `#id` que usa la interfaz exista en `index.html`, que cada `api.x()` exista en `preload.js`, que cada canal tenga quien lo atienda en el proceso principal y que la versión tenga su sección en `CHANGELOG.md`. También comprueba que los módulos de la interfaz encajan: que lo que cada uno importa exista y esté exportado, y que ninguno use algo de otro módulo sin importarlo (un fallo así dejaría la ventana en blanco o solo saltaría al pulsar el botón afectado). Esa comprobación trabaja con expresiones regulares, no con un analizador completo: no distingue en qué función se define cada nombre, así que puede dejar pasar algún caso. Después ejecuta las pruebas de `test/`, que cubren los módulos del proceso principal (hooks, contexto, límites y tokens, «Log», conversaciones, MCP, guardado, pestañas, estilo de las respuestas, procesos de terminal) y la actualización completa contra un servidor local, incluido el instalador. GitHub las ejecuta en cada subida.
+
+Al ejecutar desde el código, `window.claudesTest` ofrece ayudas para las pruebas de la interfaz. Una de ellas, `benchTerminal(megas)`, vuelca salida de prueba en la terminal de la pestaña activa y devuelve lo que tarda en procesarla y a cuántos fotogramas se pinta. Con el dibujo actual de xterm (DOM) son unos 50 MB/s a unos 60 fotogramas por segundo, por eso no se usa el complemento WebGL.
 
 Para probar sin tocar tus pestañas reales, estas variables solo actúan al ejecutar desde el código:
 

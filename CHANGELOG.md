@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.13.0 — 2026-11-21
+- El recuento de tokens trabaja menos: tras cada respuesta mira solo las conversaciones de tus pestañas, y deja el repaso de todas las demás para una vez por minuto.
+- Reorganización interna del código, sin cambios a la vista: la app es la misma, pero está dividida en piezas más pequeñas y pasa más comprobaciones automáticas antes de publicarse.
+- Arreglado: al cerrar una pestaña quedaba guardado en memoria un dato suyo sin limpiar.
+
 ## 0.12.1 — 2026-11-21
 - Arreglado: al descargar una actualización, la app iba acumulando avisos internos sin limpiar. La descarga terminaba bien, pero gastaba memoria de más mientras duraba.
 

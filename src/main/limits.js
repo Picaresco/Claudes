@@ -11,6 +11,8 @@
 //   modelo se apunta en varias líneas con el mismo uso, así que se cuenta una vez. Las
 //   respuestas de los subagentes llevan el identificador de su conversación y suman en ella.
 // - Los archivos se leen solo por donde iban la vez anterior: lo nuevo desde entonces.
+// - Tras cada respuesta se miran solo las conversaciones de las pestañas abiertas; la
+//   carpeta entera (lo de fuera de ClaudHome, las conversaciones nuevas) se recorre cada minuto.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -76,19 +78,22 @@ class Limits {
     this.plan = store.get('planLimits', null); // { five_hour: { pct, resetsAt }, seven_day: {…} }
     this.files = new Map(); // archivo → bytes ya leídos
     this.skipped = new Set(); // archivos antiguos que no se han leído
+    this.sessionFiles = new Map(); // conversación → sus archivos (el suyo y los de sus subagentes)
     this.answers = new Map(); // id de la respuesta → { t, session, input, output, cacheWrite, cacheRead }
     this.sessions = new Map(); // conversación → tokens de todas sus respuestas
     this.lastSent = '';
     this.running = null;
+    this.fullPending = false;
     this.lastRun = 0;
     this.timer = null;
     this.ticker = null;
   }
 
   start() {
-    // Cada minuto: lo gastado fuera de ClaudHome y el paso de la hora de renovación.
-    this.ticker = setInterval(() => this.refresh(), 60 * 1000);
-    this.refresh();
+    // Cada minuto, el recorrido completo: lo gastado fuera de ClaudHome, las
+    // conversaciones nuevas y el paso de la hora de renovación.
+    this.ticker = setInterval(() => this.refresh({ full: true }), 60 * 1000);
+    this.refresh({ full: true });
   }
 
   stop() {
@@ -118,48 +123,78 @@ class Limits {
     this.publish();
   }
 
-  // Tras una respuesta llegan muchos avisos seguidos: se recuenta como mucho cada 10 s.
+  // Tras una respuesta llegan muchos avisos seguidos: se recuenta como mucho cada 10 s,
+  // y solo las conversaciones de las pestañas abiertas.
   refreshSoon() {
     if (this.timer) return;
     const wait = Math.max(0, 10 * 1000 - (Date.now() - this.lastRun));
     this.timer = setTimeout(() => { this.timer = null; this.refresh(); }, wait);
   }
 
-  refresh() {
-    if (this.running) return this.running;
-    this.running = this.scan()
+  // full: recorre toda la carpeta de conversaciones; si no, solo las de las pestañas abiertas.
+  refresh({ full = false } = {}) {
+    if (this.running) {
+      if (full) this.fullPending = true; // el completo se hace al acabar el que está en marcha
+      return this.running;
+    }
+    this.running = this.scan(full)
       .catch((err) => this.log(`límites de uso: no se han podido contar los tokens (${err.message})`))
       .then(() => this.publish())
-      .finally(() => { this.running = null; this.lastRun = Date.now(); });
+      .finally(() => {
+        this.running = null;
+        this.lastRun = Date.now();
+        if (this.fullPending) { this.fullPending = false; this.refresh({ full: true }); }
+      });
     return this.running;
+  }
+
+  // Archivos de las conversaciones abiertas en una pestaña: los que ya se conocen y los
+  // subagentes nuevos de cada una. Devuelve null si alguna todavía no se ha visto (una
+  // conversación recién creada): entonces hay que recorrerlo todo para encontrarla.
+  async openFiles(open) {
+    const files = new Set();
+    for (const session of open) {
+      const known = this.sessionFiles.get(session);
+      if (!known) return null;
+      for (const file of known) {
+        files.add(file);
+        if (path.basename(file) === `${session}.jsonl`) {
+          for (const sub of await listTranscripts(path.join(path.dirname(file), session), 2)) files.add(sub);
+        }
+      }
+    }
+    return [...files];
   }
 
   // Lee lo que se ha añadido a las conversaciones desde la vez anterior. Los archivos
   // antiguos se saltan, salvo los de las conversaciones abiertas en una pestaña; si uno
   // saltado vuelve a crecer (se ha retomado), se lee entero.
-  async scan() {
+  async scan(full) {
     const since = Date.now() - KEEP;
-    const open = new Set(this.openSessions().values());
-    const files = await listTranscripts(projectsDir());
+    const open = new Set([...this.openSessions().values()].filter(Boolean));
+    const files = (!full && await this.openFiles(open)) || await listTranscripts(projectsDir());
     for (const file of files) {
       let st;
       try { st = await fs.promises.stat(file); } catch { continue; }
+      const session = sessionOfFile(file);
+      if (!this.sessionFiles.has(session)) this.sessionFiles.set(session, new Set());
+      this.sessionFiles.get(session).add(file);
       const known = this.files.has(file);
       let offset = this.files.get(file) || 0;
-      if (this.skipped.has(file) && (st.size !== offset || open.has(sessionOfFile(file)))) {
+      if (this.skipped.has(file) && (st.size !== offset || open.has(session))) {
         this.skipped.delete(file);
         offset = 0;
       }
       if (st.size < offset) offset = 0; // archivo reescrito: se lee de nuevo
       if (known && st.size === offset) continue;
-      if (!known && st.mtimeMs < since && !open.has(sessionOfFile(file))) {
+      if (!known && st.mtimeMs < since && !open.has(session)) {
         this.files.set(file, st.size);
         this.skipped.add(file);
         continue;
       }
       this.files.set(file, await this.readFrom(file, offset, st.size));
     }
-    for (const [key, a] of this.answers) if (a.t < since) this.answers.delete(key);
+    for (const [key, answer] of this.answers) if (answer.t < since) this.answers.delete(key);
   }
 
   // Devuelve hasta dónde se ha leído: el final de la última línea completa.

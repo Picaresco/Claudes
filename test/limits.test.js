@@ -73,7 +73,7 @@ test('cuenta cada respuesta una vez, por periodo y por conversación', async (t)
     five_hour: { used_percentage: 34.6, resets_at: Math.round((now + 2 * HOUR) / 1000) },
     seven_day: { used_percentage: 12, resets_at: Math.round((now + DAY) / 1000) },
   } });
-  await limits.refresh();
+  await limits.refresh({ full: true });
   const snap = last();
   assert.equal(snap.plan.five_hour.pct, 35);
   assert.equal(snap.plan.five_hour.tokens.output, 60); // 50 + 7 + 3
@@ -89,13 +89,13 @@ test('lee solo lo nuevo y espera a que la línea esté completa', async (t) => {
   const second = line(2, 'conv', now - 60e3, 30);
   fs.writeFileSync(file, line(1, 'conv', now - 2 * 60e3, 20) + second.slice(0, 40)); // la segunda, a medio escribir
   open.set('t1', 'conv');
-  await limits.refresh();
+  await limits.refresh({ full: true });
   assert.equal(last().conversations.t1.output, 20);
   fs.appendFileSync(file, second.slice(40));
-  await limits.refresh();
+  await limits.refresh({ full: true });
   assert.equal(last().conversations.t1.output, 50);
   const sentBefore = last();
-  await limits.refresh(); // sin cambios: no se vuelve a avisar
+  await limits.refresh({ full: true }); // sin cambios: no se vuelve a avisar
   assert.equal(last(), sentBefore);
 });
 
@@ -106,10 +106,10 @@ test('las conversaciones antiguas se saltan, salvo la de una pestaña abierta', 
   fs.writeFileSync(file, line(1, 'vieja', now - 20 * DAY, 40) + line(2, 'vieja', now - 19 * DAY, 2));
   const old = (now - 15 * DAY) / 1000;
   fs.utimesSync(file, old, old);
-  await limits.refresh();
+  await limits.refresh({ full: true });
   assert.equal(limits.answers.size, 0); // no se ha leído
   open.set('t1', 'vieja'); // se abre en una pestaña
-  await limits.refresh();
+  await limits.refresh({ full: true });
   assert.equal(last().conversations.t1.output, 42);
 });
 
@@ -118,9 +118,66 @@ test('pasada la hora de renovación cuenta desde entonces y ya no da porcentaje'
   const now = Date.now();
   fs.writeFileSync(path.join(project, 'conv.jsonl'), line(1, 'conv', now - 3 * HOUR, 500) + line(2, 'conv', now - 10 * 60e3, 8));
   limits.plan = { five_hour: { pct: 80, resetsAt: now - HOUR } }; // se renovó hace una hora
-  await limits.refresh();
+  await limits.refresh({ full: true });
   const w = last().plan.five_hour;
   assert.equal(w.expired, true);
   assert.equal(w.pct, null);
   assert.equal(w.tokens.output, 8); // solo lo de después de renovarse
+});
+
+test('tras una respuesta solo se miran las conversaciones abiertas; el resto, en el recorrido completo', async (t) => {
+  const { project, limits, open, last } = setup(t);
+  const now = Date.now();
+  const mine = path.join(project, 'mia.jsonl');
+  const other = path.join(project, 'ajena.jsonl');
+  fs.writeFileSync(mine, line(1, 'mia', now - 5 * 60e3, 10));
+  fs.writeFileSync(other, line(2, 'ajena', now - 5 * 60e3, 100));
+  open.set('t1', 'mia');
+  limits.plan = { five_hour: { pct: 10, resetsAt: now + HOUR } };
+  await limits.refresh({ full: true });
+  assert.equal(last().plan.five_hour.tokens.output, 110);
+
+  // Las dos crecen y la mía lanza un subagente; el recuento rápido solo ve lo mío.
+  fs.appendFileSync(mine, line(3, 'mia', now - 60e3, 5));
+  fs.appendFileSync(other, line(4, 'ajena', now - 60e3, 1000));
+  fs.mkdirSync(path.join(project, 'mia', 'subagents'), { recursive: true });
+  fs.writeFileSync(path.join(project, 'mia', 'subagents', 'agent-x.jsonl'), line(5, 'mia', now - 30e3, 2));
+  const listed = [];
+  const readdir = fs.promises.readdir;
+  fs.promises.readdir = (dir, ...rest) => { listed.push(path.relative(project, String(dir))); return readdir(dir, ...rest); };
+  t.after(() => { fs.promises.readdir = readdir; });
+  await limits.refresh();
+  assert.equal(last().conversations.t1.output, 17); // 10 + 5 + 2 del subagente
+  assert.equal(last().plan.five_hour.tokens.output, 117); // lo ajeno nuevo aún no cuenta
+  assert.ok(listed.length > 0 && listed.every((dir) => dir.startsWith('mia')), `solo se ha mirado mi conversación: ${listed.join(', ')}`);
+
+  await limits.refresh({ full: true }); // el del minuto
+  assert.equal(last().plan.five_hour.tokens.output, 1117);
+});
+
+test('una conversación recién creada obliga a recorrerlo todo para encontrarla', async (t) => {
+  const { project, limits, open, last } = setup(t);
+  const now = Date.now();
+  fs.writeFileSync(path.join(project, 'vieja.jsonl'), line(1, 'vieja', now - 60e3, 10));
+  open.set('t1', 'vieja');
+  await limits.refresh({ full: true });
+  fs.writeFileSync(path.join(project, 'nueva.jsonl'), line(2, 'nueva', now - 30e3, 4)); // tras un /clear
+  open.set('t1', 'nueva');
+  await limits.refresh();
+  assert.equal(last().conversations.t1.output, 4);
+});
+
+test('un recorrido completo pedido con otro en marcha se hace al terminar', async (t) => {
+  const { project, limits, open, last } = setup(t);
+  const now = Date.now();
+  fs.writeFileSync(path.join(project, 'mia.jsonl'), line(1, 'mia', now - 60e3, 10));
+  open.set('t1', 'mia');
+  limits.plan = { five_hour: { pct: 10, resetsAt: now + HOUR } };
+  await limits.refresh({ full: true });
+  fs.writeFileSync(path.join(project, 'ajena.jsonl'), line(2, 'ajena', now - 30e3, 100));
+  const quick = limits.refresh(); // rápido: no ve la ajena…
+  limits.refresh({ full: true }); // …y este se queda pendiente
+  await quick;
+  await limits.running;
+  assert.equal(last().plan.five_hour.tokens.output, 110);
 });

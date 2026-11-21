@@ -1,9 +1,12 @@
-// Proceso principal de Claudes: ventana, procesos de terminal, avisos y guardado.
+// Proceso principal de Claudes: arranque, sesiones de las pestañas y comunicación
+// con la interfaz. Cada pieza vive en su módulo: la ventana (window.js), los procesos
+// de terminal (ptys.js), las consolas y su entorno (shells.js), el portapapeles
+// (clipboard.js), el estilo de las respuestas y los plugins (style.js), el registro de
+// depuración (applog.js) y lo que se sabe de cada pestaña (tabs.js).
 const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen, net, nativeImage } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { fileURLToPath } = require('url');
 const pty = require('node-pty');
 const { Store } = require('./store');
 const { HookServer } = require('./hooks');
@@ -15,6 +18,14 @@ const { createPreview } = require('./preview');
 const { createContext } = require('./context');
 const { NetLog } = require('./netlog');
 const { Limits } = require('./limits');
+const { Tabs } = require('./tabs');
+const { createAppLog, localStamp, safeFileName } = require('./applog');
+const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
+const { createPtys } = require('./ptys');
+const { createClipboard } = require('./clipboard');
+const { createWindowManager } = require('./window');
+const { createStyle } = require('./style');
+const { userSettings, usageFrom } = require('./claude-config');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -22,88 +33,41 @@ app.setAppUserModelId('com.claudes.app');
 
 const DEV = !app.isPackaged;
 
-let win = null;
 let store = null;
+let wm = null; // la ventana (window.js)
 let hookServer = null;
 let updater = null;
 let previewer = null;
 let contexts = null; // contexto del proyecto de cada pestaña (context.js)
 let netlog = null; // «Log»: lo que ha visto Claude y lo que sale hacia internet (netlog.js)
 let limits = null; // límites de uso del plan y tokens gastados en cada periodo (limits.js)
-let summary = { working: 0 };
-let closeApproved = false; // el usuario ya ha decidido cerrar aunque haya sesiones trabajando
-let closeDialogOpen = false;
-const ptys = new Map(); // id → { proc, killed, waiters, buffer, timer }
 const liveNotifications = new Set();
 
-const CLOSE_BUTTONS = ['Guardar estado y cerrar', 'Cerrar ya', 'Cancelar'];
-
-const two = (n) => String(n).padStart(2, '0');
-const dayStamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}`;
-const localStamp = (d = new Date()) => `${dayStamp(d)}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
-
-// ── Registro de depuración ─────────────────────────────────────────
-// Con la depuración activada, cada sesión de Claude arranca con --debug-file y
-// la app anota además su propia actividad (arranques, hooks, salidas, errores).
-// Todo queda en <datos de la app>\logs y se borra solo pasada una semana.
-
-const LOG_DAYS = 7;
-const LOG_MAX_BYTES = 300 * 1024 * 1024;
-let debugEnabled = true;
-let appLogStream = null;
-let appLogDay = '';
-const tabNames = new Map(); // id de pestaña → nombre, para que los registros se lean bien
-const tabLogs = new Map(); // id de pestaña → registro de Claude de su último arranque
-
 const logsDir = () => path.join(app.getPath('userData'), 'logs');
-const tabLabel = (id) => {
-  const base = String(id).replace(/:sh$/, '');
-  return `«${tabNames.get(base) || base}»${String(id).endsWith(':sh') ? ' (terminal extra)' : ''}`;
-};
+const logger = createAppLog(logsDir); // registro de depuración (applog.js)
+const appLog = logger.log;
+const tabs = new Tabs(); // lo que se sabe de cada pestaña (tabs.js)
+const tabLabel = (id) => tabs.label(id);
 
-function appLog(text) {
-  if (!debugEnabled) return;
-  try {
-    const now = new Date();
-    const day = dayStamp(now);
-    if (day !== appLogDay) {
-      if (appLogStream) appLogStream.end();
-      fs.mkdirSync(logsDir(), { recursive: true });
-      appLogStream = fs.createWriteStream(path.join(logsDir(), `claudes-${day}.log`), { flags: 'a' });
-      appLogStream.on('error', () => { /* disco lleno o sin permiso: se sigue sin registro */ });
-      appLogDay = day;
-    }
-    const time = `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, '0')}`;
-    appLogStream.write(`${time} ${String(text).replace(/\r?\n/g, ' ⏎ ')}\n`);
-  } catch { /* el registro nunca debe romper la app */ }
-}
+// Avisa a la interfaz por un canal (cuando ya hay ventana).
+const send = (channel, ...args) => { if (wm) wm.send(channel, ...args); };
 
-// Borra los registros de más de una semana y, si aun así ocupan demasiado, los más antiguos.
-function cleanLogs() {
-  let files = [];
-  try {
-    files = fs.readdirSync(logsDir())
-      .filter((name) => name.endsWith('.log'))
-      .map((name) => { const file = path.join(logsDir(), name); const st = fs.statSync(file); return { file, mtime: st.mtimeMs, size: st.size }; })
-      .sort((a, b) => b.mtime - a.mtime);
-  } catch { return; }
-  const limit = Date.now() - LOG_DAYS * 24 * 60 * 60 * 1000;
-  let total = 0;
-  for (const entry of files) {
-    total += entry.size;
-    if (entry.mtime < limit || total > LOG_MAX_BYTES) {
-      try { fs.unlinkSync(entry.file); } catch { /* en uso */ }
-    }
-  }
-}
-
-const safeFileName = (name) => (String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, '_').slice(0, 40) || 'sesion');
+const ptys = createPtys({ pty, send, log: appLog, label: tabLabel });
+const pasteboard = createClipboard({ clipboard, dir: () => path.join(app.getPath('temp'), 'Claudes-pegado'), stamp: localStamp });
+// Plugins de las sesiones e interruptor «Resumido» (style.js).
+const style = createStyle({
+  srcDir: path.join(__dirname, '..', 'plugins'),
+  dstDir: path.join(app.getPath('userData'), 'plugins'),
+  userSettings,
+  gitBash,
+  tabs,
+  log: appLog,
+  label: tabLabel,
+});
 
 // ── Codex ──────────────────────────────────────────────────────────
 
 const CODEX_SERVER = 'codex-imagenes'; // nombre del servidor MCP: la herramienta se ve como mcp__codex-imagenes__generar_imagen
-const tabFolders = new Map(); // id de pestaña → carpeta de su sesión
-const tabSessions = new Map(); // id de pestaña → conversación de Claude que tiene abierta
 let codexState = { installed: false, loggedIn: false, mode: null, enabled: false, busy: 0, checkedAt: 0 };
 
 // Solo se usa con sesión de ChatGPT: es la suscripción lo que se quiere aprovechar.
@@ -123,7 +87,7 @@ async function refreshCodex() {
 
 // Lo que ocurre cuando Claude llama a la herramienta «generar_imagen».
 async function codexTool(tabId, _name, args) {
-  const cwd = tabFolders.get(tabId);
+  const cwd = (tabs.get(tabId) || {}).folder;
   if (!cwd) throw new Error('Esta sesión ya no está abierta en ClaudHome.');
   if (!codexState.enabled) throw new Error('Las imágenes con Codex están desactivadas en ClaudHome (indicador «Codex» de la barra superior).');
   codexState.busy += 1;
@@ -160,142 +124,20 @@ async function codexTool(tabId, _name, args) {
 
 let voiceEnabled = false;
 
-// Configuración de Claude Code del usuario (~/.claude/settings.json), o {}.
-function userSettings() {
-  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-  try {
-    return JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8').replace(/^﻿/, '')) || {};
-  } catch {
-    return {}; // sin archivo o ilegible
-  }
-}
-
 // Ajustes de Claude Code que Claudes añade a la sesión de una pestaña. `allow` son
 // las reglas para leer sin preguntar los documentos del contexto del proyecto.
 function sessionSettings(tabId, allow = []) {
   const mine = userSettings();
-  const settings = { voice: { enabled: true, mode: 'hold' } };
+  // Dictado activado y los plugins integrados que toquen (style.js).
+  const settings = { voice: { enabled: true, mode: 'hold' }, ...style.sessionSettings(mine) };
   // Sin idioma, Claude Code dicta en inglés. Ese mismo ajuste fija el idioma de las
   // respuestas; si el usuario ya ha elegido uno, se respeta el suyo.
   if (!(typeof mine.language === 'string' && mine.language.trim())) settings.language = 'spanish';
   if (allow.length) settings.permissions = { allow };
-  // «You should know» encendido, salvo que el usuario lo haya activado o apagado él.
-  if (!Object.prototype.hasOwnProperty.call(mine.enabledPlugins || {}, YOU_SHOULD_KNOW)) settings.enabledPlugins = { [YOU_SHOULD_KNOW]: true };
   // Línea de estado que solo le pasa a la app el uso del contexto (no muestra nada).
   // Si el usuario tiene la suya, se respeta y la pestaña se queda sin indicador.
   if (!mine.statusLine) settings.statusLine = { type: 'command', command: hookServer.statusLineCommand(tabId), padding: 0 };
   return settings;
-}
-
-// Cuánto ocupa la conversación, a partir de lo que Claude Code da a la línea de estado.
-function usageFrom(data) {
-  const window = data && data.context_window;
-  if (!window || !(window.context_window_size > 0)) return null;
-  const current = window.current_usage;
-  const used = current
-    ? (current.input_tokens || 0) + (current.cache_creation_input_tokens || 0) + (current.cache_read_input_tokens || 0)
-    : null;
-  let pct = typeof window.used_percentage === 'number' ? window.used_percentage : null;
-  if (pct === null && used !== null) pct = (used / window.context_window_size) * 100;
-  return { size: window.context_window_size, used, pct: pct === null ? null : Math.round(pct) };
-}
-const lastUsage = new Map(); // pestaña → último uso enviado a la interfaz
-
-// ── Plugins que trae ClaudHome ─────────────────────────────────────
-// explanatory-output-style, de Anthropic: mientras trabaja, Claude explica con
-// bloques «★ Insight» las decisiones que toma y lo que va viendo del proyecto. Cada
-// sesión lo carga con --plugin-dir, sin instalar nada en Claude Code. Su hook es un
-// script de bash que Claude Code ejecuta con Git Bash: sin Git Bash no se carga,
-// porque cada sesión empezaría con un error.
-
-const EXPLAIN_PLUGIN = 'explanatory-output-style';
-const BUNDLED_PLUGINS = [EXPLAIN_PLUGIN];
-const OFFICIAL_MARKETPLACE = 'claude-plugins-official';
-let pluginDirs = []; // { name, dir } de los plugins listos para pasar a las sesiones
-
-// «You should know», integrado en Claude Code y apagado de serie: un agente aparte
-// avisa con tarjetas («Heads up», «You should know») de lo que conviene saber.
-// ClaudHome lo enciende en sus sesiones salvo que el usuario lo haya decidido en su
-// configuración. Los enabledPlugins de --settings se suman a los del usuario.
-const YOU_SHOULD_KNOW = 'cc-plugin-you-should-know@builtin';
-
-// ── Respuestas resumidas o con explicaciones ───────────────────────
-// El botón «Resumido» de la barra superior vale para todas las pestañas y al momento:
-// cada sesión recuerda qué estilo recibió y, si no coincide con el botón, se le dice
-// con el siguiente mensaje (hook UserPromptSubmit). Al arrancar, el modo explicativo
-// lo da el plugin; si no se puede cargar (sin Git Bash), lo da el hook con el mismo texto.
-
-let briefMode = false; // true: respuestas cortas y al grano
-const tabStyle = new Map(); // pestaña → 'explain' | 'brief' | null (lo que ya sabe su sesión)
-let explainText = ''; // las instrucciones del plugin explicativo, leídas de su script
-
-const BRIEF_TEXT = [
-  'ClaudHome · modo resumido: el usuario ha activado el botón «Resumido». A partir de este mensaje, tus respuestas deben ser cortas y al grano:',
-  '- Como mucho unas 80 palabras: de 2 a 5 frases, o una lista de 3 o 4 puntos breves. Solo te puedes alargar si la tarea lo necesita de verdad (código, comandos o una lista que el usuario haya pedido).',
-  '- No añadas bloques «★ Insight» ni explicaciones didácticas sobre el proyecto o tus decisiones, aunque instrucciones anteriores (el estilo «explanatory») lo pidan.',
-  '- Sin introducciones, sin resumen final y sin ofrecer más ayuda al terminar.',
-  '- Di lo esencial: qué has hecho o qué has encontrado, el resultado y, si hace falta, el siguiente paso. Nunca te calles errores, riesgos, cambios que no se pueden deshacer ni preguntas que necesiten su respuesta.',
-  'Si el usuario pide expresamente más detalle, dáselo.',
-].join('\n');
-
-// El texto que el plugin explicativo da a Claude, sacado de su session-start.sh.
-function readExplainText() {
-  try {
-    const script = fs.readFileSync(path.join(__dirname, '..', 'plugins', EXPLAIN_PLUGIN, 'hooks-handlers', 'session-start.sh'), 'utf8');
-    const json = /<<\s*'EOF'\s*\n([\s\S]*?)\nEOF/.exec(script);
-    return JSON.parse(json[1]).hookSpecificOutput.additionalContext;
-  } catch (err) {
-    appLog(`plugin ${EXPLAIN_PLUGIN}: no se ha podido leer su texto (${err.message})`);
-    return 'Explain your implementation choices and what you learn about the codebase as you work, in brief "★ Insight" blocks of 2-3 points before and after writing code.';
-  }
-}
-
-// Lo que hay que decirle a una sesión con el siguiente mensaje, si su estilo no es el del botón.
-function styleUpdate(tabId) {
-  if (!tabStyle.has(tabId)) return null; // no es una sesión de Claude de ClaudHome
-  const want = briefMode ? 'brief' : 'explain';
-  if (tabStyle.get(tabId) === want) return null;
-  tabStyle.set(tabId, want);
-  appLog(`estilo de ${tabLabel(tabId)}: pasa a ${want === 'brief' ? 'resumido' : 'explicativo'} con este mensaje`);
-  return want === 'brief'
-    ? BRIEF_TEXT
-    : `ClaudHome · modo explicativo: el usuario ha apagado el botón «Resumido». A partir de este mensaje sigue estas instrucciones, aunque antes te pidiera respuestas resumidas:\n\n${explainText}`;
-}
-
-// ¿Tiene el usuario el plugin explicativo instalado y activado en su Claude Code?
-const userExplains = () => (userSettings().enabledPlugins || {})[`${EXPLAIN_PLUGIN}@${OFFICIAL_MARKETPLACE}`] === true;
-
-// Copia una carpeta. Desde el ejecutable, los plugins están dentro de app.asar, que
-// Claude Code no puede leer, así que se copian a la carpeta de datos de la app.
-function copyDir(src, dst) {
-  fs.mkdirSync(dst, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const from = path.join(src, entry.name);
-    const to = path.join(dst, entry.name);
-    if (entry.isDirectory()) copyDir(from, to);
-    else fs.writeFileSync(to, fs.readFileSync(from));
-  }
-}
-
-function preparePlugins() {
-  const target = path.join(app.getPath('userData'), 'plugins');
-  pluginDirs = [];
-  for (const name of BUNDLED_PLUGINS) {
-    try {
-      copyDir(path.join(__dirname, '..', 'plugins', name), path.join(target, name));
-      pluginDirs.push({ name, dir: path.join(target, name) });
-    } catch (err) {
-      appLog(`plugin ${name}: no se ha podido preparar (${err.message})`);
-    }
-  }
-}
-
-// Plugins de ClaudHome para una sesión, salvo los que el usuario ya tenga activados
-// en su Claude Code (se cargarían dos veces). Con «Resumido», sin el explicativo.
-function sessionPlugins() {
-  if (!gitBash) return [];
-  const enabled = userSettings().enabledPlugins || {};
-  return pluginDirs.filter((p) => enabled[`${p.name}@${OFFICIAL_MARKETPLACE}`] !== true && !(briefMode && p.name === EXPLAIN_PLUGIN));
 }
 
 // ── Actualización ──────────────────────────────────────────────────
@@ -308,111 +150,10 @@ function sessionPlugins() {
 function restartToUpdate() {
   if (!updater || updater.state.status !== 'ready') return;
   updater.relaunch = true;
-  if (win) win.close();
+  if (wm) wm.close();
 }
 
-// Variables que una sesión de Claude Code pone a sus procesos hijos. Si Claudes
-// se lanza desde dentro de una, no deben heredarse a las sesiones de las pestañas.
-const SESSION_MARKERS = [
-  'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_PID',
-  'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_SESSION_ATTENDED',
-  'CLAUDE_CODE_EXECPATH', 'AI_AGENT', 'ELECTRON_RUN_AS_NODE',
-];
-
-// Git Bash: donde lo deja su instalador o junto al git.exe del PATH (Git\cmd\git.exe → Git\bin\bash.exe).
-const gitBash = [
-  process.env.CLAUDE_CODE_GIT_BASH_PATH,
-  'C:\\Program Files\\Git\\bin\\bash.exe',
-  'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-  path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Git', 'bin', 'bash.exe'),
-  ...String(process.env.PATH || '').split(';').filter((dir) => dir && fs.existsSync(path.join(dir, 'git.exe')))
-    .map((dir) => path.join(dir, '..', 'bin', 'bash.exe')),
-].find((p) => p && fs.existsSync(p)) || null;
-
-function shellList() {
-  const list = [
-    { key: 'powershell', name: 'PowerShell' },
-    { key: 'cmd', name: 'Símbolo del sistema (cmd)' },
-  ];
-  if (gitBash) list.push({ key: 'gitbash', name: 'Git Bash' });
-  return list;
-}
-
-function shellCommand(kind) {
-  if (kind === 'cmd') return { file: process.env.ComSpec || 'cmd.exe', args: [], env: {} };
-  if (kind === 'gitbash' && gitBash) return { file: gitBash, args: ['--login', '-i'], env: { CHERE_INVOKING: '1' } };
-  return { file: 'powershell.exe', args: ['-NoLogo'], env: {} };
-}
-
-function childEnv(extra) {
-  const env = { ...process.env };
-  for (const name of SESSION_MARKERS) delete env[name];
-  return { ...env, COLORTERM: 'truecolor', TERM_PROGRAM: 'Claudes', ...extra };
-}
-
-function send(channel, ...args) {
-  if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
-}
-
-// ── Procesos de terminal ───────────────────────────────────────────
-
-function spawnPty(id, file, args, options) {
-  const proc = pty.spawn(file, args, {
-    name: 'xterm-256color',
-    cols: Math.max(options.cols | 0, 20),
-    rows: Math.max(options.rows | 0, 5),
-    cwd: options.cwd,
-    env: options.env,
-  });
-  const entry = { proc, killed: false, waiters: [], buffer: '', timer: null };
-  ptys.set(id, entry);
-
-  const flush = () => {
-    entry.timer = null;
-    if (!entry.buffer) return;
-    const data = entry.buffer;
-    entry.buffer = '';
-    send('pty:data', id, data);
-  };
-  // La salida se agrupa unos milisegundos para no saturar la interfaz.
-  proc.onData((data) => {
-    entry.buffer += data;
-    if (!entry.timer) entry.timer = setTimeout(flush, 4);
-  });
-  proc.onExit(({ exitCode }) => {
-    clearTimeout(entry.timer);
-    flush();
-    if (ptys.get(id) === entry) ptys.delete(id);
-    appLog(`proceso de ${tabLabel(id)} termina con código ${exitCode}${entry.killed ? ' (cerrado por la app)' : ''}`);
-    entry.waiters.forEach((done) => done());
-    if (!entry.killed) send('pty:exit', id, exitCode);
-  });
-  return entry;
-}
-
-// Termina un proceso y espera a que haya salido (o a un máximo de 2 s).
-function killPty(id) {
-  const entry = ptys.get(id);
-  if (!entry) return Promise.resolve();
-  entry.killed = true;
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, 2000);
-    entry.waiters.push(() => { clearTimeout(timer); resolve(); });
-    try { entry.proc.kill(); } catch { clearTimeout(timer); resolve(); }
-  });
-}
-
-function killAll() {
-  for (const entry of ptys.values()) {
-    entry.killed = true;
-    try { entry.proc.kill(); } catch { /* ya había salido */ }
-  }
-  ptys.clear();
-}
-
-function quoteForCmd(arg) {
-  return /[\s"&|<>^]/.test(arg) ? `"${arg.replace(/"/g, '""')}"` : arg;
-}
+// ── Sesiones de las pestañas ───────────────────────────────────────
 
 async function createPty(o) {
   if (!o || typeof o.id !== 'string' || typeof o.cwd !== 'string') return { ok: false, error: 'Petición no válida.' };
@@ -420,17 +161,18 @@ async function createPty(o) {
   try { isDir = fs.statSync(o.cwd).isDirectory(); } catch { /* no existe */ }
   if (!isDir) return { ok: false, error: `La carpeta no existe: ${o.cwd}` };
 
-  await killPty(o.id);
+  await ptys.kill(o.id);
   const base = { cwd: o.cwd, cols: o.cols, rows: o.rows };
 
   if (o.kind === 'shell') {
     const sh = shellCommand(o.shell);
-    spawnPty(o.id, sh.file, sh.args, { ...base, env: childEnv(sh.env) });
+    ptys.spawn(o.id, sh.file, sh.args, { ...base, env: childEnv(sh.env) });
     appLog(`terminal extra de ${tabLabel(o.id)} arranca: ${path.basename(sh.file)} en ${o.cwd}`);
     return { ok: true };
   }
 
-  if (typeof o.name === 'string' && o.name) tabNames.set(o.id, o.name);
+  const tab = tabs.ensure(o.id);
+  if (typeof o.name === 'string' && o.name) tab.name = o.name;
   const exe = sessions.findClaude();
   if (!exe) {
     appLog(`sesión ${tabLabel(o.id)}: no se encuentra claude en el equipo`);
@@ -445,20 +187,18 @@ async function createPty(o) {
     appLog(`contexto de ${tabLabel(o.id)}: no se pudo preparar (${err.message})`);
   }
   const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, ctx.allow))];
-  lastUsage.delete(o.id);
+  tab.usage = null;
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
-  const plugins = sessionPlugins();
+  const plugins = style.sessionPlugins();
   for (const plugin of plugins) args.push('--plugin-dir', plugin.dir);
-  // Lo que la sesión sabe al arrancar: el plugin explicativo da ese estilo; si no se
-  // carga, el estilo que toque se le dice con el primer mensaje.
-  tabStyle.set(o.id, plugins.some((p) => p.name === EXPLAIN_PLUGIN) || userExplains() ? 'explain' : null);
+  style.started(o.id, plugins);
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
 
   // Con las imágenes de Codex activadas, la sesión arranca con la herramienta «generar_imagen».
   if (codexState.enabled && !codexState.checkedAt) await refreshCodex();
   const withCodex = codexState.enabled && codexUsable();
-  tabFolders.set(o.id, o.cwd);
-  tabSessions.set(o.id, chosen.sessionId);
+  tab.folder = o.cwd;
+  tab.session = chosen.sessionId;
   if (withCodex) {
     args.push('--mcp-config', hookServer.mcpFile(o.id, CODEX_SERVER));
     // Una imagen puede tardar más que el límite por defecto de una herramienta.
@@ -467,11 +207,11 @@ async function createPty(o) {
 
   // Registro de depuración de Claude Code para este arranque.
   let logFile = null;
-  if (debugEnabled) {
+  if (logger.enabled) {
     fs.mkdirSync(logsDir(), { recursive: true });
     logFile = path.join(logsDir(), `${localStamp()}-${safeFileName(o.name)}.log`);
     args.push('--debug-file', logFile);
-    tabLogs.set(o.id, logFile);
+    tab.log = logFile;
   }
   appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
     + `${withCodex ? ' · con Codex' : ''}${ctx.promptFile ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
@@ -481,202 +221,11 @@ async function createPty(o) {
   if (/\.(cmd|bat)$/i.test(exe)) {
     // Instalación por npm: claude es un .cmd y hay que lanzarlo a través de cmd.exe.
     const line = `/d /s /c "${[exe, ...args].map(quoteForCmd).join(' ')}"`;
-    spawnPty(o.id, process.env.ComSpec || 'cmd.exe', line, { ...base, env });
+    ptys.spawn(o.id, process.env.ComSpec || 'cmd.exe', line, { ...base, env });
   } else {
-    spawnPty(o.id, exe, args, { ...base, env });
+    ptys.spawn(o.id, exe, args, { ...base, env });
   }
   return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex };
-}
-
-// ── Portapapeles ───────────────────────────────────────────────────
-
-const pasteDir = () => path.join(app.getPath('temp'), 'Claudes-pegado');
-
-// Una imagen copiada (una captura, «Copiar imagen» del navegador…) se guarda
-// como archivo para poder pegar su ruta, igual que un archivo arrastrado.
-function savePastedImage(buffer) {
-  const stamp = localStamp();
-  fs.mkdirSync(pasteDir(), { recursive: true });
-  let file = path.join(pasteDir(), `imagen-${stamp}.png`);
-  for (let n = 2; fs.existsSync(file); n += 1) file = path.join(pasteDir(), `imagen-${stamp}-${n}.png`);
-  fs.writeFileSync(file, buffer);
-  return file;
-}
-
-// Las imágenes pegadas ya viajaron con su mensaje: pasada una semana se borran.
-function cleanPastedImages() {
-  const limit = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  let names = [];
-  try { names = fs.readdirSync(pasteDir()); } catch { return; }
-  for (const name of names) {
-    const file = path.join(pasteDir(), name);
-    try { if (fs.statSync(file).mtimeMs < limit) fs.unlinkSync(file); } catch { /* en uso */ }
-  }
-}
-
-// Qué hay que pegar: archivos copiados en el Explorador, si no texto, si no una imagen.
-async function readClipboard() {
-  const result = { files: [], text: '', imagePath: null };
-  let items = [];
-  try { items = await clipboard.read(); } catch { /* portapapeles vacío u ocupado */ }
-
-  for (const item of items) {
-    if (!item.types.includes('text/uri-list')) continue;
-    try {
-      const blob = await item.getType('text/uri-list');
-      const list = Buffer.from(await blob.arrayBuffer()).toString('utf8');
-      for (const line of list.split(/\r?\n/)) {
-        const uri = line.trim();
-        if (!/^file:/i.test(uri)) continue;
-        try { result.files.push(fileURLToPath(uri)); } catch { /* URI que no es una ruta local */ }
-      }
-    } catch { /* formato no legible */ }
-  }
-  if (result.files.length) return result;
-
-  try { result.text = await clipboard.readText(); } catch { /* sin texto */ }
-  if (result.text) return result;
-
-  for (const item of items) {
-    if (!item.types.includes('image/png')) continue;
-    try {
-      const blob = await item.getType('image/png');
-      result.imagePath = savePastedImage(Buffer.from(await blob.arrayBuffer()));
-      break;
-    } catch (err) {
-      console.error('No se pudo guardar la imagen del portapapeles:', err.message);
-    }
-  }
-  return result;
-}
-
-// ── Ventana ────────────────────────────────────────────────────────
-
-function initialBounds() {
-  const saved = store.get('window', null);
-  const fallback = { width: 1360, height: 860 };
-  if (!saved || !(saved.width > 0) || !(saved.height > 0)) return fallback;
-  const onScreen = screen.getAllDisplays().some(({ workArea: a }) => (
-    saved.x < a.x + a.width - 80 && saved.x + saved.width > a.x + 80
-    && saved.y >= a.y - 20 && saved.y < a.y + a.height - 80
-  ));
-  const size = { width: saved.width, height: saved.height };
-  return onScreen ? { ...size, x: saved.x, y: saved.y } : size;
-}
-
-function showWindow() {
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
-}
-
-function createWindow() {
-  win = new BrowserWindow({
-    ...initialBounds(),
-    minWidth: 720,
-    minHeight: 480,
-    show: false,
-    title: 'ClaudHome',
-    icon: path.join(__dirname, '..', '..', 'build', 'icon.ico'),
-    backgroundColor: '#0C0E11',
-    titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0C0E11', symbolColor: '#A9AFB9', height: 50 },
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      spellcheck: false,
-    },
-  });
-  if (store.get('window', {}).maximized) win.maximize();
-
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-  win.once('ready-to-show', () => (process.env.CLAUDES_SHOT ? win.showInactive() : win.show()));
-
-  let boundsTimer = null;
-  const rememberBounds = () => {
-    clearTimeout(boundsTimer);
-    boundsTimer = setTimeout(() => {
-      if (!win || win.isDestroyed() || win.isMinimized()) return;
-      store.set('window', { ...win.getNormalBounds(), maximized: win.isMaximized() });
-    }, 400);
-  };
-  win.on('resize', rememberBounds);
-  win.on('move', rememberBounds);
-  win.on('focus', () => win.flashFrame(false));
-
-  win.on('close', (event) => {
-    if (closeApproved || summary.working === 0) { store.flush(); return; }
-    // Hay sesiones trabajando: se pregunta antes de cerrar.
-    event.preventDefault();
-    if (closeDialogOpen) return;
-    closeDialogOpen = true;
-    const n = summary.working;
-    const ask = (DEV && process.env.CLAUDES_AUTO_CONFIRM)
-      ? () => Promise.resolve({ response: 0 }) // solo para pruebas automáticas
-      : (options) => dialog.showMessageBox(win, options);
-    ask({
-      type: 'question',
-      message: n === 1 ? 'Claude está trabajando en una sesión' : `Claude está trabajando en ${n} sesiones`,
-      detail: '«Guardar estado y cerrar» pide a Claude que pare y deje anotado por dónde iba, para retomarlo al volver. '
-        + '«Cerrar ya» interrumpe el trabajo en el punto en que esté; la conversación queda guardada igualmente.',
-      buttons: CLOSE_BUTTONS,
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-    }).then(({ response }) => {
-      closeDialogOpen = false;
-      if (response === 2 && updater) updater.relaunch = false; // ya no se cierra: tampoco se reinicia
-      if (!win) return;
-      if (response === 1) { closeApproved = true; win.close(); }
-      else if (response === 0) send('app:wrapup'); // la interfaz avisa con app:closeNow al terminar
-    });
-  });
-  win.on('closed', () => { win = null; });
-
-  // La interfaz es un único documento local: ni ventanas nuevas ni navegación.
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (event) => event.preventDefault());
-  win.webContents.on('before-input-event', (_event, input) => {
-    if (input.type === 'keyDown' && input.key === 'F12') win.webContents.toggleDevTools();
-  });
-  // Si la interfaz se cae o deja de responder, que quede constancia.
-  win.webContents.on('render-process-gone', (_event, details) => appLog(`la interfaz se ha caído: ${details.reason} (código ${details.exitCode})`));
-  win.on('unresponsive', () => appLog('la ventana ha dejado de responder'));
-  win.on('responsive', () => appLog('la ventana vuelve a responder'));
-
-  if (DEV) devTools();
-}
-
-// Ayudas solo para desarrollo: mensajes de la interfaz en la consola y captura
-// de la ventana a un PNG (CLAUDES_SHOT) tras ejecutar un guion (CLAUDES_TEST_JS).
-function devTools() {
-  win.webContents.on('console-message', (event, ...legacy) => {
-    const message = event && event.message !== undefined ? event.message : legacy[1];
-    const level = event && event.level !== undefined ? event.level : legacy[0];
-    console.log(`[interfaz:${level}] ${message}`);
-  });
-  const shot = process.env.CLAUDES_SHOT;
-  if (!shot) return;
-  const delay = Number(process.env.CLAUDES_SHOT_DELAY) || 4000;
-  win.webContents.once('did-finish-load', () => {
-    setTimeout(async () => {
-      try {
-        if (process.env.CLAUDES_TEST_JS) {
-          const result = await win.webContents.executeJavaScript(fs.readFileSync(process.env.CLAUDES_TEST_JS, 'utf8'), true);
-          if (result !== undefined) console.log('[guion]', JSON.stringify(result));
-        }
-        const image = await win.webContents.capturePage();
-        fs.writeFileSync(shot, image.toPNG());
-        console.log('[captura]', shot);
-      } catch (err) {
-        console.error('[captura] error:', err.message);
-      }
-      if (process.env.CLAUDES_SHOT_QUIT) { summary = { working: 0 }; app.quit(); }
-    }, delay);
-  });
 }
 
 // ── Comunicación con la interfaz ───────────────────────────────────
@@ -710,41 +259,30 @@ function registerIpc() {
       return { ok: false, error: `No se pudo iniciar: ${err && err.message ? err.message : err}` };
     }
   });
-  ipcMain.on('pty:write', (_e, id, data) => {
-    const entry = ptys.get(id);
-    if (entry && typeof data === 'string') entry.proc.write(data);
-  });
-  ipcMain.on('pty:resize', (_e, id, cols, rows) => {
-    const entry = ptys.get(id);
-    if (!entry || !(cols >= 2) || !(rows >= 1)) return;
-    try { entry.proc.resize(cols | 0, rows | 0); } catch { /* el proceso acaba de salir */ }
-  });
+  ipcMain.on('pty:write', (_e, id, data) => ptys.write(id, data));
+  ipcMain.on('pty:resize', (_e, id, cols, rows) => ptys.resize(id, cols, rows));
   ipcMain.handle('pty:kill', async (_e, id) => {
-    await killPty(id);
+    await ptys.kill(id);
     if (typeof id === 'string' && !id.includes(':')) {
       hookServer.forget(id);
       contexts.forget(id);
-      tabFolders.delete(id);
-      tabSessions.delete(id);
-      tabStyle.delete(id);
-      tabNames.delete(id);
-      tabLogs.delete(id);
+      tabs.forget(id);
     }
   });
 
   // Registro de depuración: estado, interruptor y acceso a los archivos.
-  const debugInfo = () => ({ enabled: debugEnabled, dir: logsDir() });
+  const debugInfo = () => ({ enabled: logger.enabled, dir: logsDir() });
   ipcMain.handle('debug:get', debugInfo);
   ipcMain.handle('debug:set', (_e, on) => {
-    if (debugEnabled && !on) appLog('registro de depuración desactivado');
-    debugEnabled = Boolean(on);
-    store.set('debugLogs', debugEnabled);
-    if (debugEnabled) appLog('registro de depuración activado');
+    if (logger.enabled && !on) appLog('registro de depuración desactivado');
+    logger.enabled = Boolean(on);
+    store.set('debugLogs', logger.enabled);
+    if (logger.enabled) appLog('registro de depuración activado');
     return debugInfo();
   });
   // Abre el registro de Claude de una pestaña; sin pestaña (o sin registro), la carpeta.
   ipcMain.on('debug:open', (_e, tabId) => {
-    const file = typeof tabId === 'string' ? tabLogs.get(tabId) : null;
+    const file = typeof tabId === 'string' ? (tabs.get(tabId) || {}).log : null;
     if (file && fs.existsSync(file)) { shell.openPath(file); return; }
     fs.mkdirSync(logsDir(), { recursive: true });
     shell.openPath(logsDir());
@@ -783,26 +321,26 @@ function registerIpc() {
   ipcMain.on('update:restart', restartToUpdate);
 
   // Botón «Resumido»: vale para todas las pestañas desde su siguiente mensaje.
-  ipcMain.handle('brief:get', () => ({ enabled: briefMode }));
+  ipcMain.handle('brief:get', () => ({ enabled: style.brief }));
   ipcMain.handle('brief:set', (_e, on) => {
-    briefMode = Boolean(on);
-    store.set('briefMode', briefMode);
-    appLog(`respuestas ${briefMode ? 'resumidas' : 'con explicaciones'} (botón «Resumido»)`);
-    return { enabled: briefMode };
+    style.brief = Boolean(on);
+    store.set('briefMode', style.brief);
+    appLog(`respuestas ${style.brief ? 'resumidas' : 'con explicaciones'} (botón «Resumido»)`);
+    return { enabled: style.brief };
   });
 
   // Límites de uso del plan (5 horas y semanal) y tokens gastados en cada periodo.
   ipcMain.handle('limits:get', () => (limits ? limits.snapshot() : null));
 
   ipcMain.on('status:summary', (_e, value) => {
-    summary = { working: Math.max(0, Number(value && value.working) || 0) };
+    wm.setBusy(value && value.working);
   });
 
   ipcMain.on('notify', (_e, o) => {
     if (!o || !Notification.isSupported()) return;
     const notification = new Notification({ title: String(o.title || 'ClaudHome'), body: String(o.body || ''), silent: true });
     liveNotifications.add(notification); // sin esta referencia, el clic se pierde
-    notification.on('click', () => { showWindow(); send('notify:click', o.tabId); });
+    notification.on('click', () => { wm.show(); send('notify:click', o.tabId); });
     notification.on('close', () => liveNotifications.delete(notification));
     notification.on('failed', (_event, error) => {
       liveNotifications.delete(notification);
@@ -814,7 +352,7 @@ function registerIpc() {
       appLog(`notificación mostrada: «${o.title}»`);
     });
     notification.show();
-    if (win && !win.isFocused()) win.flashFrame(true);
+    if (wm.win && !wm.win.isFocused()) wm.win.flashFrame(true);
   });
 
   // Vista previa de los archivos sobre los que se pasa el ratón en la terminal.
@@ -844,7 +382,7 @@ function registerIpc() {
   });
   ipcMain.handle('context:pick', async (_e, kind) => {
     const folder = kind === 'folder';
-    const result = await dialog.showOpenDialog(win, {
+    const result = await dialog.showOpenDialog(wm.win, {
       title: folder ? 'Añadir una carpeta al contexto del proyecto' : 'Añadir archivos al contexto del proyecto',
       properties: folder ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
     });
@@ -856,7 +394,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('dialog:pickFolder', async (_e, startAt) => {
-    const result = await dialog.showOpenDialog(win, {
+    const result = await dialog.showOpenDialog(wm.win, {
       title: 'Elige la carpeta de la sesión',
       defaultPath: typeof startAt === 'string' && fs.existsSync(startAt) ? startAt : os.homedir(),
       properties: ['openDirectory'],
@@ -866,7 +404,7 @@ function registerIpc() {
 
   ipcMain.handle('dialog:confirm', async (_e, o) => {
     if (DEV && process.env.CLAUDES_AUTO_CONFIRM) return true; // solo para pruebas automáticas
-    const result = await dialog.showMessageBox(win, {
+    const result = await dialog.showMessageBox(wm.win, {
       type: 'question',
       message: String(o.message || ''),
       detail: String(o.detail || ''),
@@ -895,7 +433,7 @@ function registerIpc() {
       { type: 'separator' },
       {
         label: 'Ver el registro de depuración de esta sesión',
-        enabled: Boolean(tabLogs.get(o.id) && fs.existsSync(tabLogs.get(o.id))),
+        enabled: Boolean((tabs.get(o.id) || {}).log && fs.existsSync(tabs.get(o.id).log)),
         click: pick('log'),
       },
       { label: 'Abrir la carpeta de registros', click: pick('logs') },
@@ -903,13 +441,13 @@ function registerIpc() {
       { label: 'Cerrar pestaña', accelerator: 'Ctrl+Shift+W', registerAccelerator: false, click: pick('close') },
     ]);
     // El aviso de cierre del menú puede llegar antes que el de la opción elegida.
-    menu.popup({ window: win, callback: () => setTimeout(() => { if (!settled) resolve(null); }, 150) });
+    menu.popup({ window: wm.win, callback: () => setTimeout(() => { if (!settled) resolve(null); }, 150) });
   }));
 
   ipcMain.handle('dialog:choose', async (_e, o) => {
     if (DEV && process.env.CLAUDES_AUTO_CONFIRM) return 0; // solo para pruebas automáticas
     const buttons = Array.isArray(o.buttons) ? o.buttons.map(String) : ['Aceptar', 'Cancelar'];
-    const result = await dialog.showMessageBox(win, {
+    const result = await dialog.showMessageBox(wm.win, {
       type: 'question',
       message: String(o.message || ''),
       detail: String(o.detail || ''),
@@ -922,18 +460,17 @@ function registerIpc() {
   });
 
   ipcMain.on('app:closeNow', () => {
-    closeApproved = true;
-    if (win) win.close();
+    wm.closeNow();
   });
 
-  ipcMain.handle('clipboard:read', readClipboard);
+  ipcMain.handle('clipboard:read', () => pasteboard.read());
   ipcMain.on('clipboard:write', (_e, text) => {
     if (typeof text === 'string') clipboard.writeText(text).catch(() => { /* portapapeles ocupado */ });
   });
 
   if (DEV) {
     ipcMain.on('dev:input', (_e, event) => {
-      if (win && event && typeof event === 'object') win.webContents.sendInputEvent(event);
+      if (wm.win && event && typeof event === 'object') wm.win.webContents.sendInputEvent(event);
     });
   }
   ipcMain.on('shell:openPath', (_e, target) => {
@@ -948,13 +485,20 @@ function registerIpc() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', showWindow);
+  app.on('second-instance', () => { if (wm) wm.show(); });
 
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null); // los atajos del menú por defecto chocarían con la terminal
     store = new Store(path.join(app.getPath('userData'), 'state.json'));
-    debugEnabled = store.get('debugLogs', true) !== false; // activado salvo que se haya apagado
-    cleanLogs();
+    logger.enabled = store.get('debugLogs', true) !== false; // activado salvo que se haya apagado
+    logger.clean();
+    wm = createWindowManager({
+      electron: { app, BrowserWindow, dialog, screen },
+      store,
+      log: appLog,
+      dev: DEV,
+      onCloseCancelled: () => { if (updater) updater.relaunch = false; }, // ya no se cierra: tampoco se reinicia
+    });
     appLog(`──── Claudes ${app.getVersion()} arranca (Electron ${process.versions.electron}, ${app.isPackaged ? 'ejecutable' : 'desde el código'}) ────`);
     process.on('uncaughtException', (err) => {
       appLog(`ERROR sin capturar en el proceso principal: ${(err && err.stack) || err}`);
@@ -968,7 +512,8 @@ if (!app.requestSingleInstanceLock()) {
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
       if (netlog) netlog.fromHook(tabId, event);
       // Con /clear la pestaña pasa a otra conversación: los hooks llevan la actual.
-      if (event.sessionId && tabFolders.has(tabId)) tabSessions.set(tabId, event.sessionId);
+      const tab = tabs.get(tabId);
+      if (event.sessionId && tab && tab.folder) tab.session = event.sessionId;
       if (limits && (event.event === 'Stop' || event.event === 'StopFailure')) limits.refreshSoon();
       send('hook', tabId, event);
     });
@@ -979,15 +524,16 @@ if (!app.requestSingleInstanceLock()) {
     // Uso del contexto de cada sesión: se avisa a la interfaz cuando cambia el porcentaje.
     // Límites de uso del plan: llegan con los mismos datos, en cualquier pestaña. También
     // se cuentan los tokens de la conversación de cada pestaña.
-    limits = new Limits({ store, send, log: appLog, openSessions: () => tabSessions });
+    limits = new Limits({ store, send, log: appLog, openSessions: () => tabs.sessions() });
     hookServer.onStatus = (tabId, data) => {
       limits.fromStatus(data);
       limits.refreshSoon();
       const usage = usageFrom(data);
       if (!usage) return;
-      const last = lastUsage.get(tabId);
+      const tab = tabs.get(tabId);
+      const last = tab && tab.usage;
       if (last && last.pct === usage.pct && last.size === usage.size) return;
-      lastUsage.set(tabId, usage);
+      if (tab) tab.usage = usage;
       send('session:usage', tabId, usage);
     };
     // Con cada mensaje, lo que la sesión tenga que saber: el estilo del botón «Resumido»
@@ -995,8 +541,8 @@ if (!app.requestSingleInstanceLock()) {
     hookServer.respond = (tabId, eventName) => {
       if (eventName !== 'UserPromptSubmit') return null;
       const parts = [];
-      const style = styleUpdate(tabId);
-      if (style) parts.push(style);
+      const styleText = style.update(tabId);
+      if (styleText) parts.push(styleText);
       const ctx = contexts.pendingUpdate(tabId);
       if (ctx) parts.push(ctx.hookSpecificOutput.additionalContext);
       return parts.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: parts.join('\n\n') } } : null;
@@ -1015,12 +561,12 @@ if (!app.requestSingleInstanceLock()) {
       return innerMcp(tabId, body);
     };
     await hookServer.start();
-    cleanPastedImages();
+    pasteboard.cleanOld();
     previewer = createPreview({ app, nativeImage });
     previewer.cleanTemp();
     codexState.enabled = store.get('codexImages', false) === true;
     voiceEnabled = store.get('voiceDictation', false) === true;
-    briefMode = store.get('briefMode', false) === true;
+    style.brief = store.get('briefMode', false) === true;
     refreshCodex().catch(() => { /* se reintentará al consultar el estado */ });
     updater = new Updater({
       app, net, shell, log: appLog, logsDir,
@@ -1038,19 +584,18 @@ if (!app.requestSingleInstanceLock()) {
     netlog = new NetLog({
       logsDir,
       send,
-      tabName: (id) => tabNames.get(id) || null,
-      cwdOf: (id) => tabFolders.get(id) || null,
+      tabName: (id) => (tabs.get(id) || {}).name || null,
+      cwdOf: (id) => (tabs.get(id) || {}).folder || null,
     });
-    preparePlugins();
-    explainText = readExplainText();
-    appLog(gitBash ? `plugins para las sesiones: ${pluginDirs.map((p) => p.name).join(', ') || 'ninguno'}` : 'sin Git Bash: las sesiones arrancan sin plugins');
+    const pluginNames = style.prepare();
+    appLog(gitBash ? `plugins para las sesiones: ${pluginNames.join(', ') || 'ninguno'}` : 'sin Git Bash: las sesiones arrancan sin plugins');
     registerIpc();
-    createWindow();
+    wm.create();
     limits.start();
   });
 
   app.on('window-all-closed', () => {
-    killAll();
+    ptys.killAll();
     if (hookServer) hookServer.stop();
     if (limits) limits.stop();
     // Con una versión nueva lista, se instala ahora que Claudes se cierra.

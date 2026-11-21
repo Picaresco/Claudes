@@ -1,0 +1,112 @@
+// Lo que pasa en cada sesión: avisos de los hooks de Claude Code y salida del proceso.
+import { api, $ } from './dom.js';
+import { views, winFocused, visibleIds, isWatched, save } from './state.js';
+import { setStatus } from './status.js';
+
+function needsYou(view, body) {
+  if (view.closing) return;
+  const was = view.status;
+  setStatus(view, 'needs');
+  if (was !== 'needs' && !isWatched(view)) {
+    api.notify({ tabId: view.tab.id, title: `${view.tab.name} te necesita`, body });
+  }
+}
+
+function finished(view, failed) {
+  if (view.closing) return;
+  const was = view.status;
+  if (failed) {
+    // Un error (fallo de la API, límite de uso…) queda en ámbar hasta tu siguiente
+    // mensaje, aunque estés viendo la pestaña.
+    setStatus(view, 'failed');
+    if (was !== 'failed' && !isWatched(view)) {
+      api.notify({ tabId: view.tab.id, title: `${view.tab.name} se ha detenido`, body: 'Claude no ha podido completar la respuesta por un error.' });
+    }
+    return;
+  }
+  if (isWatched(view)) { setStatus(view, 'idle'); return; }
+  setStatus(view, 'done');
+  if (was === 'done') return;
+  api.notify({ tabId: view.tab.id, title: `${view.tab.name} ha terminado`, body: 'Claude ha terminado y espera tu siguiente mensaje.' });
+}
+
+// Lo que ya estás viendo deja de marcarse como pendiente.
+export function acknowledge() {
+  if (!winFocused) return;
+  for (const id of visibleIds()) {
+    const view = views.get(id);
+    if (view && view.status === 'done') setStatus(view, 'idle');
+  }
+}
+
+export function onHook(tabId, ev) {
+  const view = views.get(tabId);
+  if (!view || !view.started || !ev) return;
+  if (ev.background && !view.keepAwake) {
+    view.keepAwake = true; // ha dejado algo en marcha: esta sesión no se duerme
+    api.log(`«${view.tab.name}» deja ${ev.toolName} en marcha: no se dormirá`);
+  }
+  // /clear abre una conversación con otro identificador: la pestaña lo sigue.
+  if (ev.sessionId && (ev.event === 'UserPromptSubmit' || ev.event === 'Stop') && ev.sessionId !== view.tab.sessionId) {
+    view.tab.sessionId = ev.sessionId;
+    save();
+  }
+  if (view.closing) {
+    // Durante el cierre ordenado solo interesa saber si la petición ha entrado
+    // y cuándo termina Claude de responderla.
+    if (ev.event === 'UserPromptSubmit' && view.closing.sent) view.closing.submitted = true;
+    else if ((ev.event === 'Stop' || ev.event === 'StopFailure') && view.closing.submitted) view.closing.finish('saved');
+    return;
+  }
+  switch (ev.event) {
+    case 'UserPromptSubmit':
+    case 'PreToolUse':
+    case 'PostToolUse':
+    case 'PostToolUseFailure':
+      setStatus(view, 'working');
+      break;
+    case 'PermissionRequest':
+      needsYou(view, ev.toolName ? `Claude pide permiso para usar ${ev.toolName}.` : 'Claude pide permiso para continuar.');
+      break;
+    case 'Notification':
+      if (['permission_prompt', 'elicitation_dialog', 'agent_needs_input'].includes(ev.notificationType)) {
+        needsYou(view, ev.notificationType === 'permission_prompt' ? 'Claude pide permiso para continuar.' : 'Claude necesita tu respuesta.');
+      }
+      break;
+    case 'Stop':
+      finished(view, false);
+      break;
+    case 'StopFailure':
+      finished(view, true);
+      break;
+    default:
+      break;
+  }
+}
+
+export function onPtyExit(id, code) {
+  if (id.endsWith(':sh')) {
+    const view = views.get(id.slice(0, -3));
+    const extra = view && view.extra;
+    if (!extra) return;
+    extra.started = false;
+    extra.exited = true;
+    extra.term.write('\r\n\x1b[2m[La terminal se ha cerrado. Pulsa Intro para abrirla de nuevo.]\x1b[0m\r\n');
+    return;
+  }
+  const view = views.get(id);
+  if (!view) return;
+  view.started = false;
+  view.exited = true;
+  if (view.onExit) { const notify = view.onExit; view.onExit = null; notify(); }
+  if (view.closing) view.closing.finish('forced'); // ha salido antes de terminar: no hay nada que esperar
+  if (view.expectExit) return; // salida pedida por la app al cerrar
+  // Si falla nada más intentar retomar, esa conversación ya no existe.
+  const failedResume = view.resumed && code !== 0 && Date.now() - view.startedAt < 8000;
+  view.mode = failedResume ? 'new' : 'resume';
+  setStatus(view, 'exited');
+  const text = failedResume
+    ? 'No se ha podido retomar la conversación. Pulsa Intro para empezar una nueva.'
+    : 'La sesión de Claude se ha cerrado. Pulsa Intro para retomarla.';
+  view.term.write(`\r\n\x1b[2m[${text}]\x1b[0m\r\n`);
+}
