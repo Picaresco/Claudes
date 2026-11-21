@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.14.0 — 2026-11-21
+- Nueva buena práctica en todos tus proyectos: cuando Claude edita un archivo de código que llega a 1 000 líneas, y otra vez cada vez que crece un 20 % más, te comenta al terminar si conviene partirlo en piezas más pequeñas. Solo avisa: no parte nada sin que se lo pidas.
+- El aviso no salta con documentos, datos ni estilos, ni cuando Claude cambia el archivo con un comando de la terminal.
+
 ## 0.13.0 — 2026-11-21
 - El recuento de tokens trabaja menos: tras cada respuesta mira solo las conversaciones de tus pestañas, y deja el repaso de todas las demás para una vez por minuto.
 - Reorganización interna del código, sin cambios a la vista: la app es la misma, pero está dividida en piezas más pequeñas y pasa más comprobaciones automáticas antes de publicarse.

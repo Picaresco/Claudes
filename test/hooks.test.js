@@ -18,7 +18,8 @@ test('toolInputSummary se queda con lo que necesita el registro', () => {
   assert.deepEqual(toolInputSummary('Bash', { command: 'ls', run_in_background: true }), { command: 'ls' });
   assert.deepEqual(toolInputSummary('WebSearch', { query: 'x' }), { query: 'x' });
   assert.equal(toolInputSummary('mcp__s__t', { a: 'b'.repeat(500) }).summary.length, 200);
-  assert.equal(toolInputSummary('Edit', { file_path: 'a' }), null);
+  assert.deepEqual(toolInputSummary('Edit', { file_path: 'a.js', old_string: 'x' }), { file: 'a.js' }); // de lo editado, solo el archivo
+  assert.equal(toolInputSummary('TodoWrite', { todos: [] }), null);
   assert.equal(toolInputSummary('Read', null), null);
 });
 
@@ -92,4 +93,26 @@ test('la línea de estado y el MCP llegan a quien los atiende', async (t) => {
 
   server.forget('t1');
   assert.deepEqual(fs.readdirSync(server.dir), []);
+});
+
+test('quien responde recibe el aviso ya leído y puede tardar un poco', async (t) => {
+  const { server, urlOf, post } = await startServer(t);
+  const seen = [];
+  server.respond = async (tabId, eventName, event) => {
+    seen.push(event);
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+    return eventName === 'PostToolUse' ? { hookSpecificOutput: { hookEventName: eventName, additionalContext: `editado ${event.toolInput.file}` } } : null;
+  };
+  // Una edición normal.
+  const edit = await post(urlOf('PostToolUse'), { session_id: 's', tool_name: 'Edit', tool_input: { file_path: 'C:\\x\\app.js', old_string: 'a', new_string: 'b' } });
+  assert.equal((await edit.json()).hookSpecificOutput.additionalContext, 'editado C:\\x\\app.js');
+  // Un archivo grande escrito de una vez: la entrada llega cortada, pero la ruta va al principio.
+  const write = await post(urlOf('PostToolUse'), { session_id: 's', tool_name: 'Write', tool_input: { file_path: 'C:\\x\\grande.py', content: 'x'.repeat(300 * 1024) } });
+  assert.equal((await write.json()).hookSpecificOutput.additionalContext, 'editado C:\\x\\grande.py');
+  assert.deepEqual(seen.map((e) => e.toolName), ['Edit', 'Write']);
+  // Si quien responde falla, el hook contesta vacío en vez de quedarse colgado.
+  server.respond = async () => { throw new Error('fallo'); };
+  const failed = await post(urlOf('PostToolUse'), { tool_name: 'Edit', tool_input: { file_path: 'a.js' } });
+  assert.equal(failed.status, 200);
+  assert.equal(await failed.text(), '');
 });

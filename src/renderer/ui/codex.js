@@ -2,7 +2,7 @@
 import { api, $ } from './dom.js';
 import { renderToolbar } from './render.js';
 import { restartSession } from './sessions.js';
-import { views, info, toast } from './state.js';
+import { views, toast } from './state.js';
 
 export let codexInfo = null;
 

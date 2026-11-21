@@ -58,7 +58,7 @@ function limitsFromStatus(data) {
 
 // Archivos .jsonl de las conversaciones (incluidas las de los subagentes).
 async function listTranscripts(dir, depth = 0, out = []) {
-  let entries = [];
+  let entries;
   try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return out; }
   for (const entry of entries) {
     const full = path.join(dir, entry.name);

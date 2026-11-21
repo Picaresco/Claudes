@@ -1,7 +1,7 @@
 // La vista de cada pestaña y sus procesos: la sesión de Claude y la terminal extra.
 import { SVG, THEME, THEME_EXTRA } from './constants.js';
 import { buildContextPanel, syncContextPanel, wireDropChoice } from './context.js';
-import { api, $, el } from './dom.js';
+import { api, el } from './dom.js';
 import { registerPreviewLinks } from './preview.js';
 import { renderToolbar } from './render.js';
 import { S, views, terms, info, clamp, visibleIds, save, startDrag } from './state.js';

@@ -8,7 +8,7 @@ const path = require('path');
 function userSettings() {
   const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   try {
-    return JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8').replace(/^﻿/, '')) || {};
+    return JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')) || {};
   } catch {
     return {}; // sin archivo o ilegible
   }

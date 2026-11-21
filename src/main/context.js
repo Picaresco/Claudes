@@ -100,7 +100,7 @@ async function countFiles(dir) {
   const pending = [dir];
   while (pending.length && count < MAX_COUNT) {
     const current = pending.pop();
-    let entries = [];
+    let entries;
     try { entries = await fs.promises.readdir(current, { withFileTypes: true }); } catch { continue; }
     for (const entry of entries) {
       if (entry.isDirectory()) pending.push(path.join(current, entry.name));

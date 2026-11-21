@@ -18,6 +18,7 @@ const { createPreview } = require('./preview');
 const { createContext } = require('./context');
 const { NetLog } = require('./netlog');
 const { Limits } = require('./limits');
+const { Growth, EDIT_TOOLS } = require('./growth');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -41,6 +42,7 @@ let previewer = null;
 let contexts = null; // contexto del proyecto de cada pestaña (context.js)
 let netlog = null; // «Log»: lo que ha visto Claude y lo que sale hacia internet (netlog.js)
 let limits = null; // límites de uso del plan y tokens gastados en cada periodo (limits.js)
+let growth = null; // aviso de archivos de código que crecen mucho (growth.js)
 const liveNotifications = new Set();
 
 const logsDir = () => path.join(app.getPath('userData'), 'logs');
@@ -538,7 +540,16 @@ if (!app.requestSingleInstanceLock()) {
     };
     // Con cada mensaje, lo que la sesión tenga que saber: el estilo del botón «Resumido»
     // si ha cambiado y el contexto del proyecto si se cambió con la sesión abierta.
-    hookServer.respond = (tabId, eventName) => {
+    // Y tras cada edición de Claude, el aviso de buenas prácticas si el archivo ha crecido
+    // hasta un escalón (growth.js).
+    growth = new Growth({ store, log: appLog });
+    hookServer.respond = async (tabId, eventName, event) => {
+      if (eventName === 'PostToolUse') {
+        const tab = tabs.get(tabId);
+        const file = event && EDIT_TOOLS.has(event.toolName) && event.toolInput && event.toolInput.file;
+        const notice = file && tab && tab.folder ? await growth.edited(tab.folder, file) : null;
+        return notice ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: notice } } : null;
+      }
       if (eventName !== 'UserPromptSubmit') return null;
       const parts = [];
       const styleText = style.update(tabId);

@@ -3,7 +3,7 @@
 // avisa de cómo va.
 import { SVG } from './constants.js';
 import { api, $, el } from './dom.js';
-import { info, toast } from './state.js';
+import { toast } from './state.js';
 import { focusTerminal } from './views.js';
 
 let updateInfo = null;

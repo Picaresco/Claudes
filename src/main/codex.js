@@ -58,7 +58,7 @@ function newestGeneratedImage(since) {
     try { mtime = fs.statSync(file).mtimeMs; } catch { return; }
     if (mtime >= since && (!best || mtime > best.mtime)) best = { file, mtime };
   };
-  let entries = [];
+  let entries;
   try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return null; }
   for (const entry of entries) {
     const full = path.join(root, entry.name);

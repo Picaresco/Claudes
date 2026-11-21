@@ -5,7 +5,7 @@
 // abrir la pestaña, como al arrancar ClaudHome. No se duerme si está trabajando,
 // si te necesita o tiene algo que no has visto, ni si Claude dejó algo en marcha
 // (una tarea en segundo plano, una vigilancia o una tarea programada).
-import { api, $ } from './dom.js';
+import { api } from './dom.js';
 import { startClaude } from './sessions.js';
 import { views, visibleIds } from './state.js';
 import { setStatus } from './status.js';

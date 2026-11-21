@@ -2,7 +2,7 @@
 // El límite semanal con su porcentaje, los tokens usados en la semana y cuándo se
 // renueva; si el plan tiene además límite de 5 horas, se añade su porcentaje. El
 // detalle, al pasar el ratón. Los tokens de la conversación van junto a su llenado.
-import { $, el } from './dom.js';
+import { $ } from './dom.js';
 import { usageLevel, nf } from './render.js';
 import { clamp } from './state.js';
 

@@ -9,7 +9,7 @@ import { hidePreview } from './preview.js';
 import { acknowledge } from './session-events.js';
 import { sleepAfterMs } from './sleep.js';
 import {
-  S, views, renamingId, draggingId, setTabsDirty, lastBusy, setLastBusy, panes, byId, clamp, visibleIds,
+  S, views, renamingId, draggingId, lastBusy, setLastBusy, panes, byId, clamp, visibleIds,
   applySwatch, swatch,
 } from './state.js';
 import { showView, focusTerminal } from './views.js';
@@ -65,8 +65,7 @@ function usageText(usage) {
 }
 
 export function renderTabs() {
-  if (renamingId || draggingId) { setTabsDirty(true); return; }
-  setTabsDirty(false);
+  if (renamingId || draggingId) return; // al terminar de renombrar o arrastrar se repintan
   const shown = new Set(visibleIds());
   const strip = $('#tabs');
   strip.replaceChildren(...S.tabs.map((tab) => tabElement(tab, shown.has(tab.id))));

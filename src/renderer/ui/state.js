@@ -18,8 +18,6 @@ export let renamingId = null;
 export const setRenamingId = (value) => { renamingId = value; };
 export let draggingId = null;
 export const setDraggingId = (value) => { draggingId = value; };
-let tabsDirty = false;
-export const setTabsDirty = (value) => { tabsDirty = value; };
 export let lastBusy = -1;
 export const setLastBusy = (value) => { lastBusy = value; };
 let saveTimer = null;

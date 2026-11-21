@@ -1,6 +1,6 @@
 // ── Terminales ───────────────────────────────────────────────────
 import { hasFiles, droppedPaths } from './context.js';
-import { api, $ } from './dom.js';
+import { api } from './dom.js';
 import { imageLabelCounts, learnImageLabels } from './preview.js';
 import { info, voiceOn, fontSizeFor, sleep, toast } from './state.js';
 import { setZoom } from './views.js';

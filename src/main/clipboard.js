@@ -21,7 +21,7 @@ function createClipboard({ clipboard, dir, stamp }) {
   // Las imágenes pegadas ya viajaron con su mensaje: pasada una semana se borran.
   function cleanOld() {
     const limit = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    let names = [];
+    let names;
     try { names = fs.readdirSync(dir()); } catch { return; }
     for (const name of names) {
       const file = path.join(dir(), name);

@@ -1,6 +1,6 @@
 // ── Estado de las sesiones y avisos ──────────────────────────────
 import { WRAPUP_PROMPT } from './constants.js';
-import { api, $ } from './dom.js';
+import { api } from './dom.js';
 import { renderTabs, renderHeads, renderStatusbar } from './render.js';
 import { sleep } from './state.js';
 

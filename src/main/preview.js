@@ -55,9 +55,9 @@ function createPreview({ app, nativeImage }) {
   function readText(file) {
     const buffer = Buffer.alloc(TEXT_BYTES);
     const fd = fs.openSync(file, 'r');
-    let length = 0;
+    let length;
     try { length = fs.readSync(fd, buffer, 0, TEXT_BYTES, 0); } finally { fs.closeSync(fd); }
-    const text = buffer.subarray(0, length).toString('utf8').replace(/^﻿/, '');
+    const text = buffer.subarray(0, length).toString('utf8').replace(/^\uFEFF/, '');
     if (text.includes('\u0000')) return null; // binario
     return text.split(/\r?\n/).slice(0, TEXT_LINES).map((line) => line.replace(/\t/g, '  ').slice(0, 160)).join('\n');
   }

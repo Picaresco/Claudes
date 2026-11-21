@@ -42,7 +42,7 @@ function createAppLog(logsDir) {
 
   // Borra los registros de más de una semana y, si aun así ocupan demasiado, los más antiguos.
   function clean() {
-    let files = [];
+    let files;
     try {
       files = fs.readdirSync(logsDir())
         .filter((name) => name.endsWith('.log'))

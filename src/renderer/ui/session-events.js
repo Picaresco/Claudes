@@ -1,5 +1,5 @@
 // Lo que pasa en cada sesión: avisos de los hooks de Claude Code y salida del proceso.
-import { api, $ } from './dom.js';
+import { api } from './dom.js';
 import { views, winFocused, visibleIds, isWatched, save } from './state.js';
 import { setStatus } from './status.js';
 

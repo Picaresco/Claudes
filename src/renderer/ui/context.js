@@ -3,10 +3,10 @@
 // Claude tiene presentes en todas sus sesiones. Aquí se editan; el proceso
 // principal (src/main/context.js) se los da a Claude.
 import { SVG } from './constants.js';
-import { api, $, el } from './dom.js';
+import { api, el } from './dom.js';
 import { imageLabelCounts, learnImageLabels, formatSize } from './preview.js';
 import { renderToolbar } from './render.js';
-import { S, views, info, save, toast } from './state.js';
+import { S, views, save, toast } from './state.js';
 import { joinPaths } from './terminals.js';
 import { fitView, focusTerminal } from './views.js';
 

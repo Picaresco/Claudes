@@ -20,6 +20,7 @@ const EVENTS = [
 ];
 
 const HEAD_LIMIT = 64 * 1024; // de cada aviso solo interesa el principio
+const RESPOND_LIMIT = 2000; // ms que se espera como mucho a quien decide la respuesta (el hook caduca a los 5 s)
 
 // De la entrada de una herramienta, solo lo que necesita el registro («Log»,
 // netlog.js): el archivo, la dirección, la búsqueda, el comando o un resumen del MCP.
@@ -27,6 +28,8 @@ function toolInputSummary(tool, input) {
   if (typeof tool !== 'string' || !input || typeof input !== 'object') return null;
   const text = (v, max) => String(v === undefined || v === null ? '' : v).slice(0, max);
   if (tool === 'Read') return { file: text(input.file_path, 600), pages: text(input.pages, 40), offset: input.offset || null, limit: input.limit || null };
+  // De lo que edita Claude solo interesa qué archivo es (aviso de archivos que crecen, growth.js).
+  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) return { file: text(input.file_path || input.notebook_path, 600) };
   if (tool === 'Grep') return { pattern: text(input.pattern, 200), path: text(input.path, 600) };
   if (tool === 'WebFetch') return { url: text(input.url, 1000), prompt: text(input.prompt, 200) };
   if (tool === 'WebSearch') return { query: text(input.query, 300) };
@@ -195,24 +198,7 @@ class HookServer {
         kept += chunk.length;
       }
     });
-    req.on('end', () => {
-      if (this.blockPrompts && eventName === 'UserPromptSubmit') {
-        // Modo de pruebas: el mensaje se rechaza antes de llegar al modelo.
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ decision: 'block', reason: 'ClaudHome en modo de pruebas: mensaje no enviado.' }));
-      } else {
-        let answer = null;
-        try { answer = this.respond ? this.respond(tabId, eventName) : null; } catch { answer = null; }
-        if (answer) {
-          // Por ejemplo, contexto adicional para Claude junto con el mensaje del usuario.
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(answer));
-        } else {
-          // Respuesta vacía: Claude Code la trata como «sin nada que decir».
-          res.writeHead(200);
-          res.end();
-        }
-      }
+    req.on('end', async () => {
       const head = Buffer.concat(chunks).toString('utf8');
       let payload = {};
       if (total <= HEAD_LIMIT) {
@@ -223,20 +209,53 @@ class HookServer {
           const value = jsonField(head, key);
           if (value !== undefined) payload[key] = value;
         }
+        // Al escribir un archivo grande, la entrada (con todo su contenido) llega cortada:
+        // la ruta va al principio y basta con ella.
+        if (payload.tool_input === undefined) {
+          const file = jsonField(head, 'file_path');
+          if (typeof file === 'string') payload.tool_input = { file_path: file };
+        }
+      }
+      const event = {
+        event: eventName,
+        sessionId: typeof payload.session_id === 'string' ? payload.session_id : null,
+        notificationType: typeof payload.notification_type === 'string' ? payload.notification_type : null,
+        message: typeof payload.message === 'string' ? payload.message.slice(0, 300) : null,
+        toolName: typeof payload.tool_name === 'string' ? payload.tool_name : null,
+        toolInput: toolInputSummary(payload.tool_name, payload.tool_input),
+        background: leavesRunning(payload.tool_name, payload.tool_input),
+        // Tras ejecutar una herramienta, el tamaño del aviso ≈ lo que recibió Claude.
+        size: eventName === 'PostToolUse' ? total : null,
+        prompt: typeof payload.prompt === 'string' ? payload.prompt.slice(0, 80) : null,
+      };
+      if (this.blockPrompts && eventName === 'UserPromptSubmit') {
+        // Modo de pruebas: el mensaje se rechaza antes de llegar al modelo.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ decision: 'block', reason: 'ClaudHome en modo de pruebas: mensaje no enviado.' }));
+      } else {
+        // Quien responde puede tardar un poco (p. ej. contar las líneas de un archivo),
+        // pero nunca tanto como para dejar a Claude Code esperando.
+        let answer;
+        let limit = null;
+        try {
+          answer = await Promise.race([
+            Promise.resolve(this.respond ? this.respond(tabId, eventName, event) : null),
+            new Promise((resolve) => { limit = setTimeout(resolve, RESPOND_LIMIT, null); }),
+          ]);
+        } catch { answer = null; }
+        clearTimeout(limit);
+        if (answer) {
+          // Por ejemplo, contexto adicional para Claude junto con el mensaje del usuario.
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(answer));
+        } else {
+          // Respuesta vacía: Claude Code la trata como «sin nada que decir».
+          res.writeHead(200);
+          res.end();
+        }
       }
       try {
-        this.onEvent(tabId, {
-          event: eventName,
-          sessionId: typeof payload.session_id === 'string' ? payload.session_id : null,
-          notificationType: typeof payload.notification_type === 'string' ? payload.notification_type : null,
-          message: typeof payload.message === 'string' ? payload.message.slice(0, 300) : null,
-          toolName: typeof payload.tool_name === 'string' ? payload.tool_name : null,
-          toolInput: toolInputSummary(payload.tool_name, payload.tool_input),
-          background: leavesRunning(payload.tool_name, payload.tool_input),
-          // Tras ejecutar una herramienta, el tamaño del aviso ≈ lo que recibió Claude.
-          size: eventName === 'PostToolUse' ? total : null,
-          prompt: typeof payload.prompt === 'string' ? payload.prompt.slice(0, 80) : null,
-        });
+        this.onEvent(tabId, event);
       } catch (err) {
         console.error('Aviso de hook no procesado:', err.message);
       }

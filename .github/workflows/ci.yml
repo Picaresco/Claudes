@@ -22,7 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Las pruebas solo usan lo que trae Node: no hace falta instalar dependencias.
+          cache: npm
+      # Hace falta ESLint. Sin los scripts de instalación no se descarga Electron ni se
+      # compila node-pty, que las pruebas no usan.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
 
   publicar:

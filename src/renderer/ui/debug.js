@@ -1,6 +1,6 @@
 // ── Registro de depuración ───────────────────────────────────────
-import { api, $, el } from './dom.js';
-import { info, toast } from './state.js';
+import { api, $ } from './dom.js';
+import { toast } from './state.js';
 
 let debugInfo = null;
 

@@ -196,7 +196,7 @@ class Updater {
   async changes() {
     const latest = this.state.latest;
     const result = { current: this.current, latest, versions: [], error: '' };
-    let text = '';
+    let text;
     try {
       const local = path.join(this.app.getAppPath(), 'CHANGELOG.md');
       if (!this.app.isPackaged && fs.existsSync(local)) {
@@ -254,7 +254,7 @@ class Updater {
       if (writeError) throw writeError;
     } catch (err) {
       out.destroy();
-      if (controller.signal.aborted) throw new Error('La descarga se ha quedado parada. Comprueba la conexión y vuelve a intentarlo.');
+      if (controller.signal.aborted) throw new Error('La descarga se ha quedado parada. Comprueba la conexión y vuelve a intentarlo.', { cause: err });
       throw err;
     } finally {
       clearTimeout(idle);
