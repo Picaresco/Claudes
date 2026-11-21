@@ -115,7 +115,10 @@ test('el entorno de las pestañas no hereda las marcas de una sesión de Claude 
   assert.equal(env.ELECTRON_RUN_AS_NODE, undefined);
   assert.equal(env.TERM_PROGRAM, 'Claudes');
   assert.equal(env.CLAUDES_TAB_ID, 't1');
-  assert.equal(env.PATH, process.env.PATH);
+  // El resto del entorno pasa tal cual. En Windows la variable puede llamarse «Path»:
+  // process.env la encuentra con cualquier mayúscula, pero una copia no.
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path');
+  assert.equal(env[pathKey], process.env.PATH);
 });
 
 test('las consolas y las comillas para cmd.exe', () => {
