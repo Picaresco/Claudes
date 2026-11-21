@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.12.1 — 2026-11-21
+- Arreglado: al descargar una actualización, la app iba acumulando avisos internos sin limpiar. La descarga terminaba bien, pero gastaba memoria de más mientras duraba.
+
 ## 0.12.0 — 2026-11-21
 - Actualizar es mucho más rápido y ya no necesita Node.js: en vez de generar el programa en tu equipo, ClaudHome descarga la versión ya preparada (unos 160 MB), comprueba que ha llegado entera y la instala al reiniciarse. El botón muestra el avance de la descarga.
 - Esta actualización es la última que se genera en tu equipo: a partir de la siguiente se nota el cambio.

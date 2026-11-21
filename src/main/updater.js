@@ -239,7 +239,15 @@ class Updater {
         arm();
         received += value.length;
         hash.update(value);
-        if (!out.write(value)) await new Promise((resolve) => { out.once('drain', resolve); out.once('error', resolve); });
+        // Si el disco va más lento que la red, se espera a que escriba (o a que falle),
+        // quitando las dos esperas al terminar para no ir acumulándolas.
+        if (!out.write(value)) {
+          await new Promise((resolve) => {
+            const done = () => { out.off('drain', done); out.off('error', done); resolve(); };
+            out.once('drain', done);
+            out.once('error', done);
+          });
+        }
         onProgress(received);
       }
       await new Promise((resolve) => out.end(resolve));
