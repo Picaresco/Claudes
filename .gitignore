@@ -3,3 +3,6 @@ dist/
 
 # Datos locales de Claude Code (historial de sesiones, ajustes personales)
 .claude/
+
+# Lo que prepara scripts/release.mjs para publicar
+publicar/

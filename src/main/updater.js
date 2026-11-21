@@ -1,23 +1,44 @@
 // Actualización desde GitHub.
 //
-// Compara la versión de package.json en la rama main del repositorio con la
-// instalada. Si la publicada es mayor, la interfaz muestra el botón «Actualizar».
-// Al pulsarlo se descarga el código, se instalan sus dependencias (npm ci), se
-// genera el ejecutable con scripts/package.mjs y se comprueba que haya un acceso
-// directo en el escritorio. La carpeta del programa no se puede sustituir con
-// Claudes abierto, así que al cerrarlo un instalador aparte (install-update.js)
-// la cambia por la nueva, guardando la anterior como copia, y si se ha pedido
-// reiniciar vuelve a abrirlo.
+// Cada versión se publica en GitHub como un «release» con el ejecutable ya generado
+// (lo hace .github/workflows/ci.yml al subir una versión nueva a main):
+//   - ClaudHome-win32-x64.zip: la carpeta del programa;
+//   - latest.json: { version, file, size, sha256 } de ese zip.
+// La app consulta latest.json del último release. Si su versión es mayor que la
+// instalada, la interfaz muestra el botón «Actualizar». Al pulsarlo se descarga el
+// zip, se comprueba (tamaño y SHA-256), se descomprime con el tar.exe de Windows y se
+// comprueba que haya un acceso directo en el escritorio. No hace falta Node.js.
+// La carpeta del programa no se puede sustituir con Claudes abierto, así que al
+// cerrarlo un instalador aparte (install-update.js, ejecutado por el Claudes.exe
+// nuevo en modo Node) la cambia por la nueva, guardando la anterior como copia, y
+// si se ha pedido reiniciar vuelve a abrirlo.
 const fs = require('fs');
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
 
 const REPO = 'Picaresco/Claudes';
 const BRANCH = 'main';
 const EXE = 'Claudes.exe'; // nombre que le da scripts/package.mjs
+const PACKAGE_DIR = 'Claudes-win32-x64'; // carpeta que genera scripts/package.mjs y que va dentro del zip
+const MANIFEST = 'latest.json';
 const CHECK_EVERY = 6 * 60 * 60 * 1000;
-const STEP_TIMEOUT = 15 * 60 * 1000;
-const MIN_NODE = '22.12.0'; // lo que pide @electron/packager
+const STEP_TIMEOUT = 5 * 60 * 1000;
+const IDLE_TIMEOUT = 60 * 1000; // descarga sin recibir nada
+
+// Dónde están los releases. CLAUDES_UPDATE_URL lo cambia para las pruebas.
+const releasesUrl = () => (process.env.CLAUDES_UPDATE_URL || `https://github.com/${REPO}/releases`).replace(/\/+$/, '');
+
+// Lo que dice latest.json, si está completo y es de fiar; si no, null.
+function parseManifest(data) {
+  if (!data || typeof data !== 'object') return null;
+  const version = String(data.version || '');
+  const file = String(data.file || '');
+  const sha256 = String(data.sha256 || '').toLowerCase();
+  const size = Number(data.size);
+  if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[\w.-]+\.zip$/.test(file) || !/^[a-f0-9]{64}$/.test(sha256) || !(size > 0)) return null;
+  return { version, file, sha256, size };
+}
 
 function versionParts(v) {
   return String(v || '').trim().replace(/^v/i, '').split(/[-+]/)[0].split('.').map((n) => Number.parseInt(n, 10) || 0);
@@ -59,33 +80,9 @@ const two = (n) => String(n).padStart(2, '0');
 const stamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
 const clock = (d = new Date()) => `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 
-function findNode() {
-  try {
-    const out = execFileSync('where.exe', ['node'], { encoding: 'utf8', windowsHide: true });
-    const found = out.split(/\r?\n/).map((s) => s.trim()).find((p) => /node\.exe$/i.test(p) && fs.existsSync(p));
-    if (found) return found;
-  } catch { /* no está en el PATH */ }
-  const guess = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'node.exe');
-  return fs.existsSync(guess) ? guess : null;
-}
-
 function tarExe() {
   const builtIn = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
   return fs.existsSync(builtIn) ? builtIn : 'tar.exe';
-}
-
-// Entorno para npm y el empaquetado: sin lo que Electron pueda haber dejado y sin
-// bajar el binario de Electron a node_modules (el empaquetador usa su propia caché).
-function buildEnv() {
-  const env = {
-    ...process.env,
-    ELECTRON_SKIP_BINARY_DOWNLOAD: '1',
-    npm_config_update_notifier: 'false',
-    npm_config_fund: 'false',
-    npm_config_audit: 'false',
-  };
-  delete env.ELECTRON_RUN_AS_NODE;
-  return env;
 }
 
 // Ejecuta un programa, copia su salida al registro y, si falla, devuelve un error
@@ -117,8 +114,9 @@ function run(label, file, args, { cwd, env, out }) {
 
 class Updater {
   // onChange(info) se llama con cada cambio de estado; onReady(info) cuando la
-  // versión nueva ya está generada y solo falta cerrar Claudes para instalarla.
-  constructor({ app, net, shell, log, logsDir, onChange, onReady }) {
+  // versión nueva ya está descargada y solo falta cerrar Claudes para instalarla.
+  // installDir y workDir solo se pasan en las pruebas.
+  constructor({ app, net, shell, log, logsDir, onChange, onReady, installDir, workDir }) {
     this.app = app;
     this.net = net;
     this.shell = shell;
@@ -131,12 +129,13 @@ class Updater {
     this.current = this.fakeVersion || app.getVersion();
     // Desde el código no hay ejecutable que sustituir: solo se comprueba al probar.
     this.enabled = app.isPackaged || Boolean(this.fakeVersion);
-    this.installDir = path.dirname(process.execPath);
-    this.workDir = process.env.CLAUDES_USER_DATA
+    this.installDir = installDir || path.dirname(process.execPath);
+    this.workDir = workDir || (process.env.CLAUDES_USER_DATA
       ? path.join(app.getPath('userData'), 'actualizacion')
-      : path.join(process.env.LOCALAPPDATA || app.getPath('temp'), 'Claudes-update');
+      : path.join(process.env.LOCALAPPDATA || app.getPath('temp'), 'Claudes-update'));
+    this.manifest = null; // latest.json del último release
     this.state = { status: 'idle', current: this.current, latest: null, step: '', error: '', result: null };
-    this.ready = null; // { dir, version, logFile } con la versión nueva ya generada
+    this.ready = null; // { dir, version, logFile } con la versión nueva ya descomprimida
     this.relaunch = false; // al instalar, volver a abrir Claudes
   }
 
@@ -172,19 +171,22 @@ class Updater {
 
   async check() {
     if (!this.enabled || ['working', 'ready'].includes(this.state.status)) return this.info();
-    let latest;
+    let manifest;
     try {
-      const res = await this.net.fetch(`https://raw.githubusercontent.com/${REPO}/${BRANCH}/package.json`, { cache: 'no-store' });
+      const res = await this.net.fetch(`${releasesUrl()}/latest/download/${MANIFEST}`, { cache: 'no-store' });
+      if (res.status === 404) throw new Error('todavía no hay ninguna versión publicada');
       if (!res.ok) throw new Error(`GitHub ha respondido ${res.status}`);
-      latest = (await res.json()).version;
-      if (!latest) throw new Error('package.json sin versión');
+      manifest = parseManifest(await res.json());
+      if (!manifest) throw new Error(`${MANIFEST} incompleto`);
     } catch (err) {
       this.log(`actualización: no se pudo consultar la versión publicada (${err.message})`);
       return this.info();
     }
     if (['working', 'ready'].includes(this.state.status)) return this.info();
+    const latest = manifest.version;
     const available = compareVersions(latest, this.current) > 0;
     if (available && latest !== this.state.latest) this.log(`actualización: hay una versión nueva en GitHub (${latest}; instalada ${this.current})`);
+    this.manifest = manifest;
     this.set({ status: available ? 'available' : 'idle', latest, error: '', step: '' });
     return this.info();
   }
@@ -215,7 +217,44 @@ class Updater {
     return result;
   }
 
-  // Descarga, genera el ejecutable y deja la versión nueva lista para instalar.
+  // Descarga un archivo a disco. Devuelve lo recibido y su SHA-256.
+  async download(url, file, onProgress) {
+    const controller = new AbortController();
+    let idle = null;
+    const arm = () => { clearTimeout(idle); idle = setTimeout(() => controller.abort(), IDLE_TIMEOUT); };
+    const hash = crypto.createHash('sha256');
+    const out = fs.createWriteStream(file);
+    let writeError = null;
+    out.on('error', (err) => { writeError = err; });
+    let received = 0;
+    arm();
+    try {
+      const res = await this.net.fetch(url, { cache: 'no-store', signal: controller.signal });
+      if (!res.ok || !res.body) throw new Error(`GitHub ha respondido ${res.status} al descargar la versión nueva.`);
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (writeError) throw writeError;
+        arm();
+        received += value.length;
+        hash.update(value);
+        if (!out.write(value)) await new Promise((resolve) => { out.once('drain', resolve); out.once('error', resolve); });
+        onProgress(received);
+      }
+      await new Promise((resolve) => out.end(resolve));
+      if (writeError) throw writeError;
+    } catch (err) {
+      out.destroy();
+      if (controller.signal.aborted) throw new Error('La descarga se ha quedado parada. Comprueba la conexión y vuelve a intentarlo.');
+      throw err;
+    } finally {
+      clearTimeout(idle);
+    }
+    return { received, sha256: hash.digest('hex') };
+  }
+
+  // Descarga la versión nueva, la comprueba y la deja lista para instalar.
   async start() {
     if (['working', 'ready'].includes(this.state.status)) return;
     if (!this.app.isPackaged) {
@@ -224,6 +263,11 @@ class Updater {
     }
     if (!fs.existsSync(path.join(this.installDir, 'resources', 'app.asar'))) {
       this.set({ status: 'error', error: `No reconozco la carpeta del programa (${this.installDir}).` });
+      return;
+    }
+    const manifest = this.manifest;
+    if (!manifest || compareVersions(manifest.version, this.current) <= 0) {
+      this.set({ status: 'error', error: 'No hay ninguna versión más nueva publicada.' });
       return;
     }
 
@@ -246,44 +290,40 @@ class Updater {
     };
 
     try {
-      note(`Claudes ${this.current} → ${this.state.latest || '?'} · programa en ${this.installDir}`);
-      const node = findNode();
-      if (!node) throw new Error('Para actualizar hace falta Node.js instalado (no encuentro «node»).');
-      const nodeVersion = execFileSync(node, ['--version'], { encoding: 'utf8', windowsHide: true }).trim();
-      if (compareVersions(nodeVersion, MIN_NODE) < 0) throw new Error(`Para generar el ejecutable hace falta Node.js ${MIN_NODE} o posterior (tienes ${nodeVersion}).`);
-      const npmCli = path.join(path.dirname(node), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-      if (!fs.existsSync(npmCli)) throw new Error(`No encuentro npm junto a Node.js (${npmCli}).`);
-      note(`node ${nodeVersion} en ${node}`);
+      const { version } = manifest;
+      note(`Claudes ${this.current} → ${version} · programa en ${this.installDir}`);
 
-      step('Descargando el código de GitHub');
+      step('Descargando');
       await fs.promises.rm(this.workDir, { recursive: true, force: true });
       await fs.promises.mkdir(this.workDir, { recursive: true });
-      const res = await this.net.fetch(`https://codeload.github.com/${REPO}/zip/refs/heads/${BRANCH}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`GitHub ha respondido ${res.status} al descargar el código.`);
-      const zip = path.join(this.workDir, 'codigo.zip');
-      await fs.promises.writeFile(zip, Buffer.from(await res.arrayBuffer()));
+      const zip = path.join(this.workDir, manifest.file);
+      const url = `${releasesUrl()}/download/v${version}/${manifest.file}`;
+      note(`${url} (${Math.round(manifest.size / 1024 / 1024)} MB)`);
+      let shown = -1;
+      const got = await this.download(url, zip, (received) => {
+        const pct = Math.min(99, Math.floor((received / manifest.size) * 100));
+        if (pct === shown) return;
+        shown = pct;
+        this.set({ status: 'working', step: `Descargando (${pct} %)`, error: '' });
+      });
+      if (got.received !== manifest.size || got.sha256 !== manifest.sha256) {
+        note(`recibido: ${got.received} bytes, sha256 ${got.sha256}; esperado: ${manifest.size} bytes, sha256 ${manifest.sha256}`);
+        throw new Error('La descarga no coincide con la versión publicada. Vuelve a intentarlo.');
+      }
+      note('descarga comprobada (tamaño y SHA-256)');
 
       step('Descomprimiendo');
-      await run('La descompresión', tarExe(), ['-xf', zip, '-C', this.workDir], { cwd: this.workDir, env: process.env, out });
-      const folder = fs.readdirSync(this.workDir, { withFileTypes: true })
-        .find((d) => d.isDirectory() && fs.existsSync(path.join(this.workDir, d.name, 'package.json')));
-      if (!folder) throw new Error('El código descargado no tiene package.json.');
-      const src = path.join(this.workDir, folder.name);
-      const version = JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8')).version;
-      if (compareVersions(version, this.current) <= 0) throw new Error(`La versión descargada (${version}) no es más nueva que la instalada (${this.current}).`);
-      note(`versión descargada: ${version}`);
-
-      const env = buildEnv();
-      step('Instalando dependencias');
-      await run('npm ci', node, [npmCli, 'ci', '--no-audit', '--no-fund'], { cwd: src, env, out });
-
-      step('Generando el ejecutable');
       const outDir = path.join(this.workDir, 'build');
-      await run('El empaquetado', node, [path.join('scripts', 'package.mjs'), outDir], { cwd: src, env, out });
-      const built = path.join(outDir, 'Claudes-win32-x64');
-      if (!fs.existsSync(path.join(built, EXE)) || !fs.existsSync(path.join(built, 'resources', 'app.asar'))) {
-        throw new Error('El empaquetado no ha generado el ejecutable.');
-      }
+      await fs.promises.mkdir(outDir, { recursive: true });
+      await run('La descompresión', tarExe(), ['-xf', zip, '-C', outDir], { cwd: this.workDir, env: process.env, out });
+      const built = path.join(outDir, PACKAGE_DIR);
+      const asar = path.join(built, 'resources', 'app.asar');
+      if (!fs.existsSync(path.join(built, EXE)) || !fs.existsSync(asar)) throw new Error('La descarga no contiene el programa.');
+      // Dentro de Electron se puede leer el package.json del app.asar descargado.
+      let packed = null;
+      try { packed = JSON.parse(fs.readFileSync(path.join(asar, 'package.json'), 'utf8')).version; } catch { /* fuera de Electron no se puede leer */ }
+      if (packed && packed !== version) throw new Error(`La descarga trae la versión ${packed} y se esperaba la ${version}.`);
+      await fs.promises.rm(zip, { force: true });
 
       step('Comprobando el acceso directo del escritorio');
       try {
@@ -293,7 +333,7 @@ class Updater {
         note(`AVISO: no se pudo comprobar el acceso directo (${err.message})`);
       }
 
-      this.ready = { dir: built, version, logFile, node };
+      this.ready = { dir: built, version, logFile };
       note('versión nueva lista: se instalará al cerrar Claudes');
       this.log(`actualización: versión ${version} lista para instalar`);
       this.set({ status: 'ready', latest: version, step: '' });
@@ -336,22 +376,23 @@ class Updater {
   }
 
   // Se llama justo antes de salir. Si hay una versión lista, lanza el instalador
-  // (install-update.js, con el node.exe del sistema) para que la ponga en su sitio
-  // en cuanto este proceso termine, y devuelve lo que hay que recordar.
+  // (install-update.js) para que la ponga en su sitio en cuanto este proceso termine,
+  // y devuelve lo que hay que recordar. Lo ejecuta el Claudes.exe nuevo en modo Node
+  // (ELECTRON_RUN_AS_NODE): así no depende de que haya Node.js en el equipo.
   // PowerShell no sirve aquí: lanzado sin consola, como se lanzan los procesos
   // que sobreviven a quien los abre, no llega a ejecutarse.
   installOnQuit() {
     if (!this.ready) return null;
-    const { dir, version, logFile, node } = this.ready;
+    const { dir, version, logFile } = this.ready;
     this.ready = null;
     try {
-      // Fuera de app.asar: el node.exe del sistema no puede leer dentro de él.
+      // Fuera de app.asar, en un archivo suelto que el instalador pueda leer siempre.
       const script = path.join(this.workDir, 'instalar.js');
       fs.writeFileSync(script, fs.readFileSync(path.join(__dirname, 'install-update.js')));
       const log = logFile || path.join(this.workDir, 'instalar.log');
-      const child = spawn(node, [
+      const child = spawn(path.join(dir, EXE), [
         script, String(process.pid), dir, this.installDir, EXE, log, this.relaunch ? '1' : '0',
-      ], { cwd: this.workDir, detached: true, stdio: 'ignore', windowsHide: true });
+      ], { cwd: this.workDir, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, detached: true, stdio: 'ignore', windowsHide: true });
       child.unref();
       this.log(`actualización: instalando ${version} al cerrar${this.relaunch ? ' y volviendo a abrir' : ''}`);
       return { version, from: this.current, log };
@@ -362,4 +403,4 @@ class Updater {
   }
 }
 
-module.exports = { Updater, compareVersions, parseChangelog };
+module.exports = { Updater, compareVersions, parseChangelog, parseManifest, PACKAGE_DIR, EXE, MANIFEST };

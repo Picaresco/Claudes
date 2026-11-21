@@ -280,4 +280,4 @@ class HookServer {
   }
 }
 
-module.exports = { HookServer };
+module.exports = { HookServer, jsonField, toolInputSummary };

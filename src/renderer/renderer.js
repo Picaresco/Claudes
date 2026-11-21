@@ -1416,7 +1416,7 @@
     if (u.status === 'working') {
       icon.innerHTML = SVG.working;
       label.textContent = `${u.step}…`;
-      button.title = `Generando ClaudHome ${u.latest} en segundo plano. Puedes seguir trabajando.`;
+      button.title = `Descargando ClaudHome ${u.latest} en segundo plano. Puedes seguir trabajando.`;
     } else if (u.status === 'ready') {
       icon.innerHTML = SVG.update;
       label.textContent = 'Reiniciar para actualizar';
@@ -1507,7 +1507,7 @@
     if (accepted) {
       renderUpdate(await api.updateStart());
       if (updateInfo.status === 'working') {
-        toast(`Generando ClaudHome ${updateInfo.latest} en segundo plano. Puedes seguir trabajando; al terminar, ClaudHome se reiniciará para instalarla.`);
+        toast(`Descargando ClaudHome ${updateInfo.latest} en segundo plano. Puedes seguir trabajando; al terminar, ClaudHome se reiniciará para instalarla.`);
       }
     }
     focusTerminal();
