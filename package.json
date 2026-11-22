@@ -1,7 +1,7 @@
 {
   "name": "claudes",
   "productName": "Claudes",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Sesiones de Claude Code en pestañas, una por carpeta",
   "main": "src/main/main.js",
   "private": true,
@@ -30,5 +30,8 @@
     "electron": "^45.2.3",
     "eslint": "^10.15.0",
     "globals": "^17.14.0"
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24"
   }
 }

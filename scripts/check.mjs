@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { pending } from './sizes.mjs';
+import { pending, CODE } from './sizes.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -93,6 +93,25 @@ for (const [file, m] of modules) {
   }
 }
 
+// 7. Archivos que han crecido (aviso, no fallo): a las 1 000 líneas y cada 20 % más.
+// Todo el código del proyecto, también las pruebas y lo que no es JavaScript. Si el
+// historial de revisiones está dañado, eso sí es un fallo.
+const codeFiles = (dir, out = []) => {
+  if (!fs.existsSync(path.join(root, dir))) return out;
+  for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) codeFiles(rel, out);
+    else if (CODE.test(entry.name)) out.push(rel);
+  }
+  return out;
+};
+let grown = [];
+try {
+  grown = pending(['src', 'scripts', 'test'].flatMap((dir) => codeFiles(dir)));
+} catch (err) {
+  fail(err.message);
+}
+
 if (problems.length) {
   console.error(problems.map((p) => `✗ ${p}`).join('\n'));
   console.error(`\n${problems.length === 1 ? '1 problema' : `${problems.length} problemas`}.`);
@@ -100,8 +119,6 @@ if (problems.length) {
 }
 console.log(`✓ Revisión correcta: ${files.length} archivos, ${htmlIds.size} elementos de la interfaz, ${bridge.size} funciones del puente, ${modules.size} módulos de la interfaz, versión ${version}.`);
 
-// 7. Archivos que han crecido (aviso, no fallo): a las 1 000 líneas y cada 20 % más.
-const grown = pending([...walk('src'), ...walk('scripts')]);
 for (const g of grown) {
   console.log(`⚠ ${g.file} tiene ${g.lines} líneas (${g.reviewed ? `revisado con ${g.reviewed}; ` : ''}aviso a partir de ${g.step}). `
     + 'Revisa si conviene partirlo y anótalo: npm run revisado -- ' + g.file);

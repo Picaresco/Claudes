@@ -42,6 +42,32 @@ export async function toggleBrief() {
   focusTerminal();
 }
 
+// ── Interruptor «Codex revisa» ─────────────────────────────────────
+// Encendido: al terminar un turno en el que Claude ha cambiado código, Codex lo revisa y
+// Claude corrige lo que encuentre. Solo se ve con Codex instalado y sesión de ChatGPT.
+
+let reviewOn = false;
+
+export function renderReview(state) {
+  const button = $('#review-btn');
+  if (!state || !state.usable) { button.hidden = true; reviewOn = false; return; }
+  reviewOn = Boolean(state.enabled);
+  button.hidden = false;
+  button.setAttribute('aria-checked', String(reviewOn));
+  button.title = reviewOn
+    ? `Codex revisa: activado. Al terminar un turno en el que Claude ha cambiado código, Codex (${state.model}, razonamiento ${state.effort}) revisa todos los cambios sin confirmar del proyecto, también los tuyos, y Claude corrige lo que sea un fallo real. Lo revisado se envía a OpenAI (si lleva claves, no se envía) y gasta de tu plan de ChatGPT; como Claude, Codex puede abrir otros archivos del proyecto para entender los cambios. Añade entre medio minuto y unos minutos por turno. Solo en proyectos con git. Pulsa para desactivarlo.`
+    : 'Codex revisa: desactivado. Pulsa para que Codex revise, como segundo revisor, los cambios sin confirmar del proyecto cuando Claude termine un turno en el que ha cambiado código. Lo revisado se envía a OpenAI.';
+}
+
+export async function toggleReview() {
+  const state = await api.reviewSet(!reviewOn);
+  renderReview(state);
+  toast(reviewOn
+    ? 'Desde el siguiente turno, en todas las pestañas, Codex revisará los cambios sin confirmar del proyecto (también los tuyos) cuando Claude cambie código. Se envían a OpenAI.'
+    : 'Codex ya no revisa el código al terminar cada turno.');
+  focusTerminal();
+}
+
 export async function toggleVoice() {
   renderVoice(await api.voiceSet(!voiceOn));
   toast(voiceOn

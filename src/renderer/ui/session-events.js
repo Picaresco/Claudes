@@ -1,6 +1,6 @@
 // Lo que pasa en cada sesión: avisos de los hooks de Claude Code y salida del proceso.
 import { api } from './dom.js';
-import { views, winFocused, visibleIds, isWatched, save } from './state.js';
+import { views, winFocused, visibleIds, isWatched, save, toast } from './state.js';
 import { setStatus } from './status.js';
 
 function needsYou(view, body) {
@@ -74,13 +74,47 @@ export function onHook(tabId, ev) {
       }
       break;
     case 'Stop':
-      finished(view, false);
+      // Si Codex va a revisar lo que ha cambiado, el turno aún no ha terminado.
+      if (ev.reviewing) setStatus(view, 'reviewing');
+      else finished(view, false);
       break;
     case 'StopFailure':
       finished(view, true);
       break;
     default:
       break;
+  }
+}
+
+// Resultado de la revisión de Codex de una pestaña (review.js).
+export function onReviewResult(tabId, r) {
+  const view = views.get(tabId);
+  if (!view || !r || view.closing) return;
+  const name = `«${view.tab.name}»`;
+  if (r.state === 'running') { setStatus(view, 'reviewing'); return; }
+  if (r.state === 'found') {
+    // Claude sigue trabajando con lo que ha encontrado Codex.
+    setStatus(view, 'working');
+    toast(r.count === 1
+      ? `Codex ha encontrado un posible problema en ${name} (${r.seconds} s). Claude lo está revisando.`
+      : `Codex ha encontrado ${r.count} posibles problemas en ${name} (${r.seconds} s). Claude los está revisando.`);
+    return;
+  }
+  if (view.status === 'reviewing') finished(view, false);
+  if (r.state === 'secret') {
+    const files = (r.files || []).join(', ');
+    if (files) toast(`${name}: Codex no ha revisado los cambios porque ${files} lleva una clave o contraseña, y no se envía a OpenAI. Pásala a un .env que git no suba.`);
+    else toast(`${name}: Codex no ha revisado los cambios porque no se ha podido comprobar que no lleven claves (son demasiado grandes o no se pueden leer).`);
+    return;
+  }
+  if (r.state === 'clean') toast(`Codex ha revisado el código de ${name} y no ha encontrado problemas (${r.seconds} s).`);
+  else if (r.state === 'error') {
+    const what = r.unclear ? `Codex no ha podido revisar los cambios de ${name}.` : `La revisión de Codex de ${name} ha fallado.`;
+    toast(`${what} ${r.file ? 'Los detalles están en la carpeta de registros.' : 'Activa la depuración para guardar los detalles la próxima vez.'}`);
+  }
+  else if (r.state === 'skipped' && !view.reviewSkipNoted) {
+    view.reviewSkipNoted = true; // una vez por pestaña
+    toast(`${name}: ${r.reason}`);
   }
 }
 

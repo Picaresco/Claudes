@@ -19,6 +19,8 @@ const { createContext } = require('./context');
 const { NetLog } = require('./netlog');
 const { Limits } = require('./limits');
 const { Growth, EDIT_TOOLS } = require('./growth');
+const { createReview } = require('./review');
+const { Secrets } = require('./secrets');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -43,6 +45,12 @@ let contexts = null; // contexto del proyecto de cada pestaña (context.js)
 let netlog = null; // «Log»: lo que ha visto Claude y lo que sale hacia internet (netlog.js)
 let limits = null; // límites de uso del plan y tokens gastados en cada periodo (limits.js)
 let growth = null; // aviso de archivos de código que crecen mucho (growth.js)
+let review = null; // Codex como segundo revisor del código (review.js)
+let secrets = null; // aviso de claves y contraseñas escritas en los archivos (secrets.js)
+// Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
+// pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
+const NOTICE_BUDGET = 1500;
+const NOTICE_LIMIT = 1700;
 const liveNotifications = new Set();
 
 const logsDir = () => path.join(app.getPath('userData'), 'logs');
@@ -323,6 +331,15 @@ function registerIpc() {
   ipcMain.on('update:restart', restartToUpdate);
 
   // Botón «Resumido»: vale para todas las pestañas desde su siguiente mensaje.
+  // Interruptor «Codex revisa»: vale desde el siguiente turno, en todas las pestañas.
+  const reviewInfo = () => ({ enabled: review.enabled, usable: codexUsable(), model: review.MODEL, effort: review.EFFORT });
+  ipcMain.handle('review:get', () => reviewInfo());
+  ipcMain.handle('review:set', (_e, on) => {
+    review.enabled = Boolean(on) && codexUsable();
+    appLog(`revisión de Codex ${review.enabled ? 'activada' : 'desactivada'}`);
+    return reviewInfo();
+  });
+
   ipcMain.handle('brief:get', () => ({ enabled: style.brief }));
   ipcMain.handle('brief:set', (_e, on) => {
     style.brief = Boolean(on);
@@ -509,10 +526,25 @@ if (!app.requestSingleInstanceLock()) {
     process.on('unhandledRejection', (reason) => {
       appLog(`promesa rechazada sin capturar en el proceso principal: ${(reason && reason.stack) || reason}`);
     });
+    // Codex como segundo revisor (review.js): se crea antes que el servidor de hooks.
+    review = createReview({
+      tabs, store, usable: codexUsable, codex, send, log: appLog, logsDir,
+      detailedLogs: () => logger.enabled, // la salida completa, solo con la depuración activada
+      // Lo que lleve claves no se envía a Codex.
+      checkSecrets: (cwd, signal) => (secrets ? secrets.reviewInput(cwd, signal) : { ok: false, files: [] }),
+      netlog: () => netlog, // se crea más tarde
+    });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
-      if (netlog) netlog.fromHook(tabId, event);
+      // El «Log» escribe en disco y puede leer la carpeta del proyecto: se hace después de
+      // contestar al hook (setImmediate conserva el orden de llegada).
+      if (netlog) setImmediate(() => netlog.fromHook(tabId, event));
+      // Lo que necesita la revisión de Codex: si el turno ha editado código y, al pararse,
+      // si se va a revisar (la interfaz no lo da por terminado mientras tanto).
+      if (event.event === 'UserPromptSubmit') review.turnStarted(tabId, event.prompt);
+      if (event.event === 'PostToolUse') review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
+      if (event.event === 'Stop') event.reviewing = review.willReview(tabId, event);
       // Con /clear la pestaña pasa a otra conversación: los hooks llevan la actual.
       const tab = tabs.get(tabId);
       if (event.sessionId && tab && tab.folder) tab.session = event.sessionId;
@@ -540,14 +572,30 @@ if (!app.requestSingleInstanceLock()) {
     };
     // Con cada mensaje, lo que la sesión tenga que saber: el estilo del botón «Resumido»
     // si ha cambiado y el contexto del proyecto si se cambió con la sesión abierta.
-    // Y tras cada edición de Claude, el aviso de buenas prácticas si el archivo ha crecido
-    // hasta un escalón (growth.js).
+    // Y tras cada edición de Claude, los avisos de buenas prácticas: si el archivo ha
+    // crecido hasta un escalón (growth.js) o si lleva una clave escrita (secrets.js).
     growth = new Growth({ store, log: appLog });
-    hookServer.respond = async (tabId, eventName, event) => {
+    secrets = new Secrets({ store, log: appLog });
+    hookServer.respond = async (tabId, eventName, event, signal) => {
+      // Al pararse Claude: la revisión de Codex, si toca.
+      if (eventName === 'Stop') return review.onStop(tabId, event, signal);
       if (eventName === 'PostToolUse') {
         const tab = tabs.get(tabId);
         const file = event && EDIT_TOOLS.has(event.toolName) && event.toolInput && event.toolInput.file;
-        const notice = file && tab && tab.folder ? await growth.edited(tab.folder, file) : null;
+        // Una ruta relativa se resuelve con la carpeta de trabajo de la sesión (puede ser
+        // una subcarpeta); el proyecto, para recordar lo avisado, es la carpeta de la pestaña.
+        if (!file || !tab || !tab.folder) return null;
+        // Cada aviso con su propio límite, por debajo del de la respuesta: si uno se retrasa,
+        // el otro llega igual. Lo que acaba fuera de plazo no se anota (lo comprueban antes).
+        const within = (promise) => Promise.race([promise, new Promise((resolve) => { setTimeout(resolve, NOTICE_LIMIT, null); })]);
+        const notices = (await Promise.all([
+          within(growth.edited(tab.folder, file, { base: event.cwd, budget: NOTICE_BUDGET, defer: true })),
+          within(secrets.edited(tab.folder, file, { base: event.cwd, budget: NOTICE_BUDGET, defer: true })),
+        ])).filter(Boolean);
+        // Solo se anota lo avisado si el aviso llega a Claude (si no, se repetirá).
+        if (signal && signal.aborted) return null;
+        notices.forEach((n) => n.commit());
+        const notice = notices.map((n) => n.notice).join('\n\n');
         return notice ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: notice } } : null;
       }
       if (eventName !== 'UserPromptSubmit') return null;
@@ -607,6 +655,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', () => {
     ptys.killAll();
+    codex.stopReviews(); // una revisión de Codex en marcha no sigue tras cerrar
     if (hookServer) hookServer.stop();
     if (limits) limits.stop();
     // Con una versión nueva lista, se instala ahora que Claudes se cierra.

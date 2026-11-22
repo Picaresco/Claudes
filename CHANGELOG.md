@@ -4,6 +4,16 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.15.0 — 2026-11-22
+- Nueva buena práctica en todos tus proyectos: si Claude escribe en un archivo una clave o una contraseña (de Anthropic, OpenAI, GitHub, AWS, Google, una clave privada, una contraseña en el código o en una dirección de conexión…), en ese momento se le pide que la pase a un archivo `.env` que git no suba y que te lo cuente. Una clave que llega a GitHub hay que darla por robada, aunque se borre después.
+- También avisa si un `.env` con claves no está en `.gitignore`. La app nunca guarda ni muestra la clave, y no confunde con claves los valores de ejemplo ni las variables de entorno.
+- Nuevo interruptor «Codex revisa» en la barra superior, si tienes Codex con tu cuenta de ChatGPT. Encendido, cuando Claude termina un turno en el que ha cambiado código, Codex (su modelo más capaz, razonando a fondo) revisa esos cambios como segundo revisor. Si encuentra algo, Claude lo evalúa, corrige lo que sea un fallo real y te cuenta qué ha cambiado y qué ha descartado.
+- Codex revisa todos los cambios sin confirmar del proyecto, también los tuyos; si encuentra algo en lo que Claude no ha tocado, Claude te lo comenta en vez de cambiarlo.
+- La revisión añade entre medio minuto y unos minutos por turno y gasta de tu plan de ChatGPT, nunca una clave de API. Mientras dura, la pestaña muestra «Codex está revisando el código». Solo revisa una vez por turno, en los turnos empezados con el interruptor encendido, solo en proyectos con git y nunca al cerrar una sesión. Si pulsas Esc o cierras la pestaña, se para.
+- Lo que revisa Codex sale hacia OpenAI: queda anotado en el «Log» antes de enviarse. Antes de cada revisión se comprueba exactamente lo que se va a enviar; si lleva una clave, o no se puede comprobar, no se revisa y te avisa. Como Claude, Codex puede abrir otros archivos del proyecto para entender los cambios. Codex no guarda la sesión, y el resultado completo de cada revisión queda en la carpeta de registros solo con la depuración activada.
+- El aviso de archivos que crecen es más fiable: cuenta también los cuadernos de Jupyter (solo sus celdas de código), entiende las rutas relativas a la carpeta donde trabaja Claude y encuentra el archivo aunque Claude escriba uno enorme.
+- Arreglado: un aviso de Claude que tardaba en responderse podía retrasar el siguiente, como el de «te necesita».
+
 ## 0.14.0 — 2026-11-21
 - Nueva buena práctica en todos tus proyectos: cuando Claude edita un archivo de código que llega a 1 000 líneas, y otra vez cada vez que crece un 20 % más, te comenta al terminar si conviene partirlo en piezas más pequeñas. Solo avisa: no parte nada sin que se lo pidas.
 - El aviso no salta con documentos, datos ni estilos, ni cuando Claude cambia el archivo con un comando de la terminal.

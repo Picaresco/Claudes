@@ -217,4 +217,85 @@ const IMAGE_TOOL = {
   },
 };
 
-module.exports = { detect, generateImage, IMAGE_TOOL };
+// ── Revisión de código ───────────────────────────────────────────────
+// `codex exec review --uncommitted` revisa los cambios sin confirmar de un repositorio git:
+// en solo lectura, sin pedir aprobaciones y sin guardar la sesión (--ephemeral). Solo con
+// la cuenta de ChatGPT y el proveedor de OpenAI: si la sesión de Codex es otra, falla en
+// vez de facturar aparte.
+// Devuelve { ok, code, text (lo que escribe al final: el veredicto y los hallazgos), log
+// (todo lo demás, para el registro), seconds, aborted }.
+const REVIEW_TIMEOUT = 12 * 60 * 1000;
+const activeReviews = new Set(); // cómo parar cada revisión en marcha
+
+function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT }) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const exe = findCodex();
+    if (!exe) { resolve({ ok: false, code: null, text: '', log: 'Codex no está instalado.', seconds: 0, aborted: false }); return; }
+    const args = ['exec', 'review', '--uncommitted', '--ephemeral',
+      '-c', 'history.persistence="none"', '-c', 'sandbox_mode="read-only"',
+      '-c', 'model_provider="openai"', '-c', 'forced_login_method="chatgpt"'];
+    if (model) args.push('-c', `model="${model}"`);
+    if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
+    // codex.cmd lanza «node» sin ruta: que Windows no lo busque en la carpeta del proyecto.
+    const env = { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' };
+    const child = spawn(exe, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: viaShell(exe) });
+    let text = '';
+    let log = '';
+    let settled = false;
+    let aborted = false;
+    // Con un .cmd, lo que corre es cmd.exe: hay que terminar también lo que lanzó.
+    const kill = () => {
+      try {
+        if (process.platform === 'win32' && child.pid) execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {});
+        else child.kill();
+      } catch { /* ya había salido */ }
+    };
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      activeReviews.delete(stop);
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve({ ...result, seconds: Math.round((Date.now() - start) / 1000), aborted });
+    };
+    const onAbort = () => { aborted = true; kill(); };
+    const stop = () => onAbort();
+    activeReviews.add(stop);
+    const timer = setTimeout(() => { kill(); log += '\n[ClaudHome] la revisión ha tardado demasiado y se ha cancelado'; }, timeout);
+    if (signal) {
+      if (signal.aborted) { onAbort(); } else signal.addEventListener('abort', onAbort);
+    }
+    child.stdout.on('data', (chunk) => { text += chunk; });
+    child.stderr.on('data', (chunk) => { log += chunk; });
+    child.on('error', (err) => finish({ ok: false, code: null, text, log: `${log}\nNo se pudo ejecutar Codex: ${err.message}` }));
+    child.on('close', (code) => finish({ ok: code === 0 && !aborted, code, text, log }));
+  });
+}
+
+// Para todas las revisiones en marcha (al cerrar la app).
+function stopReviews() {
+  for (const stop of [...activeReviews]) stop();
+}
+
+// Los hallazgos de una revisión: «- [P1] Título — ruta:líneas» y su explicación sangrada.
+function parseReview(text) {
+  const out = { summary: '', findings: [] };
+  const raw = String(text || '').replace(/\r/g, '');
+  // El resumen va antes del encabezado («Review comment:», «Full review comments:») o del primer hallazgo.
+  const end = raw.search(/^(?:(?:Full )?review comments?:\s*$|- \[P\d\])/im);
+  out.summary = (end >= 0 ? raw.slice(0, end) : raw).trim();
+  let current = null;
+  for (const line of raw.split('\n')) {
+    const head = /^- \[P(\d)\]\s+(.+?)(?:\s+[—-]\s+(\S.*))?$/.exec(line);
+    if (head) {
+      current = { priority: Number(head[1]), title: head[2].trim(), location: (head[3] || '').trim(), body: '' };
+      out.findings.push(current);
+    } else if (current && /^\s+\S/.test(line)) {
+      current.body = `${current.body} ${line.trim()}`.trim();
+    }
+  }
+  return out;
+}
+
+module.exports = { detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews };

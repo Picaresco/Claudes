@@ -76,7 +76,7 @@ export async function closeTab(id) {
     if (now && view.closing) view.closing.finish('forced');
     return;
   }
-  if (view.status === 'working' || view.status === 'needs') {
+  if (view.status === 'working' || view.status === 'reviewing' || view.status === 'needs') {
     const choice = await api.choose({
       message: `Claude está trabajando en «${tab.name}»`,
       detail: '«Guardar estado y cerrar» pide a Claude que pare y deje anotado por dónde iba, para retomarlo al reabrir la sesión desde Recientes. '

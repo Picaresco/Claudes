@@ -16,20 +16,35 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const growth = require('../src/main/growth.js');
-export const { nextStep, needsReview, countLines, FIRST, GROWTH } = growth;
+export const { nextStep, needsReview, countLines, codeLines, FIRST, GROWTH, CODE } = growth;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOG = path.join(root, 'scripts', 'revisiones-tamano.json');
 
+// Lo anotado. Sin archivo, nada; si el archivo existe pero no se puede leer o está dañado
+// (p. ej. tras una mezcla de cambios), falla: así nunca se sobrescribe el historial.
 export function readLog(file = LOG) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch (err) {
+    if (err.code === 'ENOENT') return {};
+    throw new Error(`No se puede leer ${path.basename(file)}: ${err.message}`, { cause: err });
+  }
+  let log;
+  try { log = JSON.parse(text); } catch (err) {
+    throw new Error(`${path.basename(file)} está dañado (${err.message}); arréglalo antes de anotar nada`, { cause: err });
+  }
+  if (!log || typeof log !== 'object' || Array.isArray(log)) {
+    throw new Error(`${path.basename(file)} está dañado (no es una lista de archivos); arréglalo antes de anotar nada`);
+  }
+  return log;
 }
 
 // Archivos que tocan revisión: [{ file, lines, reviewed, step }]. `files` son rutas relativas a `base`.
 export function pending(files, { base = root, log = readLog() } = {}) {
   const out = [];
   for (const file of files) {
-    const lines = countLines(fs.readFileSync(path.join(base, file), 'utf8'));
+    let lines;
+    try { lines = codeLines(file, fs.readFileSync(path.join(base, file), 'utf8')); } catch { continue; } // p. ej. un cuaderno dañado: no se puede contar
     const reviewed = (log[file] && log[file].lineas) || 0;
     if (needsReview(lines, reviewed)) out.push({ file, lines, reviewed, step: nextStep(reviewed) });
   }
@@ -39,7 +54,7 @@ export function pending(files, { base = root, log = readLog() } = {}) {
 // Anota que un archivo se ha revisado con su tamaño de ahora.
 export function markReviewed(file, note = '', { base = root, logFile = LOG } = {}) {
   const rel = path.relative(base, path.resolve(base, file)).split(path.sep).join('/');
-  const lines = countLines(fs.readFileSync(path.join(base, rel), 'utf8'));
+  const lines = codeLines(rel, fs.readFileSync(path.join(base, rel), 'utf8'));
   const log = readLog(logFile);
   log[rel] = { lineas: lines, fecha: new Date().toISOString().slice(0, 10), ...(note ? { nota: note } : {}) };
   const sorted = Object.fromEntries(Object.keys(log).sort().map((key) => [key, log[key]]));

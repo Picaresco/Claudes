@@ -11,14 +11,14 @@ import { wireLog } from './ui/log.js';
 import { baseName } from './ui/newtab.js';
 import { wireRainbow } from './ui/rainbow.js';
 import { renderTabs, renderStatusbar, layout } from './ui/render.js';
-import { onHook, onPtyExit } from './ui/session-events.js';
+import { onHook, onPtyExit, onReviewResult } from './ui/session-events.js';
 import { createView } from './ui/sessions.js';
 import { sleepAfterMs, setSleepAfterMs, sleepIdleSessions } from './ui/sleep.js';
 import { S, views, terms, info, setInfo, byId, clamp, touchMru, toast } from './ui/state.js';
 import { setStatus, wrapUp, gracefulExit } from './ui/status.js';
 import { activate } from './ui/tabs.js';
 import { pasteClip } from './ui/terminals.js';
-import { renderVoice, renderBrief } from './ui/toggles.js';
+import { renderVoice, renderBrief, renderReview } from './ui/toggles.js';
 import { renderUpdate } from './ui/update.js';
 
 // ── Arranque ─────────────────────────────────────────────────────
@@ -162,11 +162,16 @@ async function init() {
   // «hoy a las 21:00» pasa a ser «ayer…» con el cambio de día.
   setInterval(renderPlanLimits, 60 * 1000);
   api.onNotifyClick((tabId) => { if (byId(tabId)) activate(tabId); });
-  api.onCodexChanged(renderCodex);
+  api.onCodexChanged((codexState) => {
+    renderCodex(codexState);
+    api.reviewGet().then(renderReview).catch(() => { /* sin botón «Codex revisa» */ });
+  });
   api.codexStatus(false).then(renderCodex).catch(() => { /* sin indicador hasta la próxima comprobación */ });
   api.debugGet().then(renderDebug).catch(() => { /* sin interruptor de depuración */ });
   api.voiceGet().then(renderVoice).catch(() => { /* sin botón de micrófono */ });
   api.briefGet().then(renderBrief).catch(() => { /* sin botón «Resumido» */ });
+  api.reviewGet().then(renderReview).catch(() => { /* sin botón «Codex revisa» */ });
+  api.onReviewResult(onReviewResult);
   api.onUpdateChanged(renderUpdate);
   api.updateGet().then((u) => {
     renderUpdate(u);
@@ -183,7 +188,7 @@ async function init() {
   // Cierre de la app con «Guardar estado y cerrar»: cada sesión que trabaja deja
   // anotado su estado y, cuando todas han terminado, la app se cierra.
   api.onWrapUpAll(async () => {
-    const busy = [...views.values()].filter((v) => v.started && (v.closing || v.status === 'working' || v.status === 'needs'));
+    const busy = [...views.values()].filter((v) => v.started && (v.closing || v.status === 'working' || v.status === 'reviewing' || v.status === 'needs'));
     if (busy.length) toast(busy.length === 1 ? 'Claude está guardando su estado antes de cerrar…' : 'Las sesiones están guardando su estado antes de cerrar…', true);
     await Promise.all(busy.map(async (view) => {
       const result = await wrapUp(view);

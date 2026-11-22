@@ -21,6 +21,14 @@ const EVENTS = [
 
 const HEAD_LIMIT = 64 * 1024; // de cada aviso solo interesa el principio
 const RESPOND_LIMIT = 2000; // ms que se espera como mucho a quien decide la respuesta (el hook caduca a los 5 s)
+// El hook Stop puede esperar a la revisión de Codex (review.js): Claude Code espera hasta
+// STOP_TIMEOUT y la app, un poco menos, para contestar siempre antes de que caduque.
+const STOP_TIMEOUT = 900; // s
+const STOP_RESPOND_LIMIT = (STOP_TIMEOUT - 30) * 1000;
+const EDIT_TOOL_NAMES = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+// Solape entre trozos al buscar la ruta del archivo editado: rutas de hasta 32 767
+// caracteres, aunque cada uno llegue escrito como \uXXXX (6 bytes).
+const PATH_OVERLAP = 6 * 32768 + 64;
 
 // De la entrada de una herramienta, solo lo que necesita el registro («Log»,
 // netlog.js): el archivo, la dirección, la búsqueda, el comando o un resumen del MCP.
@@ -28,8 +36,9 @@ function toolInputSummary(tool, input) {
   if (typeof tool !== 'string' || !input || typeof input !== 'object') return null;
   const text = (v, max) => String(v === undefined || v === null ? '' : v).slice(0, max);
   if (tool === 'Read') return { file: text(input.file_path, 600), pages: text(input.pages, 40), offset: input.offset || null, limit: input.limit || null };
-  // De lo que edita Claude solo interesa qué archivo es (aviso de archivos que crecen, growth.js).
-  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) return { file: text(input.file_path || input.notebook_path, 600) };
+  // De lo que edita Claude solo interesa qué archivo es (aviso de archivos que crecen,
+  // growth.js). La ruta va entera: se usa para leer el archivo, no solo para mostrarla.
+  if (EDIT_TOOL_NAMES.includes(tool)) return { file: text(input.file_path || input.notebook_path, 32768) };
   if (tool === 'Grep') return { pattern: text(input.pattern, 200), path: text(input.path, 600) };
   if (tool === 'WebFetch') return { url: text(input.url, 1000), prompt: text(input.prompt, 200) };
   if (tool === 'WebSearch') return { query: text(input.query, 300) };
@@ -191,11 +200,26 @@ class HookServer {
     const chunks = [];
     let kept = 0;
     let total = 0;
+    // De un aviso grande solo se guarda el principio, pero la ruta del archivo editado se
+    // busca en todo él: si Claude escribe un archivo enorme, la entrada llega cortada y la
+    // ruta puede ir antes o después del contenido. Se miran los trozos según llegan, con un
+    // solape para no partir la ruta entre dos trozos.
+    let editPath;
+    let tail = '';
     req.on('data', (chunk) => {
       total += chunk.length;
       if (kept < HEAD_LIMIT) {
         chunks.push(chunk);
         kept += chunk.length;
+      }
+      if (editPath === undefined) {
+        const text = tail + chunk.toString('latin1');
+        const m = /"(?:file_path|notebook_path)"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text);
+        if (m) {
+          try { editPath = JSON.parse(Buffer.from(`"${m[1]}"`, 'latin1').toString('utf8')); } catch { editPath = null; }
+        } else {
+          tail = text.slice(-PATH_OVERLAP);
+        }
       }
     });
     req.on('end', async () => {
@@ -204,18 +228,21 @@ class HookServer {
       if (total <= HEAD_LIMIT) {
         try { payload = JSON.parse(head); } catch { payload = {}; }
       } else {
-        // Aviso grande (p. ej. la respuesta de leer un archivo): lo que interesa está al principio.
-        for (const key of ['session_id', 'tool_name', 'tool_input', 'notification_type']) {
+        // Aviso grande (p. ej. la respuesta de leer un archivo): lo que interesa está al
+        // principio. Claude Code manda primero los campos comunes (session_id, cwd…).
+        for (const key of ['session_id', 'tool_name', 'tool_input', 'notification_type', 'cwd']) {
           const value = jsonField(head, key);
           if (value !== undefined) payload[key] = value;
         }
-        // Al escribir un archivo grande, la entrada (con todo su contenido) llega cortada:
-        // la ruta va al principio y basta con ella.
-        if (payload.tool_input === undefined) {
-          const file = jsonField(head, 'file_path');
-          if (typeof file === 'string') payload.tool_input = { file_path: file };
+        // Al escribir un archivo grande, la entrada llega cortada: basta con su ruta.
+        // Solo en las herramientas de edición: en otras, un «file_path» puede venir de la
+        // respuesta de la herramienta, no de lo que recibió.
+        if (payload.tool_input === undefined && typeof editPath === 'string' && EDIT_TOOL_NAMES.includes(payload.tool_name)) {
+          payload.tool_input = { file_path: editPath };
         }
       }
+      // Un cuerpo que no es un objeto (null, una lista…) se trata como vacío.
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) payload = {};
       const event = {
         event: eventName,
         sessionId: typeof payload.session_id === 'string' ? payload.session_id : null,
@@ -227,23 +254,47 @@ class HookServer {
         // Tras ejecutar una herramienta, el tamaño del aviso ≈ lo que recibió Claude.
         size: eventName === 'PostToolUse' ? total : null,
         prompt: typeof payload.prompt === 'string' ? payload.prompt.slice(0, 80) : null,
+        // Carpeta de trabajo de la sesión (puede ser una subcarpeta del proyecto).
+        cwd: typeof payload.cwd === 'string' ? payload.cwd : null,
+        // En Stop: Claude ya sigue por una respuesta anterior a este mismo hook.
+        stopHookActive: payload.stop_hook_active === true,
       };
+      // Primero se avisa a la app, en el orden en que llegan los avisos: si se esperara a
+      // la respuesta, uno lento (p. ej. tras una edición) podría pisar a otro posterior,
+      // como el de «te necesita».
+      try {
+        this.onEvent(tabId, event);
+      } catch (err) {
+        console.error('Aviso de hook no procesado:', err.message);
+      }
       if (this.blockPrompts && eventName === 'UserPromptSubmit') {
         // Modo de pruebas: el mensaje se rechaza antes de llegar al modelo.
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ decision: 'block', reason: 'ClaudHome en modo de pruebas: mensaje no enviado.' }));
       } else {
-        // Quien responde puede tardar un poco (p. ej. contar las líneas de un archivo),
-        // pero nunca tanto como para dejar a Claude Code esperando.
+        // Quien responde puede tardar un poco (p. ej. contar las líneas de un archivo; en
+        // Stop, una revisión de Codex), pero nunca tanto como para que el hook caduque. Si
+        // Claude Code deja de esperar (Esc, pestaña cerrada), se avisa con `signal`.
+        // Si se agota la espera, también se avisa (y se contesta vacío): lo que llegue
+        // después ya no llegaría a Claude.
+        const controller = new AbortController();
+        res.on('close', () => { if (!res.writableEnded) controller.abort(); });
         let answer;
         let limit = null;
+        let timedOut = false;
         try {
           answer = await Promise.race([
-            Promise.resolve(this.respond ? this.respond(tabId, eventName, event) : null),
-            new Promise((resolve) => { limit = setTimeout(resolve, RESPOND_LIMIT, null); }),
+            Promise.resolve(this.respond ? this.respond(tabId, eventName, event, controller.signal) : null),
+            new Promise((resolve) => {
+              limit = setTimeout(() => { timedOut = true; controller.abort(); resolve(null); }, eventName === 'Stop' ? STOP_RESPOND_LIMIT : RESPOND_LIMIT);
+            }),
+            // Si Claude Code deja de esperar, se deja de esperar también aquí.
+            new Promise((resolve) => { controller.signal.addEventListener('abort', () => resolve(null), { once: true }); }),
           ]);
         } catch { answer = null; }
         clearTimeout(limit);
+        if (timedOut) answer = null;
+        if ((controller.signal.aborted && !timedOut) || res.writableEnded) return; // ya no hay a quién contestar
         if (answer) {
           // Por ejemplo, contexto adicional para Claude junto con el mensaje del usuario.
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -253,11 +304,6 @@ class HookServer {
           res.writeHead(200);
           res.end();
         }
-      }
-      try {
-        this.onEvent(tabId, event);
-      } catch (err) {
-        console.error('Aviso de hook no procesado:', err.message);
       }
     });
     req.on('error', () => { /* conexión cortada: se ignora */ });
@@ -269,7 +315,7 @@ class HookServer {
     const hooks = {};
     for (const event of EVENTS) {
       const url = `http://127.0.0.1:${this.port}/hook/${this.token}/${tabId}/${event}`;
-      hooks[event] = [{ hooks: [{ type: 'http', url, timeout: 5 }] }];
+      hooks[event] = [{ hooks: [{ type: 'http', url, timeout: event === 'Stop' ? STOP_TIMEOUT : 5 }] }];
     }
     fs.mkdirSync(this.dir, { recursive: true });
     const file = path.join(this.dir, `${tabId}.json`);

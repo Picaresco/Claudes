@@ -25,6 +25,7 @@ const KIND_LABEL = {
   mcp: 'Herramienta MCP',
   web: 'Página web',
   busqueda: 'Búsqueda en internet',
+  revision: 'Revisión de Codex',
 };
 
 // ── Direcciones locales o de internet ────────────────────────────────

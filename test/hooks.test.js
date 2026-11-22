@@ -50,7 +50,7 @@ test('un aviso de hook llega con lo que interesa y sin token no se atiende', asy
   await waitFor(() => events.length === 1);
   assert.deepEqual({ ...events[0], size: null }, {
     tabId: 't1', event: 'PostToolUse', sessionId: 's1', notificationType: null, message: null,
-    toolName: 'Bash', toolInput: { command: 'npm test' }, background: true, size: null, prompt: null,
+    toolName: 'Bash', toolInput: { command: 'npm test' }, background: true, size: null, prompt: null, cwd: null, stopHookActive: false,
   });
   assert.ok(events[0].size > 0);
   const bad = await post(`http://127.0.0.1:${server.port}/hook/${'0'.repeat(32)}/t1/Stop`, {});
@@ -115,4 +115,84 @@ test('quien responde recibe el aviso ya leído y puede tardar un poco', async (t
   const failed = await post(urlOf('PostToolUse'), { tool_name: 'Edit', tool_input: { file_path: 'a.js' } });
   assert.equal(failed.status, 200);
   assert.equal(await failed.text(), '');
+});
+
+test('la ruta del archivo escrito se encuentra aunque vaya detrás de un contenido enorme', async (t) => {
+  const { server, urlOf, post } = await startServer(t);
+  const seen = [];
+  server.respond = (tabId, eventName, event) => { seen.push(event); return null; };
+  // Como lo manda Claude Code: los campos comunes primero. El contenido va antes que la
+  // ruta (relativa) y lleva un falso «"file_path":» dentro del propio texto.
+  const content = JSON.stringify('const a = {"file_path": "señuelo.js"};\n'.repeat(4000));
+  const body = `{"session_id":"s","cwd":"C:\\\\Código\\\\src","tool_name":"Write","tool_input":{"content":${content},"file_path":"grande.js"}}`;
+  assert.ok(body.length > 64 * 1024);
+  await post(urlOf('PostToolUse'), body);
+  assert.equal(seen[0].toolInput.file, 'grande.js');
+  assert.equal(seen[0].cwd, 'C:\\Código\\src');
+  // En otra herramienta, una ruta que solo aparece en la respuesta no se toma como suya.
+  const mcp = `{"session_id":"s","tool_name":"mcp__x__subir","tool_input":{"datos":${content}},"tool_response":{"file_path":"C:\\\\salida.txt"}}`;
+  await post(urlOf('PostToolUse'), mcp);
+  assert.equal(seen[1].toolInput, null);
+});
+
+test('los avisos llegan a la app en orden aunque la respuesta tarde', async (t) => {
+  const { server, events, urlOf, post } = await startServer(t);
+  let release;
+  server.respond = (tabId, eventName) => (eventName === 'PostToolUse' ? new Promise((resolve) => { release = resolve; }) : null);
+  const slow = post(urlOf('PostToolUse'), { tool_name: 'Edit', tool_input: { file_path: 'a.js' } });
+  await waitFor(() => events.length === 1); // la app ya lo sabe, aunque la respuesta siga pendiente
+  await post(urlOf('PermissionRequest'), { tool_name: 'Bash' });
+  await waitFor(() => events.length === 2);
+  assert.deepEqual(events.map((e) => e.event), ['PostToolUse', 'PermissionRequest']);
+  release({ marca: 'respuesta lenta' });
+  // Llega la respuesta de verdad, no la vacía de cuando se agota la espera.
+  assert.equal((await (await slow).json()).marca, 'respuesta lenta');
+});
+
+test('un cuerpo que no es un objeto no deja el hook colgado', async (t) => {
+  const { events, urlOf, post } = await startServer(t);
+  for (const body of ['null', '[1,2]', '"texto"']) {
+    const res = await post(urlOf('Stop'), body);
+    assert.equal(res.status, 200, body);
+  }
+  await waitFor(() => events.length === 3);
+  assert.ok(events.every((e) => e.event === 'Stop' && e.sessionId === null));
+});
+
+test('de una edición se guarda la ruta entera, aunque sea muy larga', () => {
+  const long = `C:\\${'carpeta\\'.repeat(120)}archivo.js`;
+  assert.equal(toolInputSummary('Write', { file_path: long, content: 'x' }).file, long);
+  assert.equal(toolInputSummary('NotebookEdit', { notebook_path: 'C:\\a.ipynb' }).file, 'C:\\a.ipynb');
+});
+
+test('el hook Stop puede esperar a una revisión larga y se cancela si Claude Code deja de esperar', async (t) => {
+  const { server, settings, urlOf, post } = await startServer(t);
+  assert.equal(settings.hooks.Stop[0].hooks[0].timeout, 900); // Stop espera hasta 15 min
+  assert.equal(settings.hooks.PostToolUse[0].hooks[0].timeout, 5); // los demás, 5 s
+  // Una respuesta que tarda más que el límite de los demás avisos (2 s).
+  server.respond = (tabId, eventName) => new Promise((resolve) => {
+    setTimeout(() => resolve(eventName === 'Stop' ? { decision: 'block', reason: 'Codex: revisa esto' } : null), 2300);
+  });
+  const res = await post(urlOf('Stop'), { stop_hook_active: false });
+  assert.equal((await res.json()).decision, 'block');
+  // Si quien llamó se va (Esc, pestaña cerrada), quien responde recibe el aviso.
+  let signal;
+  server.respond = (tabId, eventName, event, s) => { signal = s; return new Promise(() => {}); };
+  const controller = new AbortController();
+  const pending = post(urlOf('Stop'), {}).catch(() => null);
+  await waitFor(() => signal);
+  controller.abort();
+  // Con fetch no se puede cortar a mitad sin AbortSignal: se corta la conexión del servidor.
+  server.server.closeAllConnections();
+  await pending;
+  await waitFor(() => signal.aborted);
+});
+
+test('si la respuesta no llega a tiempo, se contesta vacío y quien responde se entera', async (t) => {
+  const { server, urlOf, post } = await startServer(t);
+  let signal;
+  server.respond = (tabId, eventName, event, s) => { signal = s; return new Promise(() => {}); };
+  const res = await post(urlOf('PostToolUse'), { tool_name: 'Edit', tool_input: { file_path: 'a.js' } });
+  assert.equal(res.status, 200); // a los 2 s, vacío
+  assert.equal(signal.aborted, true);
 });

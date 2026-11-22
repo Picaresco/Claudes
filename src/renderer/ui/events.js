@@ -17,7 +17,7 @@ import {
   startDrag,
 } from './state.js';
 import { activate, cycle, closeTab, startRename, tabMenu, moveTab } from './tabs.js';
-import { toggleBrief, toggleVoice } from './toggles.js';
+import { toggleBrief, toggleReview, toggleVoice } from './toggles.js';
 import { clickUpdate } from './update.js';
 import { queueFit, focusTerminal, setZoom, toggleExtra } from './views.js';
 
@@ -178,6 +178,7 @@ export function wireChrome() {
   $('#codex-chip').addEventListener('click', toggleCodex);
   $('#mic-btn').addEventListener('click', toggleVoice);
   $('#brief-btn').addEventListener('click', toggleBrief);
+  $('#review-btn').addEventListener('click', toggleReview);
   $('#update-btn').addEventListener('click', clickUpdate);
   $('#sb-debug').addEventListener('click', toggleDebug);
 

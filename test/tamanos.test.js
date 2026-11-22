@@ -115,3 +115,69 @@ test('lo anotado en el proyecto corresponde a archivos que existen', async () =>
     assert.ok(entry.lineas > 0 && /^\d{4}-\d{2}-\d{2}$/.test(entry.fecha), file);
   }
 });
+
+test('si contar las líneas tarda demasiado no se avisa ni se anota (el aviso no llegaría)', async (t) => {
+  const { growth, cwd, write, saved, logs } = makeGrowth(t);
+  write('src/app.js', 1500);
+  assert.equal(await growth.edited(cwd, 'src/app.js', { budget: -1 }), null);
+  assert.equal(saved.fileGrowth, undefined); // nada anotado: la próxima edición lo intentará
+  assert.match(logs.join('\n'), /ha tardado demasiado/);
+  assert.ok(await growth.edited(cwd, 'src/app.js'));
+});
+
+test('una ruta relativa se resuelve con la carpeta de trabajo de la sesión', async (t) => {
+  const { growth, cwd, write, saved } = makeGrowth(t);
+  write('src/app.js', 1100);
+  // La sesión trabaja en src/: la ruta relativa es «app.js», pero se anota dentro del proyecto.
+  assert.ok(await growth.edited(cwd, 'app.js', { base: path.join(cwd, 'src') }));
+  assert.deepEqual(Object.keys(Object.values(saved.fileGrowth)[0]), ['src/app.js']);
+  assert.equal(await growth.edited(cwd, 'app.js'), null); // sin esa carpeta, app.js no existe en la raíz
+});
+
+test('de un cuaderno de Jupyter cuentan las celdas de código', async (t) => {
+  const { growth, cwd } = makeGrowth(t);
+  const nb = (codeLinesEach, textLinesEach) => JSON.stringify({ cells: [
+    { cell_type: 'code', source: Array.from({ length: codeLinesEach }, (_, i) => `x${i} = ${i}\n`), outputs: [{ text: 'mucho\n'.repeat(5000) }] },
+    { cell_type: 'markdown', source: 'texto\n'.repeat(textLinesEach) },
+  ] });
+  fs.writeFileSync(path.join(cwd, 'datos.ipynb'), nb(900, 3000)); // 900 de código: no llega
+  assert.equal(await growth.edited(cwd, 'datos.ipynb'), null);
+  fs.writeFileSync(path.join(cwd, 'datos.ipynb'), nb(1050, 10));
+  assert.match(await growth.edited(cwd, 'datos.ipynb'), /tiene ya 1050 líneas/);
+  fs.writeFileSync(path.join(cwd, 'roto.ipynb'), '{ no es json');
+  assert.equal(await growth.edited(cwd, 'roto.ipynb'), null);
+});
+
+test('un historial de revisiones dañado no se sobrescribe', async (t) => {
+  const { markReviewed, readLog } = await loadSizes();
+  const base = tempDir(t);
+  const logFile = path.join(base, 'revisiones.json');
+  fs.writeFileSync(path.join(base, 'a.js'), lines(10));
+  assert.deepEqual(readLog(logFile), {}); // sin archivo: vacío
+  fs.writeFileSync(logFile, '{ "a.js": { "lineas": 5');
+  assert.throws(() => readLog(logFile), /está dañado/);
+  assert.throws(() => markReviewed('a.js', '', { base, logFile }), /está dañado/);
+  assert.equal(fs.readFileSync(logFile, 'utf8'), '{ "a.js": { "lineas": 5'); // intacto
+  fs.writeFileSync(logFile, '[{ "a.js": 5 }]'); // JSON válido, pero no es una lista de archivos
+  assert.throws(() => markReviewed('a.js', '', { base, logFile }), /está dañado/);
+  assert.equal(fs.readFileSync(logFile, 'utf8'), '[{ "a.js": 5 }]');
+});
+
+test('un cuaderno dañado no impide revisar el resto', async (t) => {
+  const { pending } = await loadSizes();
+  const base = tempDir(t);
+  fs.writeFileSync(path.join(base, 'roto.ipynb'), '{ no es json');
+  fs.writeFileSync(path.join(base, 'grande.js'), lines(1100));
+  assert.deepEqual(pending(['roto.ipynb', 'grande.js'], { base, log: {} }).map((p) => p.file), ['grande.js']);
+});
+
+test('con defer, el escalón no se anota hasta que el aviso se entrega', async (t) => {
+  const { growth, cwd, write, saved } = makeGrowth(t);
+  write('src/app.js', 1100);
+  const first = await growth.edited(cwd, 'src/app.js', { defer: true });
+  assert.match(first.notice, /tiene ya 1100 líneas/);
+  assert.equal(saved.fileGrowth, undefined);
+  assert.ok(await growth.edited(cwd, 'src/app.js', { defer: true })); // no entregado: se repite
+  first.commit();
+  assert.equal(await growth.edited(cwd, 'src/app.js', { defer: true }), null);
+});
