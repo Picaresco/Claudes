@@ -2,6 +2,7 @@
 import { api } from './dom.js';
 import { views, winFocused, visibleIds, isWatched, save, toast } from './state.js';
 import { setStatus } from './status.js';
+import { isSandboxMissing, sandboxFix } from './toggles.js';
 
 function needsYou(view, body) {
   if (view.closing) return;
@@ -102,6 +103,7 @@ export function onReviewResult(tabId, r) {
     toast(r.count === 1
       ? `Codex ha encontrado un posible problema en ${name} (${r.seconds} s). Claude lo está revisando.`
       : `Codex ha encontrado ${r.count} posibles problemas en ${name} (${r.seconds} s). Claude los está revisando.`);
+    if (r.partial) setTimeout(() => toast(`Ojo: Codex no ha podido leer el proyecto de ${name}, así que su revisión puede estar incompleta.`, 8000), 4200);
     return;
   }
   // El plan y la segunda opinión: Claude sigue trabajando con lo que diga Codex.
@@ -118,6 +120,17 @@ export function onReviewResult(tabId, r) {
     toast(r.reason === 'big'
       ? `El plan de ${name} es demasiado grande para enviárselo a Codex: Claude te lo presenta sin su crítica.`
       : `Codex no ha podido revisar el plan de ${name}: Claude te lo presenta sin su crítica.`);
+    return;
+  }
+  if (r.state === 'blocked') {
+    // Codex no ha podido leer el proyecto: se dice por qué y cómo arreglarlo.
+    // Solo cambia el estado de la operación que ha fallado (una segunda opinión no termina una revisión).
+    if (r.op === 'plan' && view.status === 'planreview') setStatus(view, 'working'); // Claude sigue: presenta el plan sin crítica
+    else if (r.op === 'review' && view.status === 'reviewing') finished(view, false);
+    const why = isSandboxMissing()
+      ? `su zona protegida de Windows no está configurada. ${sandboxFix()}`
+      : 'se le ha denegado el acceso a los archivos. Revisa los permisos de la carpeta del proyecto.';
+    toast(`Codex no ha podido leer el proyecto de ${name}: ${why}`, 15000);
     return;
   }
   if (r.state === 'plan-secret') {

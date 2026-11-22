@@ -70,8 +70,44 @@ async function detect() {
   // El asesor necesita poder lanzar Codex aislado (versiones recientes).
   const help = await run(exe, ['exec', '--help'], 15000);
   const advisor = help.ok && /--ignore-user-config/.test(help.text) && /--ignore-rules/.test(help.text);
-  return { installed: true, loggedIn, mode, advisor };
+  return { installed: true, loggedIn, mode, advisor, sandbox: sandboxConfigured() };
 }
+
+// En Windows, Codex necesita su zona protegida configurada ([windows] sandbox en su
+// config.toml) para poder ejecutar hasta un «git status»; sin ella, no lee el proyecto.
+function sandboxConfigured() {
+  if (process.platform !== 'win32') return true;
+  try { return Boolean(userSetting(fs.readFileSync(path.join(codexHome(), 'config.toml'), 'utf8'), 'windows', 'sandbox')); } catch { return false; }
+}
+
+// ¿Ha podido Codex leer el proyecto? Se cuentan sus comandos: los rechazados por su zona
+// protegida (líneas «ERROR … exec_command failed … blocked by policy» del registro) o que
+// fallan con acceso denegado, frente a los que funcionan («succeeded in …» en una
+// revisión; exit_code 0 en el registro JSON). No se miran frases sueltas: el contenido de un
+// archivo leído (o un diff) puede decir «blocked by policy» sin que nada haya fallado.
+// { blocked: no ha funcionado ninguno y alguno se ha denegado; partial: unos sí y otros no,
+// que es habitual: Codex prueba otra vía y lee el proyecto igual }.
+const DENIED = /blocked by policy|Access to the path [^\n]{0,400}? is denied|Acceso denegado|access is denied/i;
+function accessReport(stdout, stderr) {
+  let failed = 0;
+  let succeeded = 0;
+  for (const line of String(stderr || '').split(/\r?\n/)) {
+    if (/\bERROR\b.*exec_command failed/.test(line) && DENIED.test(line)) failed += 1;
+    else if (/^\s*succeeded in \d+/.test(line)) succeeded += 1;
+  }
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    if (!line.startsWith('{')) continue;
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const item = event && event.type === 'item.completed' && event.item;
+    if (!item || item.type !== 'command_execution') continue;
+    if (item.exit_code === 0) succeeded += 1;
+    else if (DENIED.test(String(item.aggregated_output || ''))) failed += 1;
+  }
+  return { blocked: failed > 0 && succeeded === 0, partial: failed > 0 && succeeded > 0 };
+}
+
+const configPath = () => path.join(codexHome(), 'config.toml');
 
 const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 
@@ -359,13 +395,14 @@ function runCodex({ args, cwd, stdin = null, signal = null, timeout }) {
   });
 }
 
-function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT }) {
+async function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT }) {
   const args = ['exec', 'review', '--uncommitted', '--ephemeral', ...isolation(),
     '-c', 'history.persistence="none"', '-c', 'sandbox_mode="read-only"', '-c', 'model_provider="openai"'];
   // review_model manda sobre model en las revisiones: se fijan los dos.
   if (model) args.push('-c', `model="${model}"`, '-c', `review_model="${model}"`);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
-  return runCodex({ args, cwd, signal, timeout });
+  const result = await runCodex({ args, cwd, signal, timeout });
+  return { ...result, ...accessReport('', result.log) };
 }
 
 // ── Límites de uso de la cuenta ──────────────────────────────────────
@@ -527,7 +564,8 @@ async function askCodex({ cwd, prompt, model, effort, signal, timeout = OPINION_
   args.push('-'); // la petición, por la entrada estándar: sin límites ni comillas que escapar
   const result = await runCodex({ args, cwd, stdin: prompt, signal, timeout });
   const { message, failure } = lastAgentMessage(result.text);
-  return { ...result, ok: result.ok && Boolean(message), text: message, failure };
+  // Las salidas de sus comandos van en el registro JSON (stdout): ahí se ven los bloqueos.
+  return { ...result, ok: result.ok && Boolean(message), text: message, failure, ...accessReport(result.text, result.log) };
 }
 
 // La herramienta tal como la ve Claude en sus sesiones.
@@ -536,6 +574,8 @@ const OPINION_TOOL = {
   description: 'Pide a Codex (OpenAI, su modelo más capaz, razonando a fondo) una segunda opinión independiente. '
     + 'Codex es tu asesor en este proyecto: puede leer sus archivos, pero no cambia nada. '
     + 'Úsala ante decisiones importantes (arquitectura, enfoque de una tarea grande, cambios de seguridad o de infraestructura), '
+    + 'y cuando prepares un plan para una tarea grande fuera del modo planificación: pídela con ámbito «plan» antes de empezar a ejecutarlo '
+    + '(en modo planificación no hace falta: ClaudHome ya se lo envía a Codex al presentarlo), '
     + 'cuando lleves varios intentos sin resolver un problema, o cuando el usuario te la pida. No la uses para cosas sencillas. '
     + 'Tarda entre medio minuto y varios minutos y gasta del plan de ChatGPT del usuario. '
     + 'Devuelve su análisis: compáralo con el tuyo y dale al usuario una sola recomendación, señalando en qué coincidís y en qué no.',
@@ -584,5 +624,5 @@ function parseReview(text) {
 module.exports = {
   detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews, chatgptLogin,
   askCodex, opinionPrompt, planPrompt, lastAgentMessage, OPINION_TOOL, SCOPES, ISOLATED, launcher, userSetting,
-  readLimits, limitsFrom, authStamp,
+  readLimits, limitsFrom, authStamp, accessReport, sandboxConfigured, configPath,
 };

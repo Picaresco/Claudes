@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.17.1 — 2026-11-22
+- Si Codex no puede leer el proyecto (en Windows, cuando le falta configurar su zona protegida), ClaudHome te avisa y te dice cómo arreglarlo, en vez de dar por buena una revisión o una crítica que no ha podido mirar el código. A Claude también se le dice que esa segunda opinión no ha visto el código.
+- La rueda de opciones avisa bajo «Codex asesora» si a Codex le falta esa configuración, y también al encenderlo.
+- Fuera del modo planificación, cuando Claude prepara un plan para una tarea grande, le pide a Codex una segunda opinión antes de empezar. La crítica automática sigue siendo la de los planes que Claude presenta en modo planificación (Mayús+Tab).
+
 ## 0.17.0 — 2026-11-22
 - La barra inferior muestra si hay Codex en este equipo y, con tu cuenta de ChatGPT, cuánto llevas gastado de su límite semanal y cuándo se renueva, junto al de Claude. Se actualiza al abrir la app, cada 10 minutos y justo después de cada consulta a Codex, sin gastar nada.
 - Si Codex no está instalado, no tiene sesión o usa una clave de API, la barra inferior también lo dice.

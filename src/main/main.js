@@ -372,7 +372,7 @@ function registerIpc() {
 
   // Botón «Resumido»: vale para todas las pestañas desde su siguiente mensaje.
   // Interruptor «Codex asesora»: apagarlo vale al momento; encenderlo, desde el siguiente turno.
-  const reviewInfo = () => ({ enabled: review.enabled, usable: advisorUsable(), model: review.MODEL, effort: review.EFFORT });
+  const reviewInfo = () => ({ enabled: review.enabled, usable: advisorUsable(), model: review.MODEL, effort: review.EFFORT, sandbox: codexState.sandbox !== false, codexConfig: codex.configPath() });
   ipcMain.handle('review:get', () => reviewInfo());
   ipcMain.handle('review:set', (_e, on) => {
     review.enabled = Boolean(on) && advisorUsable();
@@ -574,6 +574,7 @@ if (!app.requestSingleInstanceLock()) {
       checkSecrets: (cwd, signal) => (secrets ? secrets.reviewInput(cwd, signal) : { ok: false, files: [] }),
       checkLogin: () => codex.chatgptLogin(), // justo antes de cada revisión
       netlog: () => netlog, // se crea más tarde
+      sandboxMissing: () => codexState.sandbox === false,
       onBusy: (delta) => {
         codexState.busy = Math.max(0, codexState.busy + delta);
         send('codex:changed', codexInfo());

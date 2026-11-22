@@ -127,8 +127,9 @@ function reasonFor(parsed, text) {
 // interruptor de depuración); netlog(): el «Log» (o null si aún no existe);
 // checkSecrets(cwd, signal): { ok, files, aborted, empty } de lo que se enviaría a Codex
 // (secrets.js); checkLogin(): si Codex tiene ahora mismo la sesión de ChatGPT;
-// onBusy(+1 | -1): Codex empieza o deja de trabajar (indicador de la barra superior).
-function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true, onBusy = () => {} }) {
+// onBusy(+1 | -1): Codex empieza o deja de trabajar (indicador de la barra superior);
+// sandboxMissing(): a Codex le falta configurar su zona protegida de Windows.
+function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true, onBusy = () => {}, sandboxMissing = () => false }) {
   let enabled = store.get('codexReview', false) === true; // apagado hasta que el usuario lo encienda
   // Consultas a Codex en marcha: al apagar el interruptor se paran todas.
   const running = new Set();
@@ -284,6 +285,14 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     }
     const parsed = codex.parseReview(result.text);
     const v = result.ok ? verdict(parsed, result.text) : { state: 'error' };
+    if (result.blocked && v.state !== 'found') {
+      log(`revisión de Codex: Codex no ha podido leer el proyecto (${readWhy()}) tras ${result.seconds} s`);
+      post({ state: 'blocked', op: 'review', seconds: result.seconds });
+      return null;
+    }
+    // Algún comando rechazado y otros bien es habitual (Codex prueba otra vía): solo al registro.
+    if (result.partial) log('revisión de Codex: algunos comandos de Codex se rechazaron, pero pudo leer el proyecto por otra vía');
+    const partial = v.state === 'found' && Boolean(result.blocked); // hallazgos sin haber podido leer el proyecto
     if (v.state === 'error' || v.state === 'unclear') {
       const why = v.state === 'error' ? `ha fallado (código ${result.code})` : 'no ha dado un veredicto claro';
       log(`revisión de Codex: ${why} tras ${result.seconds} s${file ? `; detalles en ${path.basename(file)}` : ''}`);
@@ -291,10 +300,14 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       return null;
     }
     log(`revisión de Codex: ${v.count} hallazgos en ${result.seconds} s`);
-    post({ state: v.state, count: v.count, priorities: v.priorities, seconds: result.seconds, file });
+    post({ state: v.state, count: v.count, priorities: v.priorities, seconds: result.seconds, file, partial });
     if (v.state !== 'found') return null;
-    return { decision: 'block', reason: reasonFor(parsed, result.text) };
+    const reason = reasonFor(parsed, result.text);
+    return { decision: 'block', reason: partial ? `Aviso: Codex no ha podido leer parte del proyecto (${readWhy()}), así que su revisión puede estar incompleta.\n\n${reason}` : reason };
   }
+
+  // Por qué no ha podido leer el proyecto, para Claude.
+  const readWhy = () => (sandboxMissing() ? 'su zona protegida de Windows no está configurada' : 'se le ha denegado el acceso a los archivos');
 
   // Anota una salida hacia OpenAI antes de hacerla.
   function recordOut(tabId, kind, target, cwd) {
@@ -341,6 +354,11 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras criticaba
     if (tab.turn !== turn) return null;
     if (result.aborted) { post({ state: 'aborted', seconds: result.seconds }); return null; }
+    if (result.blocked) {
+      log(`crítica del plan: Codex no ha podido leer el proyecto (${readWhy()}); el plan pasa sin crítica`);
+      post({ state: 'blocked', op: 'plan', seconds: result.seconds });
+      return null;
+    }
     if (!result.ok) {
       log(`crítica del plan: Codex no ha respondido tras ${result.seconds} s${result.failure ? ` (${result.failure})` : ''}`);
       post({ state: 'plan-error', seconds: result.seconds });
@@ -354,7 +372,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       'Revísalo con criterio propio: incorpora lo que lo mejore y descarta lo que no aplique a este proyecto.',
       'Después vuelve a presentarlo con ExitPlanMode, añadiendo al final una sección breve «Segunda opinión (Codex)» con en qué coincidís, qué has cambiado por su crítica y en qué discrepas y por qué.',
       'Codex no volverá a criticar el plan en este turno.',
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
   }
 
@@ -398,16 +416,19 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     send('review:result', tabId, { state: 'opinion-done', ok: result.ok, seconds: result.seconds });
     if (!enabled) throw new Error('El usuario ha apagado el asesoramiento de Codex mientras respondía: no se usa su respuesta.');
     if (result.aborted) throw new Error('La segunda opinión se ha cancelado.');
+    if (result.blocked) send('review:result', tabId, { state: 'blocked', op: 'opinion', seconds: result.seconds });
     if (!result.ok) {
-      log(`segunda opinión: Codex no ha respondido tras ${result.seconds} s${result.failure ? ` (${result.failure})` : ''}`);
+      log(`segunda opinión: Codex no ha respondido tras ${result.seconds} s${result.blocked ? ` (no ha podido leer el proyecto: ${readWhy()})` : ''}${result.failure ? ` (${result.failure})` : ''}`);
+      if (result.blocked) throw new Error(`Codex no ha podido leer el proyecto (${readWhy()}) y no ha dado su opinión. Díselo al usuario y sigue con tu propio criterio.`);
       throw new Error(`Codex no ha podido responder${result.failure ? `: ${result.failure}` : '.'}`);
     }
-    log(`segunda opinión: lista en ${result.seconds} s`);
+    log(`segunda opinión: lista en ${result.seconds} s${result.blocked ? ' (sin poder leer el proyecto)' : ''}`);
     return [
+      result.blocked ? `Aviso: Codex no ha podido leer los archivos del proyecto (${readWhy()}), así que su opinión se basa solo en lo que le has contado. Tenlo en cuenta y díselo al usuario.` : '',
       `Segunda opinión de Codex (${MODEL}, razonamiento ${EFFORT}, ${result.seconds} s):`,
       result.text,
       'Compárala con tu propio análisis y no la sigas a ciegas. Dale al usuario una sola recomendación y cuéntale en una o dos frases en qué coincidís y en qué no.',
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
   }
 
   return {

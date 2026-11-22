@@ -60,12 +60,15 @@ export function touchMru(id) {
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// sticky: true = se queda hasta otro aviso; un número = milisegundos a la vista (4 s si no).
+// Pulsarlo lo cierra.
 export function toast(text, sticky = false) {
   const node = $('#toast');
   node.textContent = text;
   node.hidden = false;
+  node.onclick = () => { node.hidden = true; };
   clearTimeout(toastTimer);
-  if (!sticky) toastTimer = setTimeout(() => { node.hidden = true; }, 4000);
+  if (sticky !== true) toastTimer = setTimeout(() => { node.hidden = true; }, typeof sticky === 'number' ? sticky : 4000);
 }
 
 export function applySwatch(node, colorKey) {

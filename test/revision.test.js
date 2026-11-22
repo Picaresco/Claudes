@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createReview, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
-const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting, limitsFrom } = require('../src/main/codex');
+const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting, limitsFrom, accessReport, sandboxConfigured } = require('../src/main/codex');
 const { Tabs } = require('../src/main/tabs');
 const { tempDir } = require('./helpers');
 
@@ -667,4 +667,84 @@ test('del uso de la cuenta de Codex se toma el límite semanal', () => {
   assert.equal(limitsFrom(null), null);
   assert.equal(limitsFrom({ rateLimits: { primary: null, secondary: null } }), null);
   assert.equal(limitsFrom({ rateLimitsByLimitId: { codex: { primary: week } } }).pct, 7);
+});
+
+test('se reconoce cuando a Codex le bloquean la lectura, contando comandos y no frases', () => {
+  const rejected = '2026-11-22T13:59:27Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(git status) rejected: blocked by policy" }';
+  assert.deepEqual(accessReport('', rejected), { blocked: true, partial: false });
+  // Unos sí y otros no: lectura parcial.
+  assert.deepEqual(accessReport('', `${rejected}\nexec\ngit diff in C:\\x\n succeeded in 52ms:\n`), { blocked: false, partial: true });
+  // Registro JSON: un acceso denegado, sin nada que funcione.
+  const denied = JSON.stringify({ type: 'item.completed', item: { type: 'command_execution', exit_code: 1, aggregated_output: "Access to the path 'C:\\x\\suma.js' is denied." } });
+  assert.deepEqual(accessReport(denied, ''), { blocked: true, partial: false });
+  // Leer un archivo (o un diff) que dice «blocked by policy» no es un bloqueo.
+  const read = JSON.stringify({ type: 'item.completed', item: { type: 'command_execution', exit_code: 0, aggregated_output: 'const DENIED = /blocked by policy|is denied/;' } });
+  const message = JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Nada fue blocked by policy.' } });
+  assert.deepEqual(accessReport(`${read}\n${message}`, 'warning: unable to access ignore: Permission denied'), { blocked: false, partial: false });
+});
+
+test('en Windows se sabe si Codex tiene configurada su zona protegida', (t) => {
+  const home = tempDir(t);
+  const before = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  t.after(() => { if (before === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = before; });
+  if (process.platform !== 'win32') { assert.equal(sandboxConfigured(), true); return; }
+  assert.equal(sandboxConfigured(), false); // sin config.toml
+  fs.writeFileSync(path.join(home, 'config.toml'), 'model = "x"\n');
+  assert.equal(sandboxConfigured(), false);
+  fs.writeFileSync(path.join(home, 'config.toml'), 'model = "x"\n[windows]\nsandbox = "elevated"\n');
+  assert.equal(sandboxConfigured(), true);
+});
+
+test('si Codex no puede leer el proyecto, se avisa y no se da nada por bueno', async (t) => {
+  // Revisión: no se da por revisada.
+  const dir = gitRepo(t);
+  const rev = makeReview(t, { result: { ok: true, code: 0, text: 'Repository reads were blocked, so I could not inspect the changes.', log: 'rejected: blocked by policy', seconds: 9, aborted: false, blocked: true } });
+  rev.tabs.ensure('t1').folder = dir;
+  rev.review.turnStarted('t1', 'Cambia a');
+  rev.review.toolUsed('t1', 'Edit', 'a.js', dir);
+  rev.review.willReview('t1', { event: 'Stop' });
+  assert.equal(await rev.review.onStop('t1', { event: 'Stop' }), null);
+  assert.equal(rev.sent[rev.sent.length - 1][2].state, 'blocked');
+  // Plan: pasa sin crítica.
+  const blockedAsk = () => ({ ok: true, text: 'No pude leer nada.', seconds: 5, aborted: false, blocked: true });
+  const plan = started(t, { askCodex: blockedAsk });
+  assert.equal(await plan.review.onPlan('t1', { plan: '1. Algo' }), null);
+  assert.deepEqual(plan.sent.map(([, , r]) => r.state), ['plan-running', 'blocked']);
+  // Segunda opinión: se le dice a Claude que Codex no ha visto el código.
+  const op = started(t, { askCodex: blockedAsk });
+  const text = await op.review.secondOpinion('t1', { pregunta: '¿Qué hago?' });
+  assert.match(text, /^Aviso: Codex no ha podido leer los archivos del proyecto/);
+  assert.ok(op.sent.some(([, , r]) => r.state === 'blocked'));
+});
+
+test('hallazgos sin haber podido leer el proyecto llevan aviso; una lectura parcial, no', async (t) => {
+  const dir = gitRepo(t);
+  const run = async (extra) => {
+    const fx = makeReview(t, { result: { ok: true, code: 0, text: SAMPLE, log: '', seconds: 20, aborted: false, ...extra } });
+    fx.tabs.ensure('t1').folder = dir;
+    fx.review.turnStarted('t1', 'Cambia a');
+    fx.review.toolUsed('t1', 'Edit', 'a.js', dir);
+    fx.review.willReview('t1', { event: 'Stop' });
+    return { answer: await fx.review.onStop('t1', { event: 'Stop' }), fx };
+  };
+  const blocked = await run({ blocked: true });
+  assert.match(blocked.answer.reason, /^Aviso: Codex no ha podido leer parte del proyecto \(se le ha denegado el acceso/);
+  assert.match(blocked.answer.reason, /\[P1\] Await transcript reads/);
+  assert.equal(blocked.fx.sent[blocked.fx.sent.length - 1][2].partial, true);
+  // Algún comando rechazado y otros bien: habitual, solo al registro.
+  const partial = await run({ partial: true });
+  assert.ok(!/^Aviso/.test(partial.answer.reason));
+  assert.equal(partial.fx.sent[partial.fx.sent.length - 1][2].partial, false);
+  assert.match(partial.fx.logs.join('\n'), /pudo leer el proyecto por otra vía/);
+});
+
+test('una segunda opinión bloqueada sin respuesta explica el bloqueo', async (t) => {
+  const fx = started(t, { askCodex: () => ({ ok: false, text: '', failure: '', seconds: 6, aborted: false, blocked: true }) });
+  await assert.rejects(fx.review.secondOpinion('t1', { pregunta: '¿Qué hago?' }), /no ha podido leer el proyecto \(se le ha denegado el acceso a los archivos\)/);
+  assert.ok(fx.sent.some(([, , r]) => r.state === 'blocked' && r.op === 'opinion'));
+  // Los avisos de bloqueo dicen de qué operación son.
+  const plan = started(t, { askCodex: () => ({ ok: true, text: 'x', seconds: 5, aborted: false, blocked: true }) });
+  await plan.review.onPlan('t1', { plan: '1. Algo' });
+  assert.equal(plan.sent[plan.sent.length - 1][2].op, 'plan');
 });

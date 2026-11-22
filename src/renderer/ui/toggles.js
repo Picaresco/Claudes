@@ -48,14 +48,27 @@ export async function toggleBrief() {
 
 let reviewOn = false;
 
+let sandboxMissing = false;
+let codexConfig = '';
+export const isSandboxMissing = () => sandboxMissing;
+// Cómo arreglarlo, con la ruta de la configuración que usa Codex de verdad.
+export const sandboxFix = () => `Configúrala en Codex: en ${codexConfig || 'su config.toml'}, una sección [windows] con sandbox = "elevated" (la primera vez puede pedir permisos de administrador).`;
+
 export function renderReview(state) {
   const button = $('#review-btn');
   if (!state || !state.usable) { button.hidden = true; reviewOn = false; return; }
   reviewOn = Boolean(state.enabled);
+  sandboxMissing = state.sandbox === false;
+  codexConfig = state.codexConfig || '';
   button.hidden = false;
   button.setAttribute('aria-checked', String(reviewOn));
+  // Sin la zona protegida de Windows, Codex no podrá leer el proyecto: se dice en la rueda.
+  button.querySelector('.opt-desc').textContent = sandboxMissing
+    ? '⚠ Falta configurar la zona protegida de Windows de Codex: no podrá leer el proyecto'
+    : 'Segunda opinión, crítica de planes y revisión del código';
+  button.classList.toggle('opt-warn', sandboxMissing);
   button.title = reviewOn
-    ? `Codex asesora: activado. Codex (${state.model}, razonamiento ${state.effort}) ayuda a Claude a decidir mejor, siempre en solo lectura: Claude le pide una segunda opinión ante decisiones importantes o problemas que no salen (o cuando tú se la pidas), Codex critica cada plan antes de que lo veas y revisa el código que cambie Claude al terminar cada turno (también tus cambios sin confirmar, en proyectos con git). Lo consultado se envía a OpenAI (si lleva claves, no se envía) y gasta de tu plan de ChatGPT. Pulsa para apagarlo: Claude dejará de consultar a Codex.`
+    ? `Codex asesora: activado. Codex (${state.model}, razonamiento ${state.effort}) ayuda a Claude a decidir mejor, siempre en solo lectura: Claude le pide una segunda opinión ante decisiones importantes, planes para tareas grandes o problemas que no salen (o cuando tú se la pidas); en modo planificación (Mayús+Tab), Codex critica el plan antes de que lo veas; y revisa el código que cambie Claude al terminar cada turno (también tus cambios sin confirmar, en proyectos con git). Lo consultado se envía a OpenAI (si lleva claves, no se envía) y gasta de tu plan de ChatGPT. Pulsa para apagarlo: Claude dejará de consultar a Codex.`
     : 'Codex asesora: apagado. Claude no consulta nada a Codex ni se gasta de tu plan de ChatGPT. Pulsa para que Codex le dé segundas opiniones, critique sus planes y revise su código, siempre en solo lectura.';
 }
 
@@ -65,6 +78,7 @@ export async function toggleReview() {
   toast(reviewOn
     ? 'Codex asesora a Claude en todas las pestañas: segundas opiniones, crítica de los planes y revisión del código (estas dos, desde el siguiente turno). Gasta de tu plan de ChatGPT.'
     : 'Codex ya no asesora a Claude: no se le consulta nada ni gasta de tu plan de ChatGPT.');
+  if (reviewOn && sandboxMissing) toast(`Ojo: a Codex le falta configurar su zona protegida de Windows, y sin ella no podrá leer el proyecto. ${sandboxFix()}`, 15000);
   focusAfterToggle($('#review-btn'));
 }
 

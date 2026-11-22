@@ -255,6 +255,7 @@ h1, p { margin: 0; }
 .opt-row[aria-checked="true"] .brief-switch, .opt-row[aria-pressed="true"] .brief-switch { background: rgba(141, 187, 250, 0.35); }
 .opt-row[aria-checked="true"] .brief-switch i, .opt-row[aria-pressed="true"] .brief-switch i { transform: translateX(11px); background: var(--focus); }
 #codex-chip[data-state="busy"] .opt-desc { color: #7FD4A0; }
+.opt-row.opt-warn .opt-desc { color: #F2B866; }
 
 /* Interruptor «Resumido»: encendido, respuestas cortas; apagado, con explicaciones. */
 .brief-chip {
