@@ -55,6 +55,29 @@ function toolInputSummary(tool, input) {
   return null;
 }
 
+// De una orden de Bash o PowerShell ya ejecutada, lo que necesita «pruebas antes de
+// terminar» (testcheck.js): la orden entera (al registro solo va el principio), el final de
+// lo que ha escrito y si se interrumpió. No sale del proceso principal: main.js lo quita
+// antes de pasar el aviso a la interfaz y al registro. `partial`: el aviso era tan grande
+// que no se tiene lo que escribió.
+const SHELL_COMMAND_MAX = 20000;
+const SHELL_OUTPUT_MAX = 8000;
+const SHELL_BODY_LIMIT = 1024 * 1024; // de un aviso con el resultado de una orden se lee hasta 1 MB
+function shellResult(eventName, payload, partial = false) {
+  if (eventName !== 'PostToolUse' && eventName !== 'PostToolUseFailure') return null;
+  if (payload.tool_name !== 'Bash' && payload.tool_name !== 'PowerShell') return null;
+  const input = payload.tool_input;
+  const response = payload.tool_response && typeof payload.tool_response === 'object' ? payload.tool_response : {};
+  // Si falla, Claude Code manda el texto en `error` («Exit code 1» y lo escrito); si no, en `tool_response`.
+  const parts = eventName === 'PostToolUseFailure' ? [payload.error] : [response.stdout, response.stderr];
+  return {
+    command: input && typeof input === 'object' && typeof input.command === 'string' ? input.command.slice(0, SHELL_COMMAND_MAX) : '',
+    output: parts.filter((part) => typeof part === 'string' && part).join('\n').slice(-SHELL_OUTPUT_MAX),
+    interrupted: payload.is_interrupt === true || response.interrupted === true,
+    partial,
+  };
+}
+
 // ¿La herramienta deja algo en marcha más allá de la respuesta (una tarea en segundo
 // plano, una vigilancia, una tarea programada)? Entonces la sesión no se debe dormir.
 const LONG_LIVED_TOOLS = new Set(['Monitor', 'CronCreate', 'ScheduleWakeup']);
@@ -214,11 +237,20 @@ class HookServer {
     // solape para no partir la ruta entre dos trozos.
     let editPath;
     let tail = '';
+    // Salvo el resultado de una orden de Bash o PowerShell, que interesa entero (testcheck.js
+    // mira cómo han ido las pruebas): si el aviso pasa del principio y es de una de ellas, se
+    // sigue guardando hasta SHELL_BODY_LIMIT.
+    const shellEvent = eventName === 'PostToolUse' || eventName === 'PostToolUseFailure';
+    let keepAll = null; // null: aún no se sabe de qué herramienta es
     req.on('data', (chunk) => {
       total += chunk.length;
-      if (kept < headLimit) {
+      if (kept < headLimit || (keepAll && kept < SHELL_BODY_LIMIT)) {
         chunks.push(chunk);
         kept += chunk.length;
+      }
+      if (shellEvent && keepAll === null && kept >= headLimit) {
+        const tool = jsonField(Buffer.concat(chunks).toString('utf8'), 'tool_name');
+        keepAll = tool === 'Bash' || tool === 'PowerShell';
       }
       if (editPath === undefined) {
         const text = tail + chunk.toString('latin1');
@@ -231,11 +263,17 @@ class HookServer {
       }
     });
     req.on('end', async () => {
-      const head = Buffer.concat(chunks).toString('utf8');
+      const body = Buffer.concat(chunks);
+      const head = (body.length > headLimit && total > headLimit ? body.subarray(0, headLimit) : body).toString('utf8');
       let payload = {};
+      let partial = false; // de una orden: ¿falta lo que escribió?
       if (total <= headLimit) {
         try { payload = JSON.parse(head); } catch { payload = {}; }
+      } else if (keepAll && kept === total) {
+        // El resultado de una orden, entero aunque sea grande.
+        try { payload = JSON.parse(body.toString('utf8')); } catch { payload = {}; }
       } else {
+        partial = keepAll === true; // una orden con una salida descomunal: no se tiene
         // Aviso grande (p. ej. la respuesta de leer un archivo): lo que interesa está al
         // principio. Claude Code manda primero los campos comunes (session_id, cwd…).
         for (const key of ['session_id', 'tool_name', 'tool_input', 'notification_type', 'cwd']) {
@@ -260,6 +298,10 @@ class HookServer {
         toolName: typeof payload.tool_name === 'string' ? payload.tool_name : null,
         toolInput: toolInputSummary(payload.tool_name, payload.tool_input),
         background: leavesRunning(payload.tool_name, payload.tool_input),
+        // Para emparejar el antes y el después de una misma llamada.
+        toolUseId: typeof payload.tool_use_id === 'string' ? payload.tool_use_id.slice(0, 200) : null,
+        // De una orden ya ejecutada: entera, con su salida (solo para el proceso principal).
+        shell: shellResult(eventName, payload, partial),
         // Tras ejecutar una herramienta, el tamaño del aviso ≈ lo que recibió Claude.
         size: eventName === 'PostToolUse' ? total : null,
         prompt: typeof payload.prompt === 'string' ? payload.prompt.slice(0, 80) : null,
@@ -364,4 +406,4 @@ class HookServer {
   }
 }
 
-module.exports = { HookServer, jsonField, toolInputSummary };
+module.exports = { HookServer, jsonField, toolInputSummary, shellResult };

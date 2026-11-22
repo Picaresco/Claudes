@@ -3,7 +3,7 @@ import { codexInfo } from './codex.js';
 import { colorHex, SIDES, SVG, STATUS } from './constants.js';
 import { contextCount } from './context.js';
 import { api, $, el } from './dom.js';
-import { limitsSnap, tokensShort, tokensBreakdown, renderPlanLimits } from './limits.js';
+import { limitsSnap, tokensShort, tokensBreakdown, renderPlanLimits, setPieces } from './limits.js';
 import { logEntriesOf } from './log.js';
 import { hidePreview } from './preview.js';
 import { acknowledge } from './session-events.js';
@@ -119,6 +119,32 @@ export function renderHeads() {
   }
 }
 
+// La barra inferior, en una sola línea: si no cabe todo, se compacta por pasos (estilos de
+// #statusbar[data-compact]) hasta que cabe: 1 sin la pista de atajos · 2 con las fechas
+// abreviadas · 3 sin los tokens · 4 sin las fechas · 5 sin el recuento de sesiones ni las
+// barritas, y en una línea pase lo que pase: si aun así no cabe, la parte izquierda se
+// recorta (su texto entero queda en el texto emergente). Al haber sitio, vuelve a mostrarlo todo.
+const ONE_LINE = 40; // px: más alto que esto es que ha saltado a otra línea
+const MAX_COMPACT = 5;
+let lastFit = '';
+export function fitStatusbar() {
+  const bar = $('#statusbar');
+  // Solo se vuelve a medir si ha cambiado el ancho, el texto o lo que se ve.
+  const shown = [...bar.querySelectorAll('.sb-item, .sb-usage, #sb-zoom')].map((node) => (node.hidden ? '0' : '1')).join('');
+  const signature = `${bar.clientWidth}|${shown}|${bar.textContent}`;
+  if (signature === lastFit) return;
+  lastFit = signature;
+  let level = 0;
+  for (; level <= MAX_COMPACT; level += 1) {
+    bar.dataset.compact = String(level);
+    if (level === MAX_COMPACT || bar.offsetHeight <= ONE_LINE) break;
+  }
+  // En el último paso lo que no cabe se recorta: que se pueda leer entero al pasar el ratón.
+  const left = bar.querySelector('.sb-left');
+  left.title = level === MAX_COMPACT ? [...left.children].filter((node) => !node.hidden).map((node) => node.textContent.trim()).filter(Boolean).join(' · ') : '';
+}
+window.addEventListener('resize', () => fitStatusbar());
+
 export function renderStatusbar() {
   let working = 0;
   let waiting = 0;
@@ -179,7 +205,8 @@ export function renderStatusbar() {
     usageEl.dataset.level = usage ? usageLevel(usage.pct) : 'low';
     usageEl.querySelector('.sb-meter').hidden = !usage;
     $('#sb-usage-fill').style.width = `${usage ? clamp(usage.pct, 0, 100) : 0}%`;
-    $('#sb-usage-text').textContent = `Conversación${usage ? ` ${usage.pct} %` : ''}${spent ? ` · ${tokensShort(spent.total)}` : ''}`;
+    // Con el porcentaje a la vista, los tokens son lo primero que se quita si no cabe la barra.
+    setPieces($('#sb-usage-text'), [{ text: `Conversación${usage ? ` ${usage.pct} %` : ''}` }, spent ? { kind: usage ? 'extra' : '', text: ` · ${tokensShort(spent.total)}` } : null]);
     const lines = [];
     if (usage) lines.push(`${usageText(usage)}.`);
     if (spent) lines.push(`Tokens usados en esta conversación: ${nf.format(spent.total)} (${tokensBreakdown(spent)}). Incluye los de sus subagentes.`);
@@ -189,6 +216,7 @@ export function renderStatusbar() {
   $('#sb-hint').textContent = S.split
     ? 'Ctrl+Alt+flechas cambia de lado · Ctrl+Tab cambia de pestaña'
     : 'Ctrl+Tab cambia de pestaña · Ctrl+1…9 va directa';
+  fitStatusbar();
 
   // El proceso principal lo usa para avisar antes de cerrar con trabajo en curso.
   const busy = working + waiting;

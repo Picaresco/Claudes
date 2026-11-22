@@ -116,6 +116,7 @@ function reasonFor(parsed, text) {
     clip(findings, MAX_FINDINGS),
     'Evalúa cada uno con criterio propio: corrige los que sean fallos reales, empezando por los más graves; si alguno no aplica o no compensa, no lo cambies.',
     'Codex revisa todos los cambios sin confirmar del proyecto, no solo los tuyos: si un hallazgo trata de algo que no has cambiado tú en esta sesión, no lo toques y coméntaselo al usuario.',
+    'Si corriges algo y el proyecto tiene pruebas, vuelve a pasarlas antes de terminar.',
     'Al terminar, cuéntale al usuario en pocas frases qué has corregido y qué has descartado y por qué. Codex no volverá a revisar en este turno.',
   ].filter(Boolean).join('\n\n');
 }
@@ -179,7 +180,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   function willReview(tabId, event) {
     const tab = tabs.get(tabId);
     const go = Boolean(enabled && tab && tab.reviewArmed && tab.edited
-      && !tab.reviewSkip && !tab.reviewed && !(event && event.stopHookActive) && usable());
+      && !tab.reviewSkip && !tab.reviewed && (!(event && event.stopHookActive) || tab.testsAsked) && usable());
     if (tab) tab.reviewPending = go;
     return go;
   }

@@ -44,13 +44,17 @@ test('el archivo de ajustes lleva los hooks y los ajustes extra', async (t) => {
 
 test('un aviso de hook llega con lo que interesa y sin token no se atiende', async (t) => {
   const { events, urlOf, post, server } = await startServer(t);
-  const res = await post(urlOf('PostToolUse'), { session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true } });
+  const res = await post(urlOf('PostToolUse'), {
+    session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true }, tool_use_id: 'tu1', tool_response: { stdout: 'ok', stderr: 'aviso', interrupted: false },
+  });
   assert.equal(res.status, 200);
   assert.equal(await res.text(), ''); // sin nada que decir
   await waitFor(() => events.length === 1);
   assert.deepEqual({ ...events[0], size: null }, {
     tabId: 't1', event: 'PostToolUse', sessionId: 's1', notificationType: null, message: null,
     toolName: 'Bash', toolInput: { command: 'npm test' }, background: true, size: null, prompt: null, request: null, plan: null, planTooBig: false, cwd: null, stopHookActive: false,
+    // Para «pruebas antes de terminar»: qué llamada es y, de una orden, cómo ha ido.
+    toolUseId: 'tu1', shell: { command: 'npm test', output: 'ok\naviso', interrupted: false, partial: false },
   });
   assert.ok(events[0].size > 0);
   const bad = await post(`http://127.0.0.1:${server.port}/hook/${'0'.repeat(32)}/t1/Stop`, {});
@@ -65,6 +69,24 @@ test('de un aviso enorme se lee el principio', async (t) => {
   assert.equal(events[0].sessionId, 's2');
   assert.deepEqual(events[0].toolInput.file, 'grande.txt');
   assert.ok(events[0].size > 200 * 1024);
+  assert.equal(events[0].shell, null);
+});
+
+test('el resultado de una orden se lee entero aunque sea grande', async (t) => {
+  const { events, urlOf, post } = await startServer(t);
+  const input = { command: 'npm test; git status' };
+  // Más de lo que se guarda de un aviso normal: el resumen de las pruebas va al final.
+  await post(urlOf('PostToolUse'), { session_id: 's3', tool_name: 'Bash', tool_input: input, tool_response: { stdout: `${'línea de relleno\n'.repeat(12000)}ℹ fail 1`, stderr: '' }, tool_use_id: 'tu9' });
+  await waitFor(() => events.length === 1);
+  assert.equal(events[0].toolUseId, 'tu9');
+  assert.equal(events[0].shell.command, 'npm test; git status');
+  assert.equal(events[0].shell.partial, false);
+  assert.ok(events[0].shell.output.endsWith('ℹ fail 1'));
+  assert.equal(events[0].shell.output.length, 8000);
+  // Y si es descomunal, se sabe que falta: no se da por buena una salida que no se ha visto.
+  await post(urlOf('PostToolUse'), { session_id: 's3', tool_name: 'Bash', tool_input: input, tool_response: { stdout: 'x'.repeat(1200 * 1024), stderr: '' }, tool_use_id: 'tu10' });
+  await waitFor(() => events.length === 2);
+  assert.deepEqual(events[1].shell, { command: 'npm test; git status', output: '', interrupted: false, partial: true });
 });
 
 test('la respuesta al hook lleva el contexto adicional, y el modo de pruebas bloquea los mensajes', async (t) => {

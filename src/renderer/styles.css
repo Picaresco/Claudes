@@ -425,6 +425,20 @@ body.dragging #workspace * { pointer-events: none; }
 }
 .sb-left, .sb-right { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
 .sb-item { display: flex; align-items: center; gap: 6px; }
+/* La barra se compacta por pasos hasta caber en una línea (fitStatusbar, en render.js):
+   1 sin la pista de atajos · 2 fechas abreviadas · 3 sin tokens · 4 sin fechas ·
+   5 sin recuento ni barritas, sin saltos de línea y recortando la parte izquierda. */
+.sb-short { display: none; }
+#statusbar[data-compact="1"] #sb-hint, #statusbar[data-compact="2"] #sb-hint, #statusbar[data-compact="3"] #sb-hint, #statusbar[data-compact="4"] #sb-hint, #statusbar[data-compact="5"] #sb-hint { display: none; }
+#statusbar[data-compact="2"] .sb-long, #statusbar[data-compact="3"] .sb-long, #statusbar[data-compact="4"] .sb-long, #statusbar[data-compact="5"] .sb-long { display: none; }
+#statusbar[data-compact="2"] .sb-short, #statusbar[data-compact="3"] .sb-short { display: inline; }
+#statusbar[data-compact="3"] .sb-extra, #statusbar[data-compact="4"] .sb-extra, #statusbar[data-compact="5"] .sb-extra { display: none; }
+#statusbar[data-compact="5"] { flex-wrap: nowrap; overflow: hidden; }
+#statusbar[data-compact="5"] .sb-left, #statusbar[data-compact="5"] .sb-right { flex-wrap: nowrap; white-space: nowrap; }
+#statusbar[data-compact="5"] .sb-left { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+#statusbar[data-compact="5"] .sb-right { flex: none; }
+#statusbar[data-compact="5"] .sb-left > *, #statusbar[data-compact="5"] .sb-right > * { flex: none; }
+#statusbar[data-compact="5"] #sb-count, #statusbar[data-compact="5"] .sb-meter { display: none; }
 .sb-attn { color: var(--alert); }
 .sb-done { color: #7FD4A0; }
 .sb-failed { color: #F2B866; }

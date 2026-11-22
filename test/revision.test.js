@@ -748,3 +748,12 @@ test('una segunda opinión bloqueada sin respuesta explica el bloqueo', async (t
   await plan.review.onPlan('t1', { plan: '1. Algo' });
   assert.equal(plan.sent[plan.sent.length - 1][2].op, 'plan');
 });
+
+test('tras el recordatorio de pruebas, Codex revisa en el Stop siguiente', (t) => {
+  const { review, tabs } = makeReview(t);
+  tabs.ensure('t1').folder = 'C:\\x';
+  review.turnStarted('t1', 'Cambia a');
+  review.toolUsed('t1', 'Edit', 'a.js');
+  tabs.get('t1').testsAsked = true; // el primer Stop fue para pedirle las pruebas
+  assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), true);
+});

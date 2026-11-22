@@ -21,6 +21,7 @@ const { Limits } = require('./limits');
 const { Growth, EDIT_TOOLS } = require('./growth');
 const { createReview } = require('./review');
 const { Secrets } = require('./secrets');
+const { createTestReminder } = require('./testcheck');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -47,6 +48,7 @@ let limits = null; // límites de uso del plan y tokens gastados en cada periodo
 let growth = null; // aviso de archivos de código que crecen mucho (growth.js)
 let review = null; // Codex como segundo revisor del código (review.js)
 let secrets = null; // aviso de claves y contraseñas escritas en los archivos (secrets.js)
+let testcheck = null; // pruebas antes de terminar (testcheck.js)
 // Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
 // pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
 const NOTICE_BUDGET = 1500;
@@ -581,6 +583,7 @@ if (!app.requestSingleInstanceLock()) {
         if (delta < 0) codexLimitsSoon(); // lo gastado se ve al momento en la barra inferior
       },
     });
+    testcheck = createTestReminder({ tabs, log: appLog });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
@@ -589,9 +592,24 @@ if (!app.requestSingleInstanceLock()) {
       if (netlog) setImmediate(() => netlog.fromHook(tabId, event));
       // Lo que necesita la revisión de Codex: si el turno ha editado código y, al pararse,
       // si se va a revisar (la interfaz no lo da por terminado mientras tanto).
-      if (event.event === 'UserPromptSubmit') review.turnStarted(tabId, event.prompt, event.request);
+      if (event.event === 'UserPromptSubmit') { review.turnStarted(tabId, event.prompt, event.request); testcheck.turnStarted(tabId, event.prompt); }
       if (event.event === 'PostToolUse') review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
-      if (event.event === 'Stop') event.reviewing = review.willReview(tabId, event);
+      // Pruebas antes de terminar: qué se cambia, qué pruebas se pasan y cómo acaban.
+      if (event.event === 'PreToolUse') testcheck.toolStarting(tabId, event.toolName, event.toolUseId);
+      if (event.event === 'PostToolUse' || event.event === 'PostToolUseFailure') {
+        testcheck.toolUsed(tabId, event.toolName, event.toolInput, {
+          cwd: event.cwd, failed: event.event === 'PostToolUseFailure', background: event.background, shell: event.shell, toolUseId: event.toolUseId,
+        });
+      }
+      delete event.shell; // la orden entera y su salida no van al registro ni a la interfaz
+      // Al pararse: primero, las pruebas (que las pase si cambió código sin pasarlas, o que
+      // no termine sin más si han fallado); después (en el siguiente Stop), la revisión de
+      // Codex. Si el turno se para con las pruebas sin pasar, la interfaz se lo dice al usuario.
+      if (event.event === 'Stop') {
+        event.testsAsk = testcheck.willAsk(tabId);
+        event.reviewing = !event.testsAsk && review.willReview(tabId, event);
+        event.testsFailing = event.testsAsk ? null : testcheck.failing(tabId);
+      }
       // Con /clear la pestaña pasa a otra conversación: los hooks llevan la actual.
       const tab = tabs.get(tabId);
       if (event.sessionId && tab && tab.folder) tab.session = event.sessionId;
@@ -628,7 +646,7 @@ if (!app.requestSingleInstanceLock()) {
     secrets = new Secrets({ store, log: appLog });
     hookServer.respond = async (tabId, eventName, event, signal) => {
       // Al pararse Claude: la revisión de Codex, si toca.
-      if (eventName === 'Stop') return review.onStop(tabId, event, signal);
+      if (eventName === 'Stop') return event.testsAsk ? testcheck.answer(tabId) : review.onStop(tabId, event, signal);
       // Al presentar un plan: la crítica de Codex, si toca.
       if (eventName === 'PlanReview') return review.onPlan(tabId, event, signal);
       if (eventName === 'PostToolUse') {

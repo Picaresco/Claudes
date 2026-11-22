@@ -13,8 +13,10 @@ function needsYou(view, body) {
   }
 }
 
-function finished(view, failed) {
-  if (view.closing) return;
+// Devuelve el aviso de que las pruebas no pasan, si lo hay. Con `hold` no lo muestra: lo
+// enseña quien llama, junto a lo suyo (un mensaje posterior lo taparía).
+function finished(view, failed, hold = false) {
+  if (view.closing) return '';
   const was = view.status;
   if (failed) {
     // Un error (fallo de la API, límite de uso…) queda en ámbar hasta tu siguiente
@@ -23,12 +25,23 @@ function finished(view, failed) {
     if (was !== 'failed' && !isWatched(view)) {
       api.notify({ tabId: view.tab.id, title: `${view.tab.name} se ha detenido`, body: 'Claude no ha podido completar la respuesta por un error.' });
     }
-    return;
+    return '';
   }
-  if (isWatched(view)) { setStatus(view, 'idle'); return; }
+  // Si el turno acaba con las pruebas del proyecto sin pasar (testcheck.js), se dice:
+  // «ha terminado» no quiere decir que funcionen.
+  const failing = view.testsFailing;
+  view.testsFailing = null;
+  const warn = failing ? `Ojo: «${view.tab.name}» ha terminado, pero sus pruebas no pasan (${failing}). Lee lo que te cuenta Claude antes de darlo por bueno.` : '';
+  if (warn && !hold) toast(warn, 12000);
+  if (isWatched(view)) { setStatus(view, 'idle'); return warn; }
   setStatus(view, 'done');
-  if (was === 'done') return;
-  api.notify({ tabId: view.tab.id, title: `${view.tab.name} ha terminado`, body: 'Claude ha terminado y espera tu siguiente mensaje.' });
+  if (was === 'done') return warn;
+  api.notify({
+    tabId: view.tab.id,
+    title: `${view.tab.name} ha terminado`,
+    body: failing ? `Claude ha terminado, pero las pruebas del proyecto no pasan (${failing}).` : 'Claude ha terminado y espera tu siguiente mensaje.',
+  });
+  return warn;
 }
 
 // Lo que ya estás viendo deja de marcarse como pendiente.
@@ -66,6 +79,9 @@ export function onHook(tabId, ev) {
       setStatus(view, 'working');
       break;
     case 'UserPromptSubmit':
+      view.testsFailing = null;
+      setStatus(view, 'working');
+      break;
     case 'PostToolUse':
     case 'PostToolUseFailure':
       setStatus(view, 'working');
@@ -79,8 +95,10 @@ export function onHook(tabId, ev) {
       }
       break;
     case 'Stop':
-      // Si Codex va a revisar lo que ha cambiado, el turno aún no ha terminado.
-      if (ev.reviewing) setStatus(view, 'reviewing');
+      // Si se le retiene por las pruebas o Codex va a revisar lo que ha cambiado, el turno aún no ha terminado.
+      view.testsFailing = ev.testsFailing || null; // se dice al terminar del todo (finished)
+      if (ev.testsAsk) setStatus(view, 'working');
+      else if (ev.reviewing) setStatus(view, 'reviewing');
       else finished(view, false);
       break;
     case 'StopFailure':
@@ -99,6 +117,7 @@ export function onReviewResult(tabId, r) {
   if (r.state === 'running') { setStatus(view, 'reviewing'); return; }
   if (r.state === 'found') {
     // Claude sigue trabajando con lo que ha encontrado Codex.
+    view.testsFailing = null; // se volverá a mirar cuando se pare
     setStatus(view, 'working');
     toast(r.count === 1
       ? `Codex ha encontrado un posible problema en ${name} (${r.seconds} s). Claude lo está revisando.`
@@ -126,33 +145,37 @@ export function onReviewResult(tabId, r) {
     // Codex no ha podido leer el proyecto: se dice por qué y cómo arreglarlo.
     // Solo cambia el estado de la operación que ha fallado (una segunda opinión no termina una revisión).
     if (r.op === 'plan' && view.status === 'planreview') setStatus(view, 'working'); // Claude sigue: presenta el plan sin crítica
-    else if (r.op === 'review' && view.status === 'reviewing') finished(view, false);
+    const pending = r.op === 'review' && view.status === 'reviewing' ? finished(view, false, true) : ''; // el aviso de pruebas, si lo hay, va delante
     const why = isSandboxMissing()
       ? `su zona protegida de Windows no está configurada. ${sandboxFix()}`
       : 'se le ha denegado el acceso a los archivos. Revisa los permisos de la carpeta del proyecto.';
-    toast(`Codex no ha podido leer el proyecto de ${name}: ${why}`, 15000);
+    toast(`${pending ? `${pending} ` : ''}Codex no ha podido leer el proyecto de ${name}: ${why}`, 15000);
     return;
   }
   if (r.state === 'plan-secret') {
     toast(`${name}: el plan lleva lo que parece una clave o contraseña, así que no se ha enviado a Codex.`);
     return;
   }
-  if (['reviewing', 'planreview', 'consulting'].includes(view.status)) finished(view, false);
+  // Si el turno acaba con las pruebas sin pasar, ese aviso va junto a lo que se diga de la
+  // revisión: un mensaje detrás de otro lo taparía, y una revisión limpia no lo arregla.
+  let warn = ['reviewing', 'planreview', 'consulting'].includes(view.status) ? finished(view, false, true) : '';
+  const say = (text) => { toast(warn ? `${warn} ${text}` : text, warn ? 15000 : false); warn = ''; };
   if (r.state === 'secret') {
     const files = (r.files || []).join(', ');
-    if (files) toast(`${name}: Codex no ha revisado los cambios porque ${files} lleva una clave o contraseña, y no se envía a OpenAI. Pásala a un .env que git no suba.`);
-    else toast(`${name}: Codex no ha revisado los cambios porque no se ha podido comprobar que no lleven claves (son demasiado grandes o no se pueden leer).`);
+    if (files) say(`${name}: Codex no ha revisado los cambios porque ${files} lleva una clave o contraseña, y no se envía a OpenAI. Pásala a un .env que git no suba.`);
+    else say(`${name}: Codex no ha revisado los cambios porque no se ha podido comprobar que no lleven claves (son demasiado grandes o no se pueden leer).`);
     return;
   }
-  if (r.state === 'clean') toast(`Codex ha revisado el código de ${name} y no ha encontrado problemas (${r.seconds} s).`);
+  if (r.state === 'clean') say(`Codex ha revisado el código de ${name} y no ha encontrado problemas (${r.seconds} s).`);
   else if (r.state === 'error') {
     const what = r.unclear ? `Codex no ha podido revisar los cambios de ${name}.` : `La revisión de Codex de ${name} ha fallado.`;
-    toast(`${what} ${r.file ? 'Los detalles están en la carpeta de registros.' : 'Activa la depuración para guardar los detalles la próxima vez.'}`);
+    say(`${what} ${r.file ? 'Los detalles están en la carpeta de registros.' : 'Activa la depuración para guardar los detalles la próxima vez.'}`);
   }
   else if (r.state === 'skipped' && !view.reviewSkipNoted) {
     view.reviewSkipNoted = true; // una vez por pestaña
-    toast(`${name}: ${r.reason}`);
+    say(`${name}: ${r.reason}`);
   }
+  if (warn) toast(warn, 12000);
 }
 
 export function onPtyExit(id, code) {

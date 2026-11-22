@@ -4,6 +4,12 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.18.0 — 2026-11-22
+- Nueva buena práctica en todos tus proyectos: si Claude cambia código y el proyecto tiene pruebas, antes de terminar se le pide que las pase si no lo ha hecho después de su último cambio. Si fallan por su cambio, lo corrige; si fallan por otra cosa, te lo cuenta en vez de tocarlo; si su cambio no puede afectar a nada de lo que prueban, lo dice y termina.
+- «Ha terminado» ya no esconde unas pruebas que fallan. La app sabe si las pruebas han pasado o han fallado: si fallan y Claude va a dar el trabajo por terminado, se le pide una vez que lo corrija o que te explique con claridad qué falla. Y si el turno acaba con las pruebas sin pasar, ClaudHome te lo avisa en pantalla.
+- Reconoce las pruebas de proyectos de Node (npm, yarn, pnpm o bun), Python (pytest), Go, Rust, .NET, Maven, Gradle, Make, PHP y PowerShell (Pester), también en monorepos. Cada aviso sale como mucho una vez por turno, y con «Codex asesora» encendido, Codex revisa después de las pruebas.
+- Arreglado: con el uso de Claude, el de Codex y el de la conversación, la barra inferior ocupaba dos o tres líneas. Ahora se queda siempre en una: si no cabe todo, primero quita la pista de atajos de teclado, después abrevia las fechas («renueva vie 27 21:00») y, en ventanas estrechas, deja solo los porcentajes; si aun así no cabe, recorta la parte izquierda antes que saltar de línea. El detalle completo sigue al pasar el ratón.
+
 ## 0.17.1 — 2026-11-22
 - Si Codex no puede leer el proyecto (en Windows, cuando le falta configurar su zona protegida), ClaudHome te avisa y te dice cómo arreglarlo, en vez de dar por buena una revisión o una crítica que no ha podido mirar el código. A Claude también se le dice que esa segunda opinión no ha visto el código.
 - La rueda de opciones avisa bajo «Codex asesora» si a Codex le falta esa configuración, y también al encenderlo.

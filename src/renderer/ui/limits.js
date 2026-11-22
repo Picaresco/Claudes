@@ -3,7 +3,7 @@
 // renueva; si el plan tiene además límite de 5 horas, se añade su porcentaje. El
 // detalle, al pasar el ratón. Los tokens de la conversación van junto a su llenado.
 import { $ } from './dom.js';
-import { usageLevel, nf } from './render.js';
+import { usageLevel, nf, fitStatusbar } from './render.js';
 import { clamp } from './state.js';
 
 export let limitsSnap = { plan: null, conversations: {} }; // de limits.js
@@ -29,6 +29,34 @@ function whenText(ms) {
   return `el ${d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' })} a las ${hm}`;
 }
 
+// «hoy 18:40», «mañana 01:10», «vie 27 21:00»: lo mismo, abreviado.
+function whenShort(ms) {
+  const d = new Date(ms);
+  const day = (x) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+  const shifted = (days) => { const x = new Date(); x.setDate(x.getDate() + days); return day(x); };
+  const hm = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  if (day(d) === shifted(0)) return `hoy ${hm}`;
+  if (day(d) === shifted(1)) return `mañana ${hm}`;
+  if (day(d) === shifted(-1)) return `ayer ${hm}`;
+  return `${d.toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', '')} ${d.getDate()} ${hm}`;
+}
+
+// El texto de un medidor de la barra inferior, por piezas. Lo que no lleva `kind` se ve
+// siempre; si la barra no cabe en una línea (fitStatusbar, en render.js), se va compactando:
+//   long / short   la misma información con su forma larga y su forma abreviada
+//   extra          lo que se quita después (p. ej. los tokens)
+// El detalle completo queda siempre en el texto emergente.
+export function setPieces(node, pieces) {
+  node.replaceChildren(...pieces.filter((p) => p && p.text).map((p) => {
+    const span = document.createElement('span');
+    span.textContent = p.text;
+    if (p.kind) span.className = `sb-${p.kind}`;
+    return span;
+  }));
+}
+// Una fecha con sus dos formas: «{antes}el viernes 27 a las 21:00» y «{corto}vie 27 21:00».
+const whenPieces = (ms, long, short) => [{ kind: 'long', text: `${long}${whenText(ms)}` }, { kind: 'short', text: `${short}${whenShort(ms)}` }];
+
 function limitDetail(name, w) {
   const t = w.tokens;
   const head = w.expired
@@ -39,6 +67,10 @@ function limitDetail(name, w) {
 
 // Codex en este equipo y lo que lleva gastado su plan de ChatGPT (codexInfo de la app).
 export function renderCodexLimits(info) {
+  try { drawCodexLimits(info); } finally { fitStatusbar(); }
+}
+
+function drawCodexLimits(info) {
   const box = $('#sb-codex');
   if (!info) { box.hidden = true; return; }
   box.hidden = false;
@@ -69,17 +101,23 @@ export function renderCodexLimits(info) {
   $('#sb-codex-fill').style.width = `${clamp(l.pct, 0, 100)}%`;
   // Agotado: hasta cuándo, el de la ventana agotada (si se sabe), y el porcentaje semanal aparte.
   const reached = l.reachedWindow;
-  const base = l.reached
-    ? `Codex: límite alcanzado${reached && reached.resetsAt ? ` hasta ${whenText(reached.resetsAt)}` : ''} · ${label} ${l.pct} %`
-    : `Codex: ${label} ${l.pct} %${l.resetsAt ? ` · se renueva ${whenText(l.resetsAt)}` : ''}`;
+  const pieces = l.reached
+    ? [{ text: 'Codex: límite alcanzado' }, ...(reached && reached.resetsAt ? whenPieces(reached.resetsAt, ' hasta ', ' hasta ') : []), { kind: 'extra', text: ` · ${label} ${l.pct} %` }]
+    : [{ text: `Codex: ${label} ${l.pct} %` }, ...(l.resetsAt ? whenPieces(l.resetsAt, ' · se renueva ', ' · renueva ') : [])];
   // Si la última lectura falló, el dato que se ve es el anterior: con su hora.
-  $('#sb-codex-text').textContent = l.stale && l.checkedAt ? `${base} · dato de las ${hm(l.checkedAt)}` : base;
+  if (l.stale && l.checkedAt) pieces.push({ text: ` · dato de las ${hm(l.checkedAt)}` });
+  setPieces($('#sb-codex-text'), pieces);
   const other = l.other ? `\nOtro límite: ${l.other.pct} %${l.other.resetsAt ? `, se renueva ${whenText(l.other.resetsAt)}` : ''}.` : '';
   box.title = `Codex con tu cuenta de ChatGPT${l.plan ? ` (plan ${l.plan})` : ''}: ${l.pct} % del límite ${l.windowMins === 10080 ? 'semanal' : 'de uso'}${l.resetsAt ? `, se renueva ${whenText(l.resetsAt)}` : ''}.${other}\n\n`
     + 'Incluye todo lo que uses de Codex con esa cuenta, también fuera de ClaudHome. Se actualiza cada 10 minutos y tras cada consulta a Codex.';
 }
 
+// También se llama cada minuto por su cuenta (cambia «hoy» por «mañana»…): el texto puede
+// ensancharse o encogerse, así que la barra se vuelve a ajustar.
 export function renderPlanLimits() {
+  try { drawPlanLimits(); } finally { fitStatusbar(); }
+}
+function drawPlanLimits() {
   const plan = limitsSnap.plan;
   const box = $('#sb-plan');
   const main = plan && (plan.seven_day || plan.five_hour);
@@ -93,10 +131,10 @@ export function renderPlanLimits() {
   else if (five && usageLevel(five.pct) === 'mid' && level === 'low') level = 'mid';
   box.dataset.level = level;
   $('#sb-plan-fill').style.width = `${clamp(pct, 0, 100)}%`;
-  $('#sb-plan-text').textContent = main.expired
-    ? `${label}: renovada ${whenText(main.resetsAt)} · ${tokensShort(main.tokens.total)} desde entonces`
-    : `${label} ${main.pct} % · ${tokensShort(main.tokens.total)} · se renueva ${whenText(main.resetsAt)}`
-      + (five ? ` · 5 h ${five.pct} %` : '');
+  setPieces($('#sb-plan-text'), main.expired
+    ? [{ text: `${label}: renovada` }, ...whenPieces(main.resetsAt, ' ', ' '), { kind: 'extra', text: ` · ${tokensShort(main.tokens.total)} desde entonces` }]
+    : [{ text: `${label} ${main.pct} %` }, five ? { text: ` · 5 h ${five.pct} %` } : null,
+      { kind: 'extra', text: ` · ${tokensShort(main.tokens.total)}` }, ...whenPieces(main.resetsAt, ' · se renueva ', ' · renueva ')]);
   const parts = [];
   if (plan.seven_day) parts.push(limitDetail('Límite semanal', plan.seven_day));
   if (plan.five_hour) parts.push(limitDetail('Límite de 5 horas', plan.five_hour));
