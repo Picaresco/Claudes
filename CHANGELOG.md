@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.19.0 — 2026-11-22
+- Junto a la rueda de opciones aparece «Codex»: en verde si está detectado en este equipo con tu cuenta de ChatGPT, en gris si no está instalado y en ámbar si está instalado pero le falta iniciar sesión. Al pasar el ratón te dice cómo está; al pulsarlo abre sus opciones o, si no se puede usar, vuelve a comprobarlo.
+- Mientras Codex trabaja se ve en qué: un reloj con las agujas girando cuando está asesorando a Claude (una segunda opinión, la crítica de un plan o una revisión) y un pincel pintando cuando genera una imagen. Junto a cada uno va el tiempo que lleva, y al pasar el ratón te dice para qué proyecto trabaja. Sustituye al punto verde de la rueda.
+- Si Codex se acerca a su límite de uso (80 % o más), el nombre se pone en ámbar con el porcentaje al lado; si lo agota, en rojo. Así lo ves antes de que deje de asesorar.
+
 ## 0.18.0 — 2026-11-22
 - Nueva buena práctica en todos tus proyectos: si Claude cambia código y el proyecto tiene pruebas, antes de terminar se le pide que las pase si no lo ha hecho después de su último cambio. Si fallan por su cambio, lo corrige; si fallan por otra cosa, te lo cuenta en vez de tocarlo; si su cambio no puede afectar a nada de lo que prueban, lo dice y termina.
 - «Ha terminado» ya no esconde unas pruebas que fallan. La app sabe si las pruebas han pasado o han fallado: si fallan y Claude va a dar el trabajo por terminado, se le pide una vez que lo corrija o que te explique con claridad qué falla. Y si el turno acaba con las pruebas sin pasar, ClaudHome te lo avisa en pantalla.

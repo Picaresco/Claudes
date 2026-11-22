@@ -1,6 +1,6 @@
 // Interfaz de Claudes: pestañas, vista dividida, terminal extra, recientes y avisos.
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
-import { renderCodex } from './ui/codex.js';
+import { renderCodex, codexInfo } from './ui/codex.js';
 import { COLORS, BASE_FONT, MAX_RECENTS } from './ui/constants.js';
 import { cleanContext, addToContext, addLinks } from './ui/context.js';
 import { renderDebug } from './ui/debug.js';
@@ -91,6 +91,8 @@ async function init() {
         const view = views.get(S.activeId);
         return view ? addLinks(view, urls) : false;
       },
+      // Pone el indicador de Codex como si su estado fuera otro (los campos que se den).
+      showCodex: (fields) => renderCodex({ ...(codexInfo || {}), ...fields }),
       // Pone una pestaña en un estado, para ver cómo se pinta.
       showStatus: (index, status) => {
         const tab = S.tabs[index];

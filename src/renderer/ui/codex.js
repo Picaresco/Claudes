@@ -3,6 +3,7 @@ import { api, $ } from './dom.js';
 import { renderCodexLimits } from './limits.js';
 import { renderToolbar } from './render.js';
 import { restartSession } from './sessions.js';
+import { toggleSettings } from './settings.js';
 import { views, toast } from './state.js';
 
 export let codexInfo = null;
@@ -43,10 +44,76 @@ export function renderCodex(info) {
   chip.title = title;
   chip.setAttribute('aria-pressed', String(Boolean(codexInfo.active)));
   $('#codex-label').textContent = label;
-  // La rueda de opciones avisa con un punto mientras Codex trabaja.
-  $('#btn-settings').dataset.busy = String(state === 'busy');
+  renderCodexStatus();
   renderToolbar();
   renderCodexLimits(codexInfo); // detección y uso de Codex, en la barra inferior
+}
+
+// El indicador «Codex» de la barra superior, junto a la rueda: de un vistazo, si hay Codex
+// en este equipo, si se le acaba el límite de uso y si está trabajando ahora mismo: en qué,
+// para qué proyecto y cuánto lleva.
+const LIMIT_WARN = 80; // % del límite de uso de Codex a partir del cual se avisa
+const quoted = (name) => (name ? `«${name}»` : 'una sesión');
+const listed = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}` : items.join(''));
+function renderCodexStatus() {
+  const badge = $('#codex-status');
+  const usable = Boolean(codexInfo.usable);
+  const jobs = usable ? codexInfo.jobs || [] : [];
+  const advising = jobs.filter((job) => job.kind === 'advise');
+  const drawing = jobs.filter((job) => job.kind === 'draw');
+  const limits = usable ? codexInfo.limits : null;
+  const level = !limits ? '' : limits.reached ? 'reached' : limits.pct >= LIMIT_WARN ? 'high' : '';
+  let text;
+  if (!codexInfo.installed) text = 'Codex no está instalado en este equipo (o no lo encuentro). Con Codex y tu cuenta de ChatGPT, Claude puede pedirle segundas opiniones, revisiones e imágenes. Pulsa para volver a comprobar.';
+  else if (!codexInfo.loggedIn) text = 'Codex está instalado, pero sin sesión iniciada: ejecuta «codex login». Pulsa para volver a comprobar.';
+  else if (!usable) text = 'Codex está instalado, pero con una clave de API: ClaudHome solo lo usa con tu cuenta de ChatGPT. Pulsa para volver a comprobar.';
+  else {
+    const doing = [
+      advising.length ? `asesorando a Claude en ${listed(advising.map((job) => `${quoted(job.tab)} (${job.what})`))}` : '',
+      drawing.length ? `generando una imagen para ${listed(drawing.map((job) => quoted(job.tab)))}` : '',
+    ].filter(Boolean).join(' y ');
+    const week = limits && limits.windowMins === 10080 ? ' semanal' : ' de uso';
+    const limit = level === 'reached' ? ' Ha agotado su límite de uso: hasta que se renueve no puede asesorar ni dibujar (la barra inferior dice cuándo).'
+      : level === 'high' ? ` Ojo: lleva el ${Math.round(limits.pct)} % de su límite${week} (la barra inferior dice cuándo se renueva).` : '';
+    text = `Codex detectado, con tu cuenta de ChatGPT.${doing ? ` Ahora mismo está ${doing}.` : ''}${limit} Pulsa para ver sus opciones.`;
+  }
+  badge.hidden = false;
+  badge.dataset.state = !codexInfo.installed ? 'missing' : usable ? 'ready' : 'partial';
+  badge.dataset.limit = level;
+  badge.title = text;
+  badge.setAttribute('aria-label', text);
+  const note = $('#codex-limit');
+  note.hidden = !level;
+  note.textContent = level === 'reached' ? 'agotado' : level ? `${Math.round(limits.pct)} %` : '';
+  $('#codex-advising').hidden = !advising.length;
+  $('#codex-drawing').hidden = !drawing.length;
+  tickCodexStatus();
+}
+
+// El tiempo que lleva cada cosa (la más antigua de cada tipo), al segundo mientras trabaja.
+let ticking = null;
+function elapsed(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+function tickCodexStatus() {
+  const jobs = codexInfo && codexInfo.usable ? codexInfo.jobs || [] : [];
+  const since = (kind) => {
+    const starts = jobs.filter((job) => job.kind === kind).map((job) => job.startedAt);
+    return starts.length ? elapsed(Date.now() - Math.min(...starts)) : '';
+  };
+  $('#codex-advising-time').textContent = since('advise');
+  $('#codex-drawing-time').textContent = since('draw');
+  if (jobs.length && !ticking) ticking = setInterval(tickCodexStatus, 1000);
+  else if (!jobs.length && ticking) { clearInterval(ticking); ticking = null; }
+}
+// Al pulsarlo: si Codex no se puede usar, se vuelve a comprobar (puede que acabe de
+// instalarse o de iniciar sesión) y se dice cómo está; si se puede, se abren sus opciones.
+export async function codexStatusClick() {
+  if (codexInfo && codexInfo.usable) { toggleSettings(); return; }
+  renderCodex(await api.codexStatus(true));
+  if (codexInfo && codexInfo.usable) toast('Codex detectado, con tu cuenta de ChatGPT.');
+  else toast($('#codex-status').title, 8000);
 }
 
 export async function toggleCodex() {

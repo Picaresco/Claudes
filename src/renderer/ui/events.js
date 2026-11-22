@@ -1,5 +1,5 @@
 // ── Eventos ──────────────────────────────────────────────────────
-import { renderCodex, toggleCodex } from './codex.js';
+import { renderCodex, toggleCodex, codexStatusClick } from './codex.js';
 import { COLORS, SIDES } from './constants.js';
 import { toggleContext } from './context.js';
 import { toggleDebug } from './debug.js';
@@ -179,6 +179,7 @@ export function wireChrome() {
   });
 
   $('#codex-chip').addEventListener('click', toggleCodex);
+  $('#codex-status').addEventListener('click', codexStatusClick);
   $('#mic-btn').addEventListener('click', toggleVoice);
   $('#brief-btn').addEventListener('click', toggleBrief);
   $('#review-btn').addEventListener('click', toggleReview);
