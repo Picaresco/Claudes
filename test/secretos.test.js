@@ -164,7 +164,7 @@ test('antes de enviar a Codex se comprueba exactamente lo que vería', { skip: !
   write('src/app.js', 'const x = 1;\n');
   write('src/old.js', `const k = "${KEYS.github}";\n`);
   gitCommitAll(cwd);
-  assert.deepEqual(await reviewInput(cwd), { ok: true, files: [] }); // sin cambios
+  assert.deepEqual(await reviewInput(cwd), { ok: true, files: [], empty: true }); // sin cambios: nada que revisar
   write('.env', `API_KEY=${KEYS.openai}\n`); // git lo deja fuera: no se envía
   write('src/app.js', 'const x = 2;\n');
   assert.deepEqual(await reviewInput(path.join(cwd, 'src')), { ok: true, files: [] }); // también desde una subcarpeta
@@ -239,4 +239,37 @@ test('la comprobación previa no se deja engañar', { skip: !findGit() && 'sin g
   const controller = new AbortController();
   controller.abort();
   assert.deepEqual(await reviewInput(c.cwd, controller.signal), { ok: false, files: [], aborted: true });
+});
+
+test('una palabra como «secret» o «test» dentro de una contraseña de verdad no la esconde', () => {
+  for (const value of [`Mi${'Secret'}2024!`, `test-Db-${rnd(6)}`, `Password${rnd(5)}#`]) {
+    assert.equal(scanText(`const password = "${value}";`, 'a.js').length, 1, value);
+  }
+  for (const value of ['your-token-here', 'tu_contraseña', 'db_password', 'API_KEY', 'my_secret_here']) {
+    assert.deepEqual(scanText(`const password = "${value}";`, 'a.js'), [], value);
+  }
+});
+
+test('splitDiff guarda la línea de contexto de cada trozo y marca los binarios', () => {
+  const diff = ['diff --git a/db.py b/db.py', '--- a/db.py', '+++ b/db.py', '@@ -10,3 +10,3 @@ def connect(password="Kx9mP2vLq#1"):', '-    x = 1', '+    x = 2',
+    'diff --git a/c.ps1 b/c.ps1', 'index 1..2 100644', 'Binary files a/c.ps1 and b/c.ps1 differ'].join('\n');
+  assert.deepEqual(splitDiff(diff), [['db.py', 'def connect(password="Kx9mP2vLq#1"):\n    x = 1\n    x = 2'], ['c.ps1', '', true]]);
+});
+
+test('la comprobación previa lee también lo que git ve como binario y el contexto de los trozos', { skip: !findGit() && 'sin git en este equipo' }, async (t) => {
+  // Un script UTF-16 ya confirmado que cambia: git lo ve como binario.
+  const utf16 = (text) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]);
+  const a = committedRepo(t, { 'c.ps1': 'x' });
+  fs.writeFileSync(path.join(a.cwd, 'c.ps1'), utf16('Write-Host hola\r\n'));
+  a.git('add', 'c.ps1');
+  a.git('-c', 'user.name=P', '-c', 'user.email=p@example.com', 'commit', '-q', '-m', 'utf16');
+  fs.writeFileSync(path.join(a.cwd, 'c.ps1'), utf16(`$env:API_KEY=${rnd(12)}\r\n`));
+  assert.deepEqual(names(await reviewInput(a.cwd)), ['c.ps1']);
+  a.git('add', 'c.ps1'); // preparado: se lee del índice
+  assert.deepEqual(names(await reviewInput(a.cwd)), ['c.ps1']);
+  // Una contraseña que solo aparece en la cabecera del trozo (la función que contiene el cambio).
+  const body = Array.from({ length: 12 }, (_, i) => `    paso${i} = ${i}`).join('\n');
+  const b = committedRepo(t, { 'db.py': `def connect(host, password="${PASSWORD}"):\n${body}\n` });
+  b.write('db.py', `def connect(host, password="${PASSWORD}"):\n${body.replace('paso10 = 10', 'paso10 = 11')}\n`);
+  assert.deepEqual(names(await reviewInput(b.cwd)), ['db.py']);
 });

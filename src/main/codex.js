@@ -219,12 +219,32 @@ const IMAGE_TOOL = {
 
 // ── Revisión de código ───────────────────────────────────────────────
 // `codex exec review --uncommitted` revisa los cambios sin confirmar de un repositorio git:
-// en solo lectura, sin pedir aprobaciones y sin guardar la sesión (--ephemeral). Solo con
-// la cuenta de ChatGPT y el proveedor de OpenAI: si la sesión de Codex es otra, falla en
-// vez de facturar aparte.
+// en solo lectura, sin pedir aprobaciones y sin guardar la sesión (--ephemeral), con el
+// proveedor de OpenAI y sin claves de API del entorno. Que la sesión sea la de ChatGPT se
+// comprueba justo antes (chatgptLogin).
 // Devuelve { ok, code, text (lo que escribe al final: el veredicto y los hallazgos), log
 // (todo lo demás, para el registro), seconds, aborted }.
 const REVIEW_TIMEOUT = 12 * 60 * 1000;
+// Entorno para Codex al revisar: sin claves de API (así usa la cuenta de ChatGPT y no
+// factura aparte) y sin buscar programas en la carpeta del proyecto (codex.cmd lanza
+// «node» sin ruta).
+function reviewEnv() {
+  const env = { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' };
+  for (const key of Object.keys(env)) if (/^(OPENAI_API_KEY|CODEX_API_KEY)$/i.test(key)) delete env[key];
+  return env;
+}
+
+// ¿Tiene Codex ahora mismo la sesión de ChatGPT? Se mira justo antes de cada revisión.
+function chatgptLogin() {
+  const exe = findCodex();
+  if (!exe) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    execFile(exe, ['login', 'status'], { encoding: 'utf8', windowsHide: true, timeout: 15000, shell: viaShell(exe), env: reviewEnv() }, (error, stdout, stderr) => {
+      const text = `${stdout || ''}\n${stderr || ''}`;
+      resolve(!error && /logged in/i.test(text) && !/not logged in/i.test(text) && /chatgpt/i.test(text));
+    });
+  });
+}
 const activeReviews = new Set(); // cómo parar cada revisión en marcha
 
 function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT }) {
@@ -233,13 +253,11 @@ function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT })
     const exe = findCodex();
     if (!exe) { resolve({ ok: false, code: null, text: '', log: 'Codex no está instalado.', seconds: 0, aborted: false }); return; }
     const args = ['exec', 'review', '--uncommitted', '--ephemeral',
-      '-c', 'history.persistence="none"', '-c', 'sandbox_mode="read-only"',
-      '-c', 'model_provider="openai"', '-c', 'forced_login_method="chatgpt"'];
-    if (model) args.push('-c', `model="${model}"`);
+      '-c', 'history.persistence="none"', '-c', 'sandbox_mode="read-only"', '-c', 'model_provider="openai"'];
+    // review_model manda sobre model en las revisiones: se fijan los dos.
+    if (model) args.push('-c', `model="${model}"`, '-c', `review_model="${model}"`);
     if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
-    // codex.cmd lanza «node» sin ruta: que Windows no lo busque en la carpeta del proyecto.
-    const env = { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' };
-    const child = spawn(exe, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: viaShell(exe) });
+    const child = spawn(exe, args, { cwd, env: reviewEnv(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: viaShell(exe) });
     let text = '';
     let log = '';
     let settled = false;
@@ -298,4 +316,4 @@ function parseReview(text) {
   return out;
 }
 
-module.exports = { detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews };
+module.exports = { detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews, chatgptLogin };

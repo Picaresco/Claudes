@@ -4,6 +4,13 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.15.1 — 2026-11-22
+- «Codex revisa» comprueba justo antes de cada revisión que Codex tiene la sesión de tu cuenta de ChatGPT, sin riesgo de cerrarte la sesión de Codex si algún día usas una clave de API. Usa siempre el modelo que anuncia, aunque tu configuración de Codex diga otro.
+- Si Claude ya ha confirmado sus cambios, o apagas el interruptor mientras se prepara la revisión, Codex no se lanza.
+- «No he encontrado problemas» ya no se toma por un fallo de la revisión, y una respuesta que pide el código ya no se toma por «sin problemas».
+- El aviso de claves detecta contraseñas que contienen palabras como «secret» o «test», y lo que se envía a Codex se comprueba también en los scripts de PowerShell en UTF-16 y en la línea de la función que git muestra junto a cada cambio.
+- Con «Codex revisa» apagado, la app ya no hace ningún trabajo extra al editar.
+
 ## 0.15.0 — 2026-11-22
 - Nueva buena práctica en todos tus proyectos: si Claude escribe en un archivo una clave o una contraseña (de Anthropic, OpenAI, GitHub, AWS, Google, una clave privada, una contraseña en el código o en una dirección de conexión…), en ese momento se le pide que la pase a un archivo `.env` que git no suba y que te lo cuente. Una clave que llega a GitHub hay que darla por robada, aunque se borre después.
 - También avisa si un `.env` con claves no está en `.gitignore`. La app nunca guarda ni muestra la clave, y no confunde con claves los valores de ejemplo ni las variables de entorno.

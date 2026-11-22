@@ -55,14 +55,16 @@ const PATTERNS = [
 ];
 
 // Valores de ejemplo, plantillas y referencias a variables: no son claves de verdad.
-const PLACEHOLDER = /example|ejemplo|sample|muestra|dummy|fake|fals[oa]|placeholder|test|your|tu[_-]?(?:clave|contrase)|changeme|c[aá]mbiame|redacted|xxx|\*\*\*|\.\.\.|\$\{[^}]*\}|\{\{|\}\}|<[^>]*>|^\$[A-Za-z_]\w*$|%[A-Za-z_]\w*%|%[sd(]|password|passwd|contrase|secret|token|api[_-]?key/i;
+const PLACEHOLDER = /example|ejemplo|sample|muestra|dummy|fake|placeholder|changeme|c[aá]mbiame|redacted|xxx|\*\*\*|\.\.\.|\$\{[^}]*\}|\{\{|\}\}|<[^>]*>|^\$[A-Za-z_]\w*$|%[A-Za-z_]\w*%|%[sd(]|^(?:your|tu)[_-]/i;
+// Un valor que es solo el nombre del campo («password», «api_key», «db_password_here»).
+const NAME_ONLY = /^(?:(?:my|mi|the)[_-]?)?(?:db[_-]?|database[_-]?)?(?:password|passwd|pwd|contrase(?:ñ|n)a|secret|token|api[_-]?key|access[_-]?key|auth[_-]?token|client[_-]?secret|private[_-]?key|clave)(?:[_-]?(?:here|aqu[ií]))?$/i;
 const REPEATED = /(.)\1{5,}/;
 // Código, no un valor: una llamada, un índice, una ruta de objeto (config.clave) o el final
 // de una expresión.
 const CODE_LIKE = /[()[\]]|[;,]$|^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/;
 
 function plausible(value, generic) {
-  if (PLACEHOLDER.test(value) || REPEATED.test(value)) return false;
+  if (PLACEHOLDER.test(value) || NAME_ONLY.test(value) || REPEATED.test(value)) return false;
   if (!generic) return true;
   if (CODE_LIKE.test(value)) return false;
   // Una palabra corta («Bearer», «basic») o un número corto (un puerto, un plazo) no es una contraseña.
@@ -265,12 +267,19 @@ function splitDiff(text) {
   for (const raw of String(text || '').split('\n')) {
     const line = raw.replace(/\r$/, '');
     const head = /^diff --git a\/.* b\/(.*)$/.exec(line);
-    if (head) { current = [head[1].replace(/^"|"$/g, ''), []]; parts.push(current); inHunk = false; continue; }
+    if (head) { current = [head[1].replace(/^"|"$/g, ''), [], false]; parts.push(current); inHunk = false; continue; }
     if (!current) continue;
-    if (line.startsWith('@@')) { inHunk = true; continue; }
+    if (line.startsWith('@@')) {
+      inHunk = true;
+      const context = line.replace(/^@@[^@]*@@ ?/, ''); // la línea de la función que contiene el cambio
+      if (context) current[1].push(context);
+      continue;
+    }
+    if (!inHunk && /^Binary files /.test(line)) { current[2] = true; continue; }
     if (inHunk && /^[+\- ]/.test(line)) current[1].push(line.slice(1)); // también «------BEGIN…» borrado
   }
-  return parts.map(([file, lines]) => [file, lines.join('\n')]);
+  // [ruta, texto], y [ruta, '', true] si git lo trata como binario.
+  return parts.map(([file, lines, binary]) => (binary ? [file, lines.join('\n'), true] : [file, lines.join('\n')]));
 }
 
 // Lo que verá Codex en una revisión de cambios sin confirmar (`--uncommitted`): el diff de
@@ -300,10 +309,26 @@ async function reviewInput(cwd, signal = null) {
   if (stopped()) return cancelled();
   if (diffs.some((d) => d === null)) return { ok: false, files: [] };
   const risky = new Set();
-  for (const diff of diffs) {
+  // Lo que git trata como binario puede ser texto en UTF-16 (scripts de PowerShell): se lee
+  // la versión preparada (git cat-file, sin filtros) o la de la copia de trabajo.
+  const readBlob = (spec) => new Promise((resolve) => {
+    execFile(git, ['cat-file', 'blob', spec], { cwd: root, windowsHide: true, timeout: 30000, maxBuffer: MAX_BYTES + 1, encoding: 'buffer', ...(signal ? { signal } : {}) }, (err, stdout) => resolve(err ? null : stdout));
+  });
+  let tracked = 0;
+  for (const [which, diff] of [['cached', diffs[0]], ['work', diffs[1]]]) {
     const parts = splitDiff(diff);
     if (diff.trim() && !parts.length) return { ok: false, files: [] }; // un formato que no se entiende: sin comprobar
-    for (const [rel, text] of parts) if (scanText(text, rel).length) risky.add(rel);
+    tracked += parts.length;
+    for (const [rel, text, binary] of parts) {
+      if (!binary) { if (scanText(text, rel).length) risky.add(rel); continue; }
+      let buf;
+      if (which === 'cached') buf = await readBlob(`:${rel}`);
+      else { try { const st = await fs.promises.stat(path.join(root, rel)); if (st.size <= MAX_BYTES) buf = await fs.promises.readFile(path.join(root, rel)); else return { ok: false, files: [...risky] }; } catch { continue; } } // borrado: nada que leer
+      if (stopped()) return cancelled([...risky]);
+      if (buf === null) continue; // borrado del índice
+      const decoded = decodeText(buf);
+      if (decoded !== null && scanText(decoded, rel).length) risky.add(rel);
+    }
   }
   const listed = await run(['ls-files', '--others', '--exclude-standard', '-z'], root);
   if (listed === null) return { ok: false, files: [] };
@@ -328,6 +353,8 @@ async function reviewInput(cwd, signal = null) {
     if (text === null) continue;
     if (scanText(text, rel).length) risky.add(rel);
   }
+  // Sin nada que revisar (Claude ya lo ha confirmado o deshecho): no se lanza Codex.
+  if (!tracked && !untracked.length) return { ok: true, files: [], empty: true };
   return { ok: true, files: [...risky] };
 }
 

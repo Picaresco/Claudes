@@ -53,7 +53,8 @@ const isGitRepo = (cwd) => repoRoot(cwd) !== null;
 const sameRepo = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
 
 // Una salida sin hallazgos que en realidad dice que no ha podido revisar.
-const INCONCLUSIVE = /\b(?:could not|couldn't|cannot|can't|unable to|was not able to|wasn't able to|failed to)\b[^.\n]{0,80}\b(?:review|inspect|read|access|run|load|open|find|determine)|\bno (?:he|ha|hemos|han|se ha) podido\b|\bno (?:puedo|pude|es posible)\b/i;
+// («could not find any issues» sí es un veredicto: no encontró nada).
+const INCONCLUSIVE = /\b(?:could not|couldn't|cannot|can't|unable to|was not able to|wasn't able to|failed to)\b[^.\n]{0,80}\b(?:review|inspect|read|access|run|load|open|determine)\b|\bplease (?:provide|share|paste|send)\b|\bno (?:he|ha|hemos|han|se ha) podido\b|\bno (?:puedo|pude|es posible)\b|\b(?:proporciona|comparte|pega)(?:me)? el diff\b/i;
 
 // Lo que dice la revisión: { state: 'found' | 'clean' | 'unclear', parsed, count, priorities }.
 // Sin hallazgos legibles pero con marcas [Pn], se trata como hallazgos (se pasa el texto
@@ -91,8 +92,9 @@ function reasonFor(parsed, text) {
 // send(canal, …): avisa a la interfaz; log: registro de la app; logsDir(): carpeta de
 // registros; detailedLogs(): si se guarda la salida completa de cada revisión (el
 // interruptor de depuración); netlog(): el «Log» (o null si aún no existe);
-// checkSecrets(cwd, signal): { ok, files, aborted } de lo que se enviaría a Codex (secrets.js).
-function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }) }) {
+// checkSecrets(cwd, signal): { ok, files, aborted, empty } de lo que se enviaría a Codex
+// (secrets.js); checkLogin(): si Codex tiene ahora mismo la sesión de ChatGPT.
+function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true }) {
   let enabled = store.get('codexReview', false) === true;
 
   // Empieza un turno: todavía no ha editado nada ni se ha revisado. Se revisará solo si el
@@ -114,6 +116,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   function toolUsed(tabId, toolName, file = null, cwd = null) {
     if (!EDIT_TOOLS.has(toolName)) return;
     const tab = tabs.ensure(tabId);
+    if (!enabled || !tab.reviewArmed || tab.reviewed || tab.reviewSkip) return; // este turno no se revisa
     const known = typeof file === 'string' && file;
     if (known && !isCode(file)) return; // documentos, datos, notas…: no piden revisión
     const base = cwd || tab.folder;
@@ -175,6 +178,15 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       return null;
     }
     if (tab.turn !== turn) return null; // el usuario ya ha seguido: no se lanza
+    if (!enabled) { // apagado mientras se comprobaba: no se envía nada
+      post({ state: 'nothing' });
+      return null;
+    }
+    if (input.ok && input.empty) {
+      log('revisión de Codex: no quedan cambios sin confirmar; no se revisa');
+      post({ state: 'nothing' });
+      return null;
+    }
     if (!input.ok || input.files.length) {
       log(`revisión de Codex: no se revisa porque ${input.ok ? `${input.files.length} archivo(s) llevan claves` : 'no se ha podido comprobar si lo que se enviaría lleva claves'}`);
       post({ state: 'secret', files: input.files.slice(0, 5), unchecked: !input.ok });
@@ -184,6 +196,16 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       post({ state: 'aborted', seconds: 0 });
       return null;
     }
+    if (!(await checkLogin())) {
+      log('revisión de Codex: Codex no tiene ahora la sesión de ChatGPT; no se revisa');
+      post({ state: 'skipped', reason: 'Codex no tiene ahora la sesión de tu cuenta de ChatGPT, y la revisión solo se hace con ella.' });
+      return null;
+    }
+    if (signal && signal.aborted) {
+      post({ state: 'aborted', seconds: 0 });
+      return null;
+    }
+    if (tab.turn !== turn || !enabled) return null;
     post({ state: 'running' });
     log(`revisión de Codex: empieza en ${cwd} (${MODEL}, ${EFFORT})`);
     // Se anota antes de enviar nada: si la app se cierra a mitad, la salida ya consta.

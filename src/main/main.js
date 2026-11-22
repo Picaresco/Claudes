@@ -532,6 +532,7 @@ if (!app.requestSingleInstanceLock()) {
       detailedLogs: () => logger.enabled, // la salida completa, solo con la depuración activada
       // Lo que lleve claves no se envía a Codex.
       checkSecrets: (cwd, signal) => (secrets ? secrets.reviewInput(cwd, signal) : { ok: false, files: [] }),
+      checkLogin: () => codex.chatgptLogin(), // justo antes de cada revisión
       netlog: () => netlog, // se crea más tarde
     });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {

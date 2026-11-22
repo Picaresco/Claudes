@@ -55,6 +55,10 @@ test('un resultado vacío no es «sin problemas», y unas marcas [Pn] sin format
   const cannot = 'I could not inspect the changes because the repository is not accessible.';
   assert.equal(verdict(parseReview(cannot), cannot).state, 'unclear');
   assert.equal(verdict(parseReview('No he podido revisar los cambios.'), 'No he podido revisar los cambios.').state, 'unclear');
+  const none = 'I could not find any issues with this change.';
+  assert.equal(verdict(parseReview(none), none).state, 'clean'); // no encontrar problemas es un veredicto
+  const ask = 'Please provide the diff you want me to review.';
+  assert.equal(verdict(parseReview(ask), ask).state, 'unclear');
   const odd = 'Findings:\n* [P1] Something odd\n* [P3] Minor';
   assert.deepEqual(verdict(parseReview(odd), odd), { state: 'found', count: 2, priorities: [1, 3] });
   assert.match(reasonFor(parseReview(odd), odd), /\* \[P1\] Something odd/); // se pasa tal cual
@@ -75,7 +79,7 @@ test('lo que se le dice a Claude incluye los hallazgos y le deja decidir', () =>
   assert.match(reasonFor(parseReview(huge), huge), /\[… recortado\]/);
 });
 
-function makeReview(t, { enabled = true, usable = true, result = null, detailed = true, reviewChanges = null, checkSecrets = null } = {}) {
+function makeReview(t, { enabled = true, usable = true, result = null, detailed = true, reviewChanges = null, checkSecrets = null, checkLogin = null } = {}) {
   const saved = { codexReview: enabled };
   const sent = [];
   const logs = [];
@@ -96,6 +100,7 @@ function makeReview(t, { enabled = true, usable = true, result = null, detailed 
     logsDir: () => logs_,
     detailedLogs: () => detailed,
     ...(checkSecrets ? { checkSecrets } : {}),
+    ...(checkLogin ? { checkLogin } : {}),
     netlog: () => ({ record: (entry) => records.push(entry) }),
   });
   return { review, tabs, saved, sent, logs, records, calls, logsDir: logs_ };
@@ -373,4 +378,43 @@ test('en Windows, el mismo repositorio escrito con otras mayúsculas es el mismo
   assert.equal(review.willReview('t1', { event: 'Stop' }), true);
   await review.onStop('t1', { event: 'Stop' });
   assert.equal(calls.length, 1);
+});
+
+// Un turno listo para revisar en un repositorio con un cambio.
+function armed(t, options) {
+  const dir = gitRepo(t);
+  const fixture = makeReview(t, options);
+  fixture.tabs.ensure('t1').folder = dir;
+  fixture.review.turnStarted('t1', 'Cambia a');
+  fixture.review.toolUsed('t1', 'Edit', 'a.js', dir);
+  fixture.review.willReview('t1', { event: 'Stop' });
+  return { ...fixture, dir };
+}
+
+test('sin cambios que revisar, o apagado mientras se comprobaba, no se lanza Codex', async (t) => {
+  const empty = armed(t, { checkSecrets: async () => ({ ok: true, files: [], empty: true }) });
+  assert.equal(await empty.review.onStop('t1', { event: 'Stop' }), null);
+  assert.equal(empty.calls.length, 0);
+  assert.deepEqual(empty.sent.map(([, , r]) => r.state), ['nothing']);
+  const fixture = armed(t, { checkSecrets: async () => { fixture.review.enabled = false; return { ok: true, files: [] }; } });
+  assert.equal(await fixture.review.onStop('t1', { event: 'Stop' }), null);
+  assert.equal(fixture.calls.length, 0);
+  assert.equal(fixture.records.length, 0); // no ha salido nada
+});
+
+test('si Codex no tiene ahora la sesión de ChatGPT, no se revisa', async (t) => {
+  const { review, calls, sent, records } = armed(t, { checkLogin: async () => false });
+  assert.equal(await review.onStop('t1', { event: 'Stop' }), null);
+  assert.equal(calls.length, 0);
+  assert.equal(records.length, 0);
+  assert.match(sent[0][2].reason, /sesión de tu cuenta de ChatGPT/);
+});
+
+test('con el turno sin revisión, las ediciones no se siguen', (t) => {
+  const { review, tabs } = makeReview(t, { enabled: false });
+  tabs.ensure('t1').folder = 'C:\\x';
+  review.turnStarted('t1', 'hola');
+  review.toolUsed('t1', 'Edit', 'a.js');
+  assert.equal(tabs.get('t1').edited, false);
+  assert.equal(tabs.get('t1').reviewRepo, undefined); // ni se busca el repositorio
 });
