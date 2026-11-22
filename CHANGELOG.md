@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.19.1 — 2026-11-22
+- El indicador de Codex ya no usa un reloj: cada cosa que hace tiene su propio icono animado, con el tiempo que lleva. El símbolo de código cuando revisa lo que ha cambiado Claude, una lista que se va marcando cuando critica un plan, un bocadillo cuando da una segunda opinión (un escudo si es de seguridad) y un pincel cuando genera una imagen.
+
 ## 0.19.0 — 2026-11-22
 - Junto a la rueda de opciones aparece «Codex»: en verde si está detectado en este equipo con tu cuenta de ChatGPT, en gris si no está instalado y en ámbar si está instalado pero le falta iniciar sesión. Al pasar el ratón te dice cómo está; al pulsarlo abre sus opciones o, si no se puede usar, vuelve a comprobarlo.
 - Mientras Codex trabaja se ve en qué: un reloj con las agujas girando cuando está asesorando a Claude (una segunda opinión, la crítica de un plan o una revisión) y un pincel pintando cuando genera una imagen. Junto a cada uno va el tiempo que lleva, y al pasar el ratón te dice para qué proyecto trabaja. Sustituye al punto verde de la rueda.

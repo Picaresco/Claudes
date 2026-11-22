@@ -82,12 +82,13 @@ const style = createStyle({
 // Servidor MCP de la app para Codex: las herramientas se ven como mcp__claudhome-codex__segunda_opinion
 // y mcp__claudhome-codex__generar_imagen.
 const CODEX_SERVER = OWN_MCP;
-// jobs: lo que Codex está haciendo ahora mismo, [{ kind: 'advise' | 'draw', tabId, what, startedAt }].
+// jobs: lo que Codex está haciendo ahora mismo, [{ kind: 'advise' | 'draw', tabId, what, icon, startedAt }]
+// (icon: con qué se pinta en la barra superior: 'review', 'plan', 'opinion', 'security' o 'draw').
 let codexState = { installed: false, loggedIn: false, mode: null, enabled: false, jobs: [], checkedAt: 0 };
 // Codex empieza (+1) o termina (-1) un trabajo para una pestaña: asesorar (una segunda
 // opinión, la crítica de un plan o una revisión) o dibujar una imagen.
-function codexJob(delta, kind, tabId, what) {
-  if (delta > 0) { codexState.jobs.push({ kind, tabId, what, startedAt: Date.now() }); return; }
+function codexJob(delta, kind, tabId, what, icon) {
+  if (delta > 0) { codexState.jobs.push({ kind, tabId, what, icon, startedAt: Date.now() }); return; }
   const at = codexState.jobs.findIndex((job) => job.kind === kind && job.tabId === tabId && job.what === what);
   if (at >= 0) codexState.jobs.splice(at, 1);
 }
@@ -100,7 +101,7 @@ const advisorUsable = () => codexUsable() && codexState.advisor !== false;
 function codexInfo() {
   const { installed, loggedIn, mode, enabled, advisor, limits } = codexState;
   // Para la interfaz: qué hace, para qué proyecto y desde cuándo.
-  const jobs = codexState.jobs.map((job) => ({ kind: job.kind, what: job.what, tab: (tabs.get(job.tabId) || {}).name || null, startedAt: job.startedAt }));
+  const jobs = codexState.jobs.map((job) => ({ kind: job.kind, what: job.what, icon: job.icon, tab: (tabs.get(job.tabId) || {}).name || null, startedAt: job.startedAt }));
   return {
     installed, loggedIn, mode, enabled, jobs, busy: jobs.length, advising: jobs.filter((job) => job.kind === 'advise').length, drawing: jobs.filter((job) => job.kind === 'draw').length,
     advisor: advisor !== false, usable: codexUsable(), active: enabled && codexUsable(), limits: limits || null,
@@ -148,7 +149,7 @@ async function codexTool(tabId, _name, args) {
   const cwd = (tabs.get(tabId) || {}).folder;
   if (!cwd) throw new Error('Esta sesión ya no está abierta en ClaudHome.');
   if (!codexState.enabled) throw new Error('Las imágenes con Codex están desactivadas en ClaudHome (indicador «Codex» de la barra superior).');
-  codexJob(1, 'draw', tabId, 'imagen');
+  codexJob(1, 'draw', tabId, 'imagen', 'draw');
   send('codex:changed', codexInfo());
   const startedAt = Date.now();
   appLog(`Codex: ${tabLabel(tabId)} pide una imagen (${String(args.descripcion || '').length} caracteres de descripción)`);
@@ -168,7 +169,7 @@ async function codexTool(tabId, _name, args) {
     appLog(`Codex: fallo tras ${Math.round((Date.now() - startedAt) / 1000)} s: ${err && err.message}`);
     throw err;
   } finally {
-    codexJob(-1, 'draw', tabId, 'imagen');
+    codexJob(-1, 'draw', tabId, 'imagen', 'draw');
     codexLimitsSoon();
     send('codex:changed', codexInfo());
   }
@@ -590,8 +591,8 @@ if (!app.requestSingleInstanceLock()) {
       checkLogin: () => codex.chatgptLogin(), // justo antes de cada revisión
       netlog: () => netlog, // se crea más tarde
       sandboxMissing: () => codexState.sandbox === false,
-      onBusy: (delta, tabId, what) => {
-        codexJob(delta, 'advise', tabId, what);
+      onBusy: (delta, tabId, what, icon) => {
+        codexJob(delta, 'advise', tabId, what, icon);
         send('codex:changed', codexInfo());
         if (delta < 0) codexLimitsSoon(); // lo gastado se ve al momento en la barra inferior
       },

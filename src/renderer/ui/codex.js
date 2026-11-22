@@ -53,6 +53,10 @@ export function renderCodex(info) {
 // en este equipo, si se le acaba el límite de uso y si está trabajando ahora mismo: en qué,
 // para qué proyecto y cuánto lleva.
 const LIMIT_WARN = 80; // % del límite de uso de Codex a partir del cual se avisa
+// Un icono por cada cosa que hace: revisar el código, criticar un plan, dar una segunda
+// opinión (un escudo si es de seguridad) o generar una imagen.
+const JOB_ICONS = { review: '#codex-job-review', plan: '#codex-job-plan', opinion: '#codex-job-opinion', security: '#codex-job-security', draw: '#codex-job-draw' };
+const iconOf = (job) => (JOB_ICONS[job.icon] ? job.icon : job.kind === 'draw' ? 'draw' : 'opinion');
 const quoted = (name) => (name ? `«${name}»` : 'una sesión');
 const listed = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}` : items.join(''));
 function renderCodexStatus() {
@@ -85,12 +89,11 @@ function renderCodexStatus() {
   const note = $('#codex-limit');
   note.hidden = !level;
   note.textContent = level === 'reached' ? 'agotado' : level ? `${Math.round(limits.pct)} %` : '';
-  $('#codex-advising').hidden = !advising.length;
-  $('#codex-drawing').hidden = !drawing.length;
+  for (const [icon, id] of Object.entries(JOB_ICONS)) $(id).hidden = !jobs.some((job) => iconOf(job) === icon);
   tickCodexStatus();
 }
 
-// El tiempo que lleva cada cosa (la más antigua de cada tipo), al segundo mientras trabaja.
+// El tiempo que lleva cada cosa (la más antigua de cada icono), al segundo mientras trabaja.
 let ticking = null;
 function elapsed(ms) {
   const seconds = Math.max(0, Math.round(ms / 1000));
@@ -98,12 +101,10 @@ function elapsed(ms) {
 }
 function tickCodexStatus() {
   const jobs = codexInfo && codexInfo.usable ? codexInfo.jobs || [] : [];
-  const since = (kind) => {
-    const starts = jobs.filter((job) => job.kind === kind).map((job) => job.startedAt);
-    return starts.length ? elapsed(Date.now() - Math.min(...starts)) : '';
-  };
-  $('#codex-advising-time').textContent = since('advise');
-  $('#codex-drawing-time').textContent = since('draw');
+  for (const [icon, id] of Object.entries(JOB_ICONS)) {
+    const starts = jobs.filter((job) => iconOf(job) === icon).map((job) => job.startedAt);
+    $(id).querySelector('.cx-time').textContent = starts.length ? elapsed(Date.now() - Math.min(...starts)) : '';
+  }
   if (jobs.length && !ticking) ticking = setInterval(tickCodexStatus, 1000);
   else if (!jobs.length && ticking) { clearInterval(ticking); ticking = null; }
 }

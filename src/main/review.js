@@ -128,8 +128,8 @@ function reasonFor(parsed, text) {
 // interruptor de depuración); netlog(): el «Log» (o null si aún no existe);
 // checkSecrets(cwd, signal): { ok, files, aborted, empty } de lo que se enviaría a Codex
 // (secrets.js); checkLogin(): si Codex tiene ahora mismo la sesión de ChatGPT;
-// onBusy(+1 | -1, tabId, qué): Codex empieza o deja de trabajar para esa pestaña (indicador
-// de la barra superior);
+// onBusy(+1 | -1, tabId, qué, icono): Codex empieza o deja de trabajar para esa pestaña
+// (indicador de la barra superior; icono: 'review', 'plan', 'opinion' o 'security');
 // sandboxMissing(): a Codex le falta configurar su zona protegida de Windows.
 function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true, onBusy = () => {}, sandboxMissing = () => false }) {
   let enabled = store.get('codexReview', false) === true; // apagado hasta que el usuario lo encienda
@@ -269,11 +269,11 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (record) {
       record.record({ tabId, kind: 'revision', target: `Cambios sin confirmar de ${cwd}`, detail: `${MODEL} · ${EFFORT}`, dest: 'OpenAI (Codex)', external: true });
     }
-    onBusy(1, tabId, 'revisión del código');
+    onBusy(1, tabId, 'revisión del código', 'review');
     let result;
     try {
       result = await codex.reviewChanges({ cwd, model: MODEL, effort: EFFORT, signal });
-    } finally { onBusy(-1, tabId, 'revisión del código'); }
+    } finally { onBusy(-1, tabId, 'revisión del código', 'review'); }
     const file = saveDetails(cwd, result);
     if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras revisaba
     if (tab.turn !== turn) { // el usuario ya ha seguido: lo encontrado no se le devuelve a Claude
@@ -347,12 +347,12 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     post({ state: 'plan-running' });
     log(`crítica del plan: empieza en ${cwd} (${MODEL}, ${EFFORT})`);
     recordOut(tabId, 'plan', 'Plan de Claude y la petición del usuario', cwd);
-    onBusy(1, tabId, 'crítica de un plan');
+    onBusy(1, tabId, 'crítica de un plan', 'plan');
     const link = linked(signal);
     let result;
     try {
       result = await codex.askCodex({ cwd, prompt: codex.planPrompt({ request: tab.request, plan }), model: MODEL, effort: EFFORT, signal: link.signal });
-    } finally { onBusy(-1, tabId, 'crítica de un plan'); link.done(); }
+    } finally { onBusy(-1, tabId, 'crítica de un plan', 'plan'); link.done(); }
     if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras criticaba
     if (tab.turn !== turn) return null;
     if (result.aborted) { post({ state: 'aborted', seconds: result.seconds }); return null; }
@@ -409,12 +409,14 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     log(`segunda opinión: ${tabs.label ? tabs.label(tabId) : tabId} pregunta a Codex (${scope}, ${question.length} caracteres)`);
     recordOut(tabId, 'opinion', `Segunda opinión (${codex.SCOPES[scope]})`, cwd);
     send('review:result', tabId, { state: 'opinion-running' });
-    onBusy(1, tabId, 'segunda opinión');
+    // Una consulta de seguridad se distingue en el indicador (un escudo en vez del bocadillo).
+    const job = scope === 'seguridad' ? ['segunda opinión de seguridad', 'security'] : ['segunda opinión', 'opinion'];
+    onBusy(1, tabId, ...job);
     const link = linked(signal);
     let result;
     try {
       result = await codex.askCodex({ cwd, prompt: codex.opinionPrompt({ question, scope, files }), model: MODEL, effort: EFFORT, signal: link.signal });
-    } finally { onBusy(-1, tabId, 'segunda opinión'); link.done(); }
+    } finally { onBusy(-1, tabId, ...job); link.done(); }
     send('review:result', tabId, { state: 'opinion-done', ok: result.ok, seconds: result.seconds });
     if (!enabled) throw new Error('El usuario ha apagado el asesoramiento de Codex mientras respondía: no se usa su respuesta.');
     if (result.aborted) throw new Error('La segunda opinión se ha cancelado.');

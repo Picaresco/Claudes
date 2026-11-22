@@ -245,8 +245,9 @@ h1, p { margin: 0; }
 .gear-btn { position: relative; width: 40px; height: 40px; }
 #btn-settings[aria-expanded="true"] { border-radius: 8px 8px 0 0; background: var(--bg2); color: var(--txt); }
 /* Codex, junto a la rueda: verde si está detectado, gris si no está instalado, ámbar si le
-   falta la sesión. Mientras trabaja: un reloj con las agujas girando (asesora a Claude) o un
-   pincel pintando (genera una imagen). */
+   falta la sesión. Mientras trabaja, un icono animado por cada cosa que hace: revisar el
+   código (</>), criticar un plan (una lista que se va marcando), dar una segunda opinión
+   (un bocadillo; un escudo si es de seguridad) o generar una imagen (un pincel pintando). */
 .codex-status { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: #7A818C; }
 .codex-status:hover { background: rgba(255, 255, 255, 0.06); }
 .codex-status[data-state="ready"] { color: #7FD4A0; }
@@ -259,13 +260,26 @@ h1, p { margin: 0; }
 .cx-limit { font-weight: 500; font-variant-numeric: tabular-nums; }
 .cx-work { display: flex; align-items: center; gap: 4px; color: var(--txt); }
 .cx-time { min-width: 2.2em; font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--dim); }
-.cx-hand { transform-origin: 12px 12px; animation: spin 1.5s linear infinite; }
-.cx-hand-slow { transform-origin: 12px 12px; animation: spin 18s linear infinite; }
+.cx-code-l { animation: cx-left 1.2s ease-in-out infinite; }
+.cx-code-r { animation: cx-right 1.2s ease-in-out infinite; }
+.cx-code-s, .cx-say { animation: cx-blink 1.2s ease-in-out infinite; }
+.cx-say { stroke-width: 2.6; }
+.cx-say2 { animation-delay: 0.2s; }
+.cx-say3 { animation-delay: 0.4s; }
+.cx-tick { animation: cx-tick 2.4s linear infinite both; }
+.cx-tick2 { animation-delay: 0.5s; }
+.cx-tick3 { animation-delay: 1s; }
+.cx-shield { stroke-dasharray: 11; animation: cx-check 1.6s ease-in-out infinite; }
 .cx-brush { transform-origin: 12px 14px; animation: cx-paint 1.1s ease-in-out infinite; }
 .cx-stroke { stroke-dasharray: 9; animation: cx-stroke 1.1s ease-in-out infinite; }
+@keyframes cx-left { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-2px); } }
+@keyframes cx-right { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(2px); } }
+@keyframes cx-blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@keyframes cx-tick { 0% { opacity: 0; } 12%, 78% { opacity: 1; } 90%, 100% { opacity: 0; } }
+@keyframes cx-check { 0% { stroke-dashoffset: 11; } 55%, 100% { stroke-dashoffset: 0; } }
 @keyframes cx-paint { 0%, 100% { transform: translateX(-2.5px) rotate(-9deg); } 50% { transform: translateX(2.5px) rotate(9deg); } }
 @keyframes cx-stroke { 0%, 100% { stroke-dashoffset: 9; } 50% { stroke-dashoffset: 0; } }
-@media (prefers-reduced-motion: reduce) { .cx-hand, .cx-hand-slow, .cx-brush, .cx-stroke { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cx-work * { animation: none; } }
 /* En ventanas estrechas queda el punto de color (y los iconos): el sitio es para las pestañas. */
 @media (max-width: 860px) { .cx-name, .cx-limit, .cx-time { display: none; } .codex-status { padding: 0 6px; } }
 .settings-menu { width: 360px; }
