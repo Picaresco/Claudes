@@ -240,6 +240,22 @@ h1, p { margin: 0; }
 .mic-btn[aria-pressed="true"]:hover { color: #CC9A1A; }
 .mic-btn[aria-pressed="true"] .mic-body { fill: currentColor; }
 
+/* Rueda de opciones: un panel con cada interruptor en su fila (nombre, qué hace e interruptor). */
+.gear-wrap { position: relative; display: flex; align-self: center; margin-right: 6px; -webkit-app-region: no-drag; }
+.gear-btn { position: relative; width: 40px; height: 40px; }
+#btn-settings[aria-expanded="true"] { border-radius: 8px 8px 0 0; background: var(--bg2); color: var(--txt); }
+.gear-dot { position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: #7FD4A0; display: none; }
+#btn-settings[data-busy="true"] .gear-dot { display: block; }
+.settings-menu { width: 360px; }
+.opt-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 10px; border-radius: 6px; text-align: left; }
+.opt-row:hover, .opt-row:focus-visible { background: var(--bg1); }
+.opt-text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.opt-name { font-size: 13px; font-weight: 600; color: var(--txt); }
+.opt-desc { font-size: 12px; color: var(--dim); }
+.opt-row[aria-checked="true"] .brief-switch, .opt-row[aria-pressed="true"] .brief-switch { background: rgba(141, 187, 250, 0.35); }
+.opt-row[aria-checked="true"] .brief-switch i, .opt-row[aria-pressed="true"] .brief-switch i { transform: translateX(11px); background: var(--focus); }
+#codex-chip[data-state="busy"] .opt-desc { color: #7FD4A0; }
+
 /* Interruptor «Resumido»: encendido, respuestas cortas; apagado, con explicaciones. */
 .brief-chip {
   display: flex;
@@ -411,9 +427,8 @@ body.dragging #workspace * { pointer-events: none; }
 .sb-attn { color: var(--alert); }
 .sb-done { color: #7FD4A0; }
 .sb-failed { color: #F2B866; }
-#sb-zoom, #sb-debug { padding: 2px 8px; border: 1px solid var(--line2); border-radius: 6px; font-size: 12px; color: var(--txt); }
-#sb-zoom:hover, #sb-debug:hover { border-color: var(--mute); }
-#sb-debug[aria-pressed="false"] { color: var(--dim); }
+#sb-zoom { padding: 2px 8px; border: 1px solid var(--line2); border-radius: 6px; font-size: 12px; color: var(--txt); }
+#sb-zoom:hover { border-color: var(--mute); }
 
 #toast {
   position: fixed;

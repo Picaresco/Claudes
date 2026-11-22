@@ -1,5 +1,5 @@
 // ── Acciones sobre pestañas ──────────────────────────────────────
-import { COLORS, MAX_RECENTS } from './constants.js';
+import { COLORS, MAX_RECENTS, MAX_TABS } from './constants.js';
 import { cleanContext } from './context.js';
 import { api, $, el } from './dom.js';
 import { renderAll, layout } from './render.js';
@@ -34,7 +34,19 @@ export function cycle(direction) {
   activate(next.id);
 }
 
+// ¿Cabe otro proyecto? Si ya hay MAX_TABS abiertos, lo avisa y devuelve false.
+export function roomForTab() {
+  if (S.tabs.length < MAX_TABS) return true;
+  api.choose({
+    message: `Ya tienes ${S.tabs.length} proyectos abiertos`,
+    detail: `El máximo es ${MAX_TABS}, para no saturar la barra superior. Cierra alguno (con la × de su pestaña) y vuelve a intentarlo: queda en «Recientes» con su conversación, y lo puedes reabrir cuando quieras.`,
+    buttons: ['Entendido'],
+  }).catch(() => { /* sin diálogo */ });
+  return false;
+}
+
 export function addTab(fields, mode) {
+  if (!roomForTab()) return null;
   const tab = {
     id: newId(),
     name: fields.name,

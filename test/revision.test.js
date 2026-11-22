@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createReview, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
-const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting } = require('../src/main/codex');
+const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting, limitsFrom } = require('../src/main/codex');
 const { Tabs } = require('../src/main/tabs');
 const { tempDir } = require('./helpers');
 
@@ -643,4 +643,28 @@ test('de la configuración del usuario se conservan solo su almacén de sesión 
   assert.equal(userSetting(toml, 'windows', 'sandbox'), 'elevated');
   assert.equal(userSetting(toml, null, 'sandbox'), null); // fuera de [windows] no cuenta
   assert.equal(userSetting('', 'windows', 'sandbox'), null);
+});
+
+test('del uso de la cuenta de Codex se toma el límite semanal', () => {
+  const week = { usedPercent: 7, windowDurationMins: 10080, resetsAt: 1795690311 };
+  assert.deepEqual(limitsFrom({ ordinaryUsageAllowed: true, rateLimits: { primary: week, secondary: null, planType: 'prolite', rateLimitReachedType: null } }),
+    { pct: 7, resetsAt: 1795690311000, windowMins: 10080, plan: 'prolite', reached: false, reachedWindow: null, other: null });
+  // Con dos ventanas, la semanal es la principal aunque venga en segundo lugar.
+  const five = { usedPercent: 40, windowDurationMins: 300, resetsAt: 1795600000 };
+  const both = limitsFrom({ rateLimits: { primary: five, secondary: week, planType: 'plus' } });
+  assert.equal(both.pct, 7);
+  assert.equal(both.other.pct, 40);
+  // Límite alcanzado, o uso no permitido.
+  assert.equal(limitsFrom({ rateLimits: { primary: week, rateLimitReachedType: 'rate_limit_reached' } }).reached, true);
+  // Agotada la de 5 horas: se dice cuándo se renueva esa, no la semanal.
+  const full5 = limitsFrom({ rateLimits: { primary: { ...five, usedPercent: 100 }, secondary: week, rateLimitReachedType: 'rate_limit_reached' } });
+  assert.deepEqual([full5.pct, full5.reachedWindow.windowMins, full5.reachedWindow.resetsAt], [7, 300, 1795600000000]);
+  // Las dos agotadas: la renovación más tardía (la semanal).
+  const both100 = limitsFrom({ rateLimits: { primary: { ...five, usedPercent: 100 }, secondary: { ...week, usedPercent: 100 }, rateLimitReachedType: 'rate_limit_reached' } });
+  assert.equal(both100.reachedWindow.windowMins, 10080);
+  assert.equal(limitsFrom({ ordinaryUsageAllowed: false, rateLimits: { primary: week } }).reached, true);
+  // Sin datos.
+  assert.equal(limitsFrom(null), null);
+  assert.equal(limitsFrom({ rateLimits: { primary: null, secondary: null } }), null);
+  assert.equal(limitsFrom({ rateLimitsByLimitId: { codex: { primary: week } } }).pct, 7);
 });

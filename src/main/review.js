@@ -266,7 +266,11 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (record) {
       record.record({ tabId, kind: 'revision', target: `Cambios sin confirmar de ${cwd}`, detail: `${MODEL} · ${EFFORT}`, dest: 'OpenAI (Codex)', external: true });
     }
-    const result = await codex.reviewChanges({ cwd, model: MODEL, effort: EFFORT, signal });
+    onBusy(1);
+    let result;
+    try {
+      result = await codex.reviewChanges({ cwd, model: MODEL, effort: EFFORT, signal });
+    } finally { onBusy(-1); }
     const file = saveDetails(cwd, result);
     if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras revisaba
     if (tab.turn !== turn) { // el usuario ya ha seguido: lo encontrado no se le devuelve a Claude

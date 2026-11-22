@@ -2,7 +2,7 @@
 import { SVG } from './constants.js';
 import { api, $, el } from './dom.js';
 import { S, info, swatch } from './state.js';
-import { addTab } from './tabs.js';
+import { addTab, roomForTab } from './tabs.js';
 
 export function renderRecents() {
   const list = $('#recents');
@@ -46,6 +46,7 @@ export function closePlusMenu() {
 export function reopenRecent(index) {
   const recent = S.recents[index];
   if (!recent) return;
+  if (!roomForTab()) { closePlusMenu(); return; } // se queda en Recientes
   S.recents.splice(index, 1);
   closePlusMenu();
   addTab(recent, 'resume');
@@ -60,6 +61,7 @@ export function openNewDialog() {
   closePlusMenu();
   const dialog = $('#dlg-new');
   if (dialog.open) return;
+  if (!roomForTab()) return; // ya hay el máximo de proyectos abiertos
   $('#f-folder').value = '';
   $('#f-name').value = '';
   $('#f-error').hidden = true;

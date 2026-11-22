@@ -45,21 +45,25 @@
     <span id="update-icon" class="update-icon" aria-hidden="true"></span>
     <span id="update-label">Actualizar</span>
   </button>
-  <button id="brief-btn" class="brief-chip" role="switch" aria-checked="false" hidden>
-    <span class="brief-switch" aria-hidden="true"><i></i></span>
-    <span>Resumido</span>
-  </button>
-  <button id="review-btn" class="brief-chip" role="switch" aria-checked="false" hidden>
-    <span class="brief-switch" aria-hidden="true"><i></i></span>
-    <span>Codex asesora</span>
-  </button>
-  <button id="mic-btn" class="mic-btn" aria-pressed="false" aria-label="Micrófono para dictar" hidden>
-    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect class="mic-body" x="6.5" y="1.75" width="5" height="9.5" rx="2.5"/><path d="M3.75 8.75a5.25 5.25 0 0 0 10.5 0M9 14v2.25M6.5 16.25h5"/></svg>
-  </button>
-  <button id="codex-chip" class="codex-chip" data-state="missing" aria-pressed="false" hidden>
-    <span class="codex-dot" aria-hidden="true"></span>
-    <span id="codex-label">Codex</span>
-  </button>
+  <!-- Rueda de opciones: todo lo que se enciende o se apaga, para dejar sitio a las pestañas. -->
+  <div class="gear-wrap">
+    <button id="btn-settings" class="icon-btn gear-btn" aria-label="Opciones" aria-controls="settings-menu" aria-expanded="false" title="Opciones: respuestas, Codex, micrófono y depuración">
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span class="gear-dot" aria-hidden="true"></span>
+    </button>
+    <div id="settings-menu" class="popover flip settings-menu" role="group" aria-label="Opciones" hidden>
+      <div class="menu-label">Respuestas</div>
+      <button id="brief-btn" class="opt-row" role="switch" aria-checked="false" hidden><span class="opt-text"><span class="opt-name">Resumido</span><span class="opt-desc">Respuestas cortas y al grano, sin explicaciones</span></span><span class="brief-switch" aria-hidden="true"><i></i></span></button>
+      <div class="menu-sep" aria-hidden="true"></div>
+      <div class="menu-label">Codex</div>
+      <button id="review-btn" class="opt-row" role="switch" aria-checked="false" hidden><span class="opt-text"><span class="opt-name">Codex asesora</span><span class="opt-desc">Segunda opinión, crítica de planes y revisión del código</span></span><span class="brief-switch" aria-hidden="true"><i></i></span></button>
+      <button id="codex-chip" class="opt-row" data-state="missing" aria-pressed="false" hidden><span class="opt-text"><span class="opt-name">Imágenes con Codex</span><span class="opt-desc"><span id="codex-label">Codex</span></span></span><span class="brief-switch" aria-hidden="true"><i></i></span></button>
+      <div class="menu-sep" aria-hidden="true"></div>
+      <div class="menu-label">Equipo</div>
+      <button id="mic-btn" class="opt-row" aria-pressed="false" aria-label="Micrófono para dictar" hidden><span class="opt-text"><span class="opt-name">Micrófono</span><span class="opt-desc">Dictar manteniendo pulsada la barra espaciadora</span></span><span class="brief-switch" aria-hidden="true"><i></i></span></button>
+      <button id="sb-debug" class="opt-row" aria-pressed="false" hidden><span class="opt-text"><span class="opt-name">Depuración</span><span class="opt-desc">Registros detallados de cada sesión, para soporte</span></span><span class="brief-switch" aria-hidden="true"><i></i></span></button>
+    </div>
+  </div>
 </header>
 
 <div id="toolbar" hidden>
@@ -128,8 +132,8 @@
   </div>
   <div class="sb-right">
     <span id="sb-plan" class="sb-usage" hidden><span class="sb-meter" aria-hidden="true"><i id="sb-plan-fill"></i></span><span id="sb-plan-text"></span></span>
+    <span id="sb-codex" class="sb-usage" hidden><span class="sb-meter" aria-hidden="true"><i id="sb-codex-fill"></i></span><span id="sb-codex-text"></span></span>
     <span id="sb-usage" class="sb-usage" hidden><span class="sb-meter" aria-hidden="true"><i id="sb-usage-fill"></i></span><span id="sb-usage-text"></span></span>
-    <button id="sb-debug" aria-pressed="false" hidden></button>
     <button id="sb-zoom" title="Tamaño del texto de esta pestaña. Ctrl + y Ctrl − lo cambian; pulsa para volver al 100 %." hidden></button>
     <span id="sb-hint">Ctrl+Tab cambia de pestaña · Ctrl+1…9 va directa</span>
   </div>

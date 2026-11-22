@@ -17,6 +17,7 @@ import {
   startDrag,
 } from './state.js';
 import { activate, cycle, closeTab, startRename, tabMenu, moveTab } from './tabs.js';
+import { closeSettings, toggleSettings } from './settings.js';
 import { toggleBrief, toggleReview, toggleVoice } from './toggles.js';
 import { clickUpdate } from './update.js';
 import { queueFit, focusTerminal, setZoom, toggleExtra } from './views.js';
@@ -141,6 +142,7 @@ export function wireChrome() {
   }
 
   $('#btn-plus').addEventListener('click', () => ($('#plus-menu').hidden ? openPlusMenu() : closePlusMenu()));
+  $('#btn-settings').addEventListener('click', toggleSettings);
   $('#plus-new').addEventListener('click', openNewDialog);
   $('#empty-new').addEventListener('click', openNewDialog);
   $('#recents').addEventListener('click', (e) => {
@@ -154,6 +156,7 @@ export function wireChrome() {
   });
   document.addEventListener('mousedown', (e) => {
     if (!e.target.closest('.plus-wrap')) closePlusMenu();
+    if (!e.target.closest('.gear-wrap')) closeSettings();
   }, true);
 
   $('#btn-terminal').addEventListener('click', () => toggleExtra());
@@ -234,6 +237,7 @@ export function wireKeyboard() {
   window.addEventListener('keydown', (e) => {
     if (dialogOpen()) return;
     if (e.key === 'Escape' && !$('#plus-menu').hidden) { closePlusMenu(); focusTerminal(); e.preventDefault(); e.stopPropagation(); return; }
+    if (e.key === 'Escape' && closeSettings()) { $('#btn-settings').focus(); e.preventDefault(); e.stopPropagation(); return; }
     // En un campo de texto de la app (no en la terminal) las teclas son suyas.
     if (e.target instanceof HTMLElement && e.target.matches('input, select, textarea')) return;
 

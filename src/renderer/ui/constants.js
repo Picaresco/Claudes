@@ -31,6 +31,9 @@ export const SVG = {
 
 // El color de la pestaña la distingue; el punto, su estado. «tone» marca los estados
 // que piden que mires la pestaña (y con qué color se escribe su nombre en la cabecera).
+// Proyectos abiertos a la vez como mucho, para no saturar la barra superior.
+export const MAX_TABS = 6;
+
 export const STATUS = {
   asleep: { icon: 'off', label: 'Sin iniciar' },
   starting: { icon: 'starting', label: 'Iniciando' },

@@ -37,6 +37,48 @@ function limitDetail(name, w) {
   return `${head}\n   Tokens usados ${w.expired ? 'desde la renovación' : 'en este periodo'}: ${nf.format(t.total)}${t.total ? ` (${tokensBreakdown(t)})` : ''}.`;
 }
 
+// Codex en este equipo y lo que lleva gastado su plan de ChatGPT (codexInfo de la app).
+export function renderCodexLimits(info) {
+  const box = $('#sb-codex');
+  if (!info) { box.hidden = true; return; }
+  box.hidden = false;
+  const meter = box.querySelector('.sb-meter');
+  const l = info.usable ? info.limits : null;
+  meter.hidden = !l;
+  box.dataset.level = l ? (l.reached ? 'high' : usageLevel(l.pct)) : 'low';
+  if (!info.installed) {
+    $('#sb-codex-text').textContent = 'Codex no detectado';
+    box.title = 'Codex no está instalado en este equipo. Si lo instalas e inicias sesión con tu cuenta de ChatGPT, Claude podrá usarlo como asesor y para generar imágenes.';
+    return;
+  }
+  if (!info.usable) {
+    $('#sb-codex-text').textContent = info.loggedIn ? 'Codex con clave de API' : 'Codex sin sesión';
+    box.title = info.loggedIn
+      ? 'Codex está instalado, pero con una clave de API: ClaudHome solo lo usa con tu cuenta de ChatGPT.'
+      : 'Codex está instalado, pero sin sesión. Ejecuta «codex login» con tu cuenta de ChatGPT y pulsa el indicador de Codex de arriba.';
+    return;
+  }
+  if (!l) {
+    $('#sb-codex-text').textContent = 'Codex detectado';
+    box.title = 'Codex está instalado con tu cuenta de ChatGPT. Su uso aparecerá aquí en cuanto se pueda leer.';
+    return;
+  }
+  const windowLabel = (mins) => (mins === 10080 ? 'semana' : !mins ? 'límite' : mins % 60 ? `${mins} min` : `${mins / 60} h`);
+  const label = windowLabel(l.windowMins);
+  const hm = (ms) => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  $('#sb-codex-fill').style.width = `${clamp(l.pct, 0, 100)}%`;
+  // Agotado: hasta cuándo, el de la ventana agotada (si se sabe), y el porcentaje semanal aparte.
+  const reached = l.reachedWindow;
+  const base = l.reached
+    ? `Codex: límite alcanzado${reached && reached.resetsAt ? ` hasta ${whenText(reached.resetsAt)}` : ''} · ${label} ${l.pct} %`
+    : `Codex: ${label} ${l.pct} %${l.resetsAt ? ` · se renueva ${whenText(l.resetsAt)}` : ''}`;
+  // Si la última lectura falló, el dato que se ve es el anterior: con su hora.
+  $('#sb-codex-text').textContent = l.stale && l.checkedAt ? `${base} · dato de las ${hm(l.checkedAt)}` : base;
+  const other = l.other ? `\nOtro límite: ${l.other.pct} %${l.other.resetsAt ? `, se renueva ${whenText(l.other.resetsAt)}` : ''}.` : '';
+  box.title = `Codex con tu cuenta de ChatGPT${l.plan ? ` (plan ${l.plan})` : ''}: ${l.pct} % del límite ${l.windowMins === 10080 ? 'semanal' : 'de uso'}${l.resetsAt ? `, se renueva ${whenText(l.resetsAt)}` : ''}.${other}\n\n`
+    + 'Incluye todo lo que uses de Codex con esa cuenta, también fuera de ClaudHome. Se actualiza cada 10 minutos y tras cada consulta a Codex.';
+}
+
 export function renderPlanLimits() {
   const plan = limitsSnap.plan;
   const box = $('#sb-plan');

@@ -9,7 +9,6 @@ export function renderDebug(info) {
   const button = $('#sb-debug');
   if (!debugInfo) { button.hidden = true; return; }
   button.hidden = false;
-  button.textContent = debugInfo.enabled ? 'Depuración: activada' : 'Depuración: desactivada';
   button.setAttribute('aria-pressed', String(debugInfo.enabled));
   button.title = debugInfo.enabled
     ? `Cada sesión de Claude guarda un registro detallado en ${debugInfo.dir} (se borran solos a la semana). Pulsa para desactivarlo. Los registros se abren con el botón derecho sobre una pestaña.`

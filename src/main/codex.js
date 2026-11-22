@@ -368,6 +368,99 @@ function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT })
   return runCodex({ args, cwd, signal, timeout });
 }
 
+// ── Límites de uso de la cuenta ──────────────────────────────────────
+// Huella de la sesión guardada de Codex (cambia al iniciar sesión con otra cuenta), para
+// no mostrar el uso de una cuenta como si fuera de otra. null si no se sabe.
+function authStamp() {
+  try { return fs.statSync(path.join(codexHome(), 'auth.json')).mtimeMs; } catch { return null; }
+}
+
+// Lo que lleva gastado el plan de ChatGPT en Codex, sin gastar nada: se le pregunta a
+// «codex app-server» por su protocolo (JSON-RPC por la entrada estándar) con
+// account/rateLimits/read, y se cierra. Tarda alrededor de un segundo.
+
+// De la respuesta de account/rateLimits/read: { pct, resetsAt (ms), windowMins, plan,
+// reached, other } (other: la otra ventana, si la hay) o null.
+function limitsFrom(result) {
+  const limits = result && (result.rateLimits || (result.rateLimitsByLimitId && result.rateLimitsByLimitId.codex));
+  if (!limits) return null;
+  const windows = [limits.primary, limits.secondary].filter((w) => w && Number.isFinite(w.usedPercent));
+  if (!windows.length) return null;
+  // La ventana semanal si la hay; si no, la más larga.
+  const main = windows.find((w) => w.windowDurationMins === 10080) || windows.reduce((a, b) => ((b.windowDurationMins || 0) > (a.windowDurationMins || 0) ? b : a));
+  const other = windows.find((w) => w !== main) || null;
+  const toWindow = (w) => ({ pct: w.usedPercent, resetsAt: Number.isFinite(w.resetsAt) ? w.resetsAt * 1000 : null, windowMins: w.windowDurationMins || null });
+  const reached = Boolean(limits.rateLimitReachedType) || result.ordinaryUsageAllowed === false;
+  // La ventana agotada (la que llega al 100 %), para decir cuándo se renueva esa y no otra;
+  // si hay varias, la que se renueva más tarde (hasta entonces no se puede usar).
+  const full = reached
+    ? windows.filter((w) => w.usedPercent >= 100).sort((a, b) => (b.resetsAt || 0) - (a.resetsAt || 0))[0] || null
+    : null;
+  return {
+    ...toWindow(main),
+    plan: limits.planType || null,
+    reached,
+    reachedWindow: full ? toWindow(full) : null,
+    other: other ? toWindow(other) : null,
+  };
+}
+
+const killTree = (child, viaCmd) => {
+  try {
+    if (viaCmd && process.platform === 'win32' && child.pid) execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {});
+    else child.kill();
+  } catch { /* ya había salido */ }
+};
+
+function readLimits(timeout = 15000) {
+  return new Promise((resolve) => {
+    const exe = findCodex();
+    if (!exe) { resolve(null); return; }
+    const l = launcher(exe);
+    let child;
+    try {
+      child = spawn(l.command, [...l.prefix, 'app-server'], { cwd: os.homedir(), env: reviewEnv(), stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, shell: l.shell });
+    } catch { resolve(null); return; }
+    let buf = '';
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      activeRuns.delete(stopRead);
+      try { child.stdin.end(); } catch { /* ya cerrada */ }
+      killTree(child, true); // también lo que lance (con npm, node lanza el Codex nativo)
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), timeout);
+    const stopRead = () => finish(null); // al cerrar la app (stopReviews)
+    activeRuns.add(stopRead);
+    const send = (msg) => { try { child.stdin.write(`${JSON.stringify(msg)}\n`); } catch { finish(null); } };
+    child.on('error', () => finish(null));
+    child.on('close', () => finish(null));
+    child.stdin.on('error', () => finish(null));
+    child.stdout.on('data', (chunk) => {
+      buf += chunk;
+      if (buf.length > 1024 * 1024) { finish(null); return; }
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.id === 1) {
+          if (msg.error) { finish(null); return; }
+          send({ method: 'initialized' });
+          send({ id: 2, method: 'account/rateLimits/read' }); // sin parámetros: las versiones antiguas no los admiten
+        } else if (msg.id === 2) {
+          finish(msg.error ? null : limitsFrom(msg.result));
+        }
+      }
+    });
+    send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'claudhome', version: '1' } } });
+  });
+}
+
 // Para todo lo de Codex en marcha (al cerrar la app).
 function stopReviews() {
   for (const stop of [...activeRuns]) stop();
@@ -491,4 +584,5 @@ function parseReview(text) {
 module.exports = {
   detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews, chatgptLogin,
   askCodex, opinionPrompt, planPrompt, lastAgentMessage, OPINION_TOOL, SCOPES, ISOLATED, launcher, userSetting,
+  readLimits, limitsFrom, authStamp,
 };

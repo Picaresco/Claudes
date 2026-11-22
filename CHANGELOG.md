@@ -4,6 +4,12 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.17.0 — 2026-11-22
+- La barra inferior muestra si hay Codex en este equipo y, con tu cuenta de ChatGPT, cuánto llevas gastado de su límite semanal y cuándo se renueva, junto al de Claude. Se actualiza al abrir la app, cada 10 minutos y justo después de cada consulta a Codex, sin gastar nada.
+- Si Codex no está instalado, no tiene sesión o usa una clave de API, la barra inferior también lo dice.
+- Nueva rueda de opciones en la barra superior: dentro están todos los interruptores (Resumido, Codex asesora, imágenes con Codex, micrófono y depuración), cada uno con una línea que explica para qué sirve. Así la barra superior queda para tus proyectos. Mientras Codex trabaja, la rueda lleva un punto verde.
+- Como mucho 6 proyectos abiertos a la vez, para no saturar la barra superior. Si intentas abrir otro, ClaudHome te avisa de que cierres alguno: queda en «Recientes» con su conversación.
+
 ## 0.16.0 — 2026-11-22
 - Codex pasa a ser el asesor de Claude. Si tienes Codex con tu cuenta de ChatGPT, Claude puede pedirle una segunda opinión cuando se enfrenta a una decisión importante o a un problema que no sale, en cualquier ámbito: código, seguridad, planes o flujos de trabajo. También puedes pedírsela tú: «pide una segunda opinión a Codex». Claude compara las dos opiniones y te da una sola recomendación, diciéndote en qué coinciden y en qué no.
 - El interruptor «Codex revisa» pasa a llamarse «Codex asesora» y lo controla todo: segunda opinión, crítica de planes y revisión del código. Viene apagado: enciéndelo si quieres que Claude use Codex. Apagado, Claude no le consulta nada a Codex ni se gasta de tu plan; las imágenes siguen con su propio indicador.

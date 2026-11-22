@@ -5,7 +5,7 @@
 // solo decide si la pulsación larga le llega (ver wireKeys).
 import { api, $ } from './dom.js';
 import { voiceOn, setVoiceOn, toast } from './state.js';
-import { focusTerminal } from './views.js';
+import { focusAfterToggle } from './settings.js';
 
 export function renderVoice(state) {
   setVoiceOn(Boolean(state && state.enabled));
@@ -39,7 +39,7 @@ export async function toggleBrief() {
   toast(briefOn
     ? 'Respuestas resumidas: desde tu próximo mensaje, Claude irá al grano en todas las pestañas.'
     : 'Respuestas con explicaciones: desde tu próximo mensaje, Claude contará sus decisiones y lo que ve del proyecto.');
-  focusTerminal();
+  focusAfterToggle($('#brief-btn'));
 }
 
 // ── Interruptor «Codex asesora» ─────────────────────────────────────
@@ -65,7 +65,7 @@ export async function toggleReview() {
   toast(reviewOn
     ? 'Codex asesora a Claude en todas las pestañas: segundas opiniones, crítica de los planes y revisión del código (estas dos, desde el siguiente turno). Gasta de tu plan de ChatGPT.'
     : 'Codex ya no asesora a Claude: no se le consulta nada ni gasta de tu plan de ChatGPT.');
-  focusTerminal();
+  focusAfterToggle($('#review-btn'));
 }
 
 export async function toggleVoice() {
@@ -73,5 +73,5 @@ export async function toggleVoice() {
   toast(voiceOn
     ? 'Micrófono activado: mantén pulsada la barra espaciadora para dictar y suéltala para terminar.'
     : 'Micrófono desactivado: la barra espaciadora vuelve a escribir solo espacios.');
-  focusTerminal();
+  focusAfterToggle($('#mic-btn'));
 }

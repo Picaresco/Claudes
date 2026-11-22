@@ -88,16 +88,45 @@ const codexUsable = () => codexState.installed && codexState.loggedIn && codexSt
 const advisorUsable = () => codexUsable() && codexState.advisor !== false;
 
 function codexInfo() {
-  const { installed, loggedIn, mode, enabled, busy, advisor } = codexState;
-  return { installed, loggedIn, mode, enabled, busy, advisor: advisor !== false, usable: codexUsable(), active: enabled && codexUsable() };
+  const { installed, loggedIn, mode, enabled, busy, advisor, limits } = codexState;
+  return { installed, loggedIn, mode, enabled, busy, advisor: advisor !== false, usable: codexUsable(), active: enabled && codexUsable(), limits: limits || null };
 }
 
 async function refreshCodex() {
   const found = await codex.detect();
   codexState = { ...codexState, ...found, checkedAt: Date.now() };
+  // El dato de uso es de una cuenta: sin sesión, o si la sesión ha cambiado, no vale.
+  if (!codexUsable() || (codexState.limits && codexState.limits.authStamp !== codex.authStamp())) codexState.limits = null;
   send('codex:changed', codexInfo());
+  refreshCodexLimits();
   return codexInfo();
 }
+
+// Uso del plan de ChatGPT en Codex (barra inferior): al detectarlo, cada 10 minutos y poco
+// después de cada trabajo de Codex. No gasta nada.
+let limitsBusy = false;
+let limitsAgain = false; // otra lectura pedida mientras había una en curso
+let limitsSoon = null;
+async function refreshCodexLimits() {
+  if (!codexUsable()) return;
+  if (limitsBusy) { limitsAgain = true; return; }
+  limitsBusy = true;
+  try {
+    const limits = await codex.readLimits();
+    if (limits) codexState.limits = { ...limits, checkedAt: Date.now(), stale: false, authStamp: codex.authStamp() };
+    else if (codexState.limits) codexState.limits = { ...codexState.limits, stale: true }; // se muestra con su hora
+    send('codex:changed', codexInfo());
+  } finally {
+    limitsBusy = false;
+    if (limitsAgain) { limitsAgain = false; refreshCodexLimits(); }
+  }
+}
+function codexLimitsSoon() {
+  clearTimeout(limitsSoon);
+  limitsSoon = setTimeout(refreshCodexLimits, 4000);
+}
+// Cada 10 minutos, también la sesión (por si se inicia o se cierra desde un terminal).
+setInterval(() => { refreshCodex().catch(() => { /* se intentará la próxima vez */ }); }, 10 * 60 * 1000);
 
 // Lo que ocurre cuando Claude llama a la herramienta «generar_imagen».
 async function codexTool(tabId, _name, args) {
@@ -125,6 +154,7 @@ async function codexTool(tabId, _name, args) {
     throw err;
   } finally {
     codexState.busy = Math.max(0, codexState.busy - 1);
+    codexLimitsSoon();
     send('codex:changed', codexInfo());
   }
 }
@@ -544,7 +574,11 @@ if (!app.requestSingleInstanceLock()) {
       checkSecrets: (cwd, signal) => (secrets ? secrets.reviewInput(cwd, signal) : { ok: false, files: [] }),
       checkLogin: () => codex.chatgptLogin(), // justo antes de cada revisión
       netlog: () => netlog, // se crea más tarde
-      onBusy: (delta) => { codexState.busy = Math.max(0, codexState.busy + delta); send('codex:changed', codexInfo()); },
+      onBusy: (delta) => {
+        codexState.busy = Math.max(0, codexState.busy + delta);
+        send('codex:changed', codexInfo());
+        if (delta < 0) codexLimitsSoon(); // lo gastado se ve al momento en la barra inferior
+      },
     });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
