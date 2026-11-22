@@ -77,14 +77,14 @@ const fingerprint = (kind, value) => crypto.createHash('sha256').update(`${kind}
 
 // Lo que parece una clave en un texto: [{ kind, line, fp }], sin el valor. Una por huella.
 // file: nombre del archivo (algunos patrones solo valen para ciertos tipos).
-function scanText(input, file = '') {
+function scanText(input, file = '', { allPatterns = false } = {}) {
   const out = [];
   const seen = new Set();
   const covered = []; // [inicio, fin) de los valores ya encontrados
   if (typeof input !== 'string' || !input || input.includes('\0')) return out; // vacío o binario
   const text = input.replace(/\r\n?/g, '\n'); // saltos de Windows: «$» es el final de la línea
   for (const { kind, re, group, generic, check, files, raw } of PATTERNS) {
-    if (files && !files.test(file)) continue;
+    if (files && !files.test(file) && !allPatterns) continue; // en un texto libre (una pregunta, un plan), todos
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(text)) && out.length < 20) {

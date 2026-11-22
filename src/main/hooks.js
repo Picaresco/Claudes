@@ -20,11 +20,15 @@ const EVENTS = [
 ];
 
 const HEAD_LIMIT = 64 * 1024; // de cada aviso solo interesa el principio
+const PLAN_HEAD_LIMIT = 1024 * 1024; // salvo del plan que presenta Claude (PlanReview), que se lee entero
+const PLAN_MAX = 60000; // caracteres de un plan que se le pasan a Codex; uno mayor no se critica
 const RESPOND_LIMIT = 2000; // ms que se espera como mucho a quien decide la respuesta (el hook caduca a los 5 s)
 // El hook Stop puede esperar a la revisión de Codex (review.js): Claude Code espera hasta
 // STOP_TIMEOUT y la app, un poco menos, para contestar siempre antes de que caduque.
+// Lo mismo vale para la crítica del plan (PlanReview: un PreToolUse solo de ExitPlanMode).
 const STOP_TIMEOUT = 900; // s
 const STOP_RESPOND_LIMIT = (STOP_TIMEOUT - 30) * 1000;
+const LONG_EVENTS = new Set(['Stop', 'PlanReview']);
 const EDIT_TOOL_NAMES = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 // Solape entre trozos al buscar la ruta del archivo editado: rutas de hasta 32 767
 // caracteres, aunque cada uno llegue escrito como \uXXXX (6 bytes).
@@ -151,8 +155,11 @@ class HookServer {
         reply(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
         return;
       }
+      // Si Claude Code deja de esperar (Esc), la herramienta se entera y puede parar.
+      const controller = new AbortController();
+      res.on('close', () => { if (!res.writableEnded) controller.abort(); });
       try {
-        const { status, json } = await this.mcp(tabId, body);
+        const { status, json } = await this.mcp(tabId, body, controller.signal);
         reply(status, json);
       } catch (err) {
         reply(500, { jsonrpc: '2.0', id: null, error: { code: -32603, message: String((err && err.message) || err) } });
@@ -197,6 +204,7 @@ class HookServer {
       return;
     }
     const [, , tabId, eventName] = match;
+    const headLimit = eventName === 'PlanReview' ? PLAN_HEAD_LIMIT : HEAD_LIMIT;
     const chunks = [];
     let kept = 0;
     let total = 0;
@@ -208,7 +216,7 @@ class HookServer {
     let tail = '';
     req.on('data', (chunk) => {
       total += chunk.length;
-      if (kept < HEAD_LIMIT) {
+      if (kept < headLimit) {
         chunks.push(chunk);
         kept += chunk.length;
       }
@@ -225,7 +233,7 @@ class HookServer {
     req.on('end', async () => {
       const head = Buffer.concat(chunks).toString('utf8');
       let payload = {};
-      if (total <= HEAD_LIMIT) {
+      if (total <= headLimit) {
         try { payload = JSON.parse(head); } catch { payload = {}; }
       } else {
         // Aviso grande (p. ej. la respuesta de leer un archivo): lo que interesa está al
@@ -243,6 +251,7 @@ class HookServer {
       }
       // Un cuerpo que no es un objeto (null, una lista…) se trata como vacío.
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) payload = {};
+      const rawPlan = eventName === 'PlanReview' && payload.tool_input && typeof payload.tool_input.plan === 'string' ? payload.tool_input.plan : null;
       const event = {
         event: eventName,
         sessionId: typeof payload.session_id === 'string' ? payload.session_id : null,
@@ -254,6 +263,12 @@ class HookServer {
         // Tras ejecutar una herramienta, el tamaño del aviso ≈ lo que recibió Claude.
         size: eventName === 'PostToolUse' ? total : null,
         prompt: typeof payload.prompt === 'string' ? payload.prompt.slice(0, 80) : null,
+        // El mensaje entero (hasta 4 000 caracteres), para la crítica de un plan.
+        request: eventName === 'UserPromptSubmit' && typeof payload.prompt === 'string' ? payload.prompt.slice(0, 4000) : null,
+        // El plan que presenta Claude (solo en PlanReview).
+        // Si no cabe entero, no se manda a medias: se marca como demasiado grande.
+        plan: rawPlan !== null && rawPlan.length <= PLAN_MAX ? rawPlan : null,
+        planTooBig: eventName === 'PlanReview' && (total > headLimit || (rawPlan !== null && rawPlan.length > PLAN_MAX)),
         // Carpeta de trabajo de la sesión (puede ser una subcarpeta del proyecto).
         cwd: typeof payload.cwd === 'string' ? payload.cwd : null,
         // En Stop: Claude ya sigue por una respuesta anterior a este mismo hook.
@@ -263,7 +278,7 @@ class HookServer {
       // la respuesta, uno lento (p. ej. tras una edición) podría pisar a otro posterior,
       // como el de «te necesita».
       try {
-        this.onEvent(tabId, event);
+        if (eventName !== 'PlanReview') this.onEvent(tabId, event); // ese ya llega como PreToolUse
       } catch (err) {
         console.error('Aviso de hook no procesado:', err.message);
       }
@@ -286,7 +301,7 @@ class HookServer {
           answer = await Promise.race([
             Promise.resolve(this.respond ? this.respond(tabId, eventName, event, controller.signal) : null),
             new Promise((resolve) => {
-              limit = setTimeout(() => { timedOut = true; controller.abort(); resolve(null); }, eventName === 'Stop' ? STOP_RESPOND_LIMIT : RESPOND_LIMIT);
+              limit = setTimeout(() => { timedOut = true; controller.abort(); resolve(null); }, LONG_EVENTS.has(eventName) ? STOP_RESPOND_LIMIT : RESPOND_LIMIT);
             }),
             // Si Claude Code deja de esperar, se deja de esperar también aquí.
             new Promise((resolve) => { controller.signal.addEventListener('abort', () => resolve(null), { once: true }); }),
@@ -317,6 +332,10 @@ class HookServer {
       const url = `http://127.0.0.1:${this.port}/hook/${this.token}/${tabId}/${event}`;
       hooks[event] = [{ hooks: [{ type: 'http', url, timeout: event === 'Stop' ? STOP_TIMEOUT : 5 }] }];
     }
+    // Al presentar un plan, Codex lo critica antes (review.js): este aviso va aparte, con
+    // su propia espera larga, y no se le pasa a la interfaz (ya llega el PreToolUse normal).
+    const planUrl = `http://127.0.0.1:${this.port}/hook/${this.token}/${tabId}/PlanReview`;
+    hooks.PreToolUse.push({ matcher: 'ExitPlanMode', hooks: [{ type: 'http', url: planUrl, timeout: STOP_TIMEOUT }] });
     fs.mkdirSync(this.dir, { recursive: true });
     const file = path.join(this.dir, `${tabId}.json`);
     fs.writeFileSync(file, JSON.stringify({ ...extra, hooks }, null, 2));

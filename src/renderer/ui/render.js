@@ -127,7 +127,7 @@ export function renderStatusbar() {
   let failed = 0;
   let sleeping = 0;
   for (const view of views.values()) {
-    if (view.status === 'working' || view.status === 'reviewing' || view.status === 'closing') working += 1;
+    if (['working', 'reviewing', 'planreview', 'consulting', 'closing'].includes(view.status)) working += 1;
     if (view.status === 'needs') { waiting += 1; attn += 1; }
     if (view.status === 'done') done += 1;
     if (view.status === 'failed') failed += 1;

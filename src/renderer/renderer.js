@@ -164,13 +164,13 @@ async function init() {
   api.onNotifyClick((tabId) => { if (byId(tabId)) activate(tabId); });
   api.onCodexChanged((codexState) => {
     renderCodex(codexState);
-    api.reviewGet().then(renderReview).catch(() => { /* sin botón «Codex revisa» */ });
+    api.reviewGet().then(renderReview).catch(() => { /* sin botón «Codex asesora» */ });
   });
   api.codexStatus(false).then(renderCodex).catch(() => { /* sin indicador hasta la próxima comprobación */ });
   api.debugGet().then(renderDebug).catch(() => { /* sin interruptor de depuración */ });
   api.voiceGet().then(renderVoice).catch(() => { /* sin botón de micrófono */ });
   api.briefGet().then(renderBrief).catch(() => { /* sin botón «Resumido» */ });
-  api.reviewGet().then(renderReview).catch(() => { /* sin botón «Codex revisa» */ });
+  api.reviewGet().then(renderReview).catch(() => { /* sin botón «Codex asesora» */ });
   api.onReviewResult(onReviewResult);
   api.onUpdateChanged(renderUpdate);
   api.updateGet().then((u) => {
@@ -188,7 +188,7 @@ async function init() {
   // Cierre de la app con «Guardar estado y cerrar»: cada sesión que trabaja deja
   // anotado su estado y, cuando todas han terminado, la app se cierra.
   api.onWrapUpAll(async () => {
-    const busy = [...views.values()].filter((v) => v.started && (v.closing || v.status === 'working' || v.status === 'reviewing' || v.status === 'needs'));
+    const busy = [...views.values()].filter((v) => v.started && (v.closing || ['working', 'reviewing', 'planreview', 'consulting', 'needs'].includes(v.status)));
     if (busy.length) toast(busy.length === 1 ? 'Claude está guardando su estado antes de cerrar…' : 'Las sesiones están guardando su estado antes de cerrar…', true);
     await Promise.all(busy.map(async (view) => {
       const result = await wrapUp(view);

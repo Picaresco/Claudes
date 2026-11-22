@@ -16,7 +16,7 @@ const codex = require('./codex');
 const { Updater } = require('./updater');
 const { createPreview } = require('./preview');
 const { createContext } = require('./context');
-const { NetLog } = require('./netlog');
+const { NetLog, OWN_MCP } = require('./netlog');
 const { Limits } = require('./limits');
 const { Growth, EDIT_TOOLS } = require('./growth');
 const { createReview } = require('./review');
@@ -77,15 +77,19 @@ const style = createStyle({
 
 // ── Codex ──────────────────────────────────────────────────────────
 
-const CODEX_SERVER = 'codex-imagenes'; // nombre del servidor MCP: la herramienta se ve como mcp__codex-imagenes__generar_imagen
+// Servidor MCP de la app para Codex: las herramientas se ven como mcp__claudhome-codex__segunda_opinion
+// y mcp__claudhome-codex__generar_imagen.
+const CODEX_SERVER = OWN_MCP;
 let codexState = { installed: false, loggedIn: false, mode: null, enabled: false, busy: 0, checkedAt: 0 };
 
 // Solo se usa con sesión de ChatGPT: es la suscripción lo que se quiere aprovechar.
 const codexUsable = () => codexState.installed && codexState.loggedIn && codexState.mode === 'chatgpt';
+// El asesor (segunda opinión, planes y revisión) necesita además una versión reciente de Codex.
+const advisorUsable = () => codexUsable() && codexState.advisor !== false;
 
 function codexInfo() {
-  const { installed, loggedIn, mode, enabled, busy } = codexState;
-  return { installed, loggedIn, mode, enabled, busy, usable: codexUsable(), active: enabled && codexUsable() };
+  const { installed, loggedIn, mode, enabled, busy, advisor } = codexState;
+  return { installed, loggedIn, mode, enabled, busy, advisor: advisor !== false, usable: codexUsable(), active: enabled && codexUsable() };
 }
 
 async function refreshCodex() {
@@ -104,6 +108,7 @@ async function codexTool(tabId, _name, args) {
   send('codex:changed', codexInfo());
   const startedAt = Date.now();
   appLog(`Codex: ${tabLabel(tabId)} pide una imagen (${String(args.descripcion || '').length} caracteres de descripción)`);
+  if (netlog) netlog.record({ tabId, kind: 'imagen', target: 'Descripción de una imagen', detail: `${String(args.descripcion || '').length} caracteres`, dest: 'OpenAI (Codex)', external: true });
   try {
     const result = await codex.generateImage({
       description: args.descripcion,
@@ -197,6 +202,8 @@ async function createPty(o) {
     appLog(`contexto de ${tabLabel(o.id)}: no se pudo preparar (${err.message})`);
   }
   const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, ctx.allow))];
+  // Solo al ejecutar desde el código: arrancar en un modo de permisos (p. ej. «plan»), para las pruebas.
+  if (DEV && process.env.CLAUDES_TEST_PERMISSION_MODE) args.push('--permission-mode', process.env.CLAUDES_TEST_PERMISSION_MODE);
   tab.usage = null;
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
   const plugins = style.sessionPlugins();
@@ -204,14 +211,17 @@ async function createPty(o) {
   style.started(o.id, plugins);
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
 
-  // Con las imágenes de Codex activadas, la sesión arranca con la herramienta «generar_imagen».
-  if (codexState.enabled && !codexState.checkedAt) await refreshCodex();
-  const withCodex = codexState.enabled && codexUsable();
+  // Con Codex instalado, la sesión arranca con las herramientas de la app: «segunda_opinion»
+  // (que se niega si no hay sesión de ChatGPT o el asesor está apagado: así sirve aunque se
+  // inicie sesión después) y «generar_imagen» si las imágenes están activadas.
+  if (!codexState.checkedAt) await refreshCodex();
+  const withMcp = Boolean(codexState.installed);
+  const withCodex = withMcp && codexState.enabled; // con la herramienta de imágenes
   tab.folder = o.cwd;
   tab.session = chosen.sessionId;
-  if (withCodex) {
+  if (withMcp) {
     args.push('--mcp-config', hookServer.mcpFile(o.id, CODEX_SERVER));
-    // Una imagen puede tardar más que el límite por defecto de una herramienta.
+    // Una imagen o una segunda opinión pueden tardar más que el límite por defecto de una herramienta.
     if (!process.env.MCP_TOOL_TIMEOUT) extraEnv.MCP_TOOL_TIMEOUT = String(10 * 60 * 1000);
   }
 
@@ -224,7 +234,7 @@ async function createPty(o) {
     tab.log = logFile;
   }
   appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
-    + `${withCodex ? ' · con Codex' : ''}${ctx.promptFile ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
+    + `${withMcp ? ` · con Codex (segunda opinión${withCodex ? ' e imágenes' : ''})` : ''}${ctx.promptFile ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
     + `${plugins.length ? ` · plugins: ${plugins.map((p) => p.name).join(', ')}` : ''}`
     + `${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
   const env = childEnv(extraEnv);
@@ -331,11 +341,11 @@ function registerIpc() {
   ipcMain.on('update:restart', restartToUpdate);
 
   // Botón «Resumido»: vale para todas las pestañas desde su siguiente mensaje.
-  // Interruptor «Codex revisa»: vale desde el siguiente turno, en todas las pestañas.
-  const reviewInfo = () => ({ enabled: review.enabled, usable: codexUsable(), model: review.MODEL, effort: review.EFFORT });
+  // Interruptor «Codex asesora»: apagarlo vale al momento; encenderlo, desde el siguiente turno.
+  const reviewInfo = () => ({ enabled: review.enabled, usable: advisorUsable(), model: review.MODEL, effort: review.EFFORT });
   ipcMain.handle('review:get', () => reviewInfo());
   ipcMain.handle('review:set', (_e, on) => {
-    review.enabled = Boolean(on) && codexUsable();
+    review.enabled = Boolean(on) && advisorUsable();
     appLog(`revisión de Codex ${review.enabled ? 'activada' : 'desactivada'}`);
     return reviewInfo();
   });
@@ -528,12 +538,13 @@ if (!app.requestSingleInstanceLock()) {
     });
     // Codex como segundo revisor (review.js): se crea antes que el servidor de hooks.
     review = createReview({
-      tabs, store, usable: codexUsable, codex, send, log: appLog, logsDir,
+      tabs, store, usable: advisorUsable, codex, send, log: appLog, logsDir,
       detailedLogs: () => logger.enabled, // la salida completa, solo con la depuración activada
       // Lo que lleve claves no se envía a Codex.
       checkSecrets: (cwd, signal) => (secrets ? secrets.reviewInput(cwd, signal) : { ok: false, files: [] }),
       checkLogin: () => codex.chatgptLogin(), // justo antes de cada revisión
       netlog: () => netlog, // se crea más tarde
+      onBusy: (delta) => { codexState.busy = Math.max(0, codexState.busy + delta); send('codex:changed', codexInfo()); },
     });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
@@ -543,12 +554,15 @@ if (!app.requestSingleInstanceLock()) {
       if (netlog) setImmediate(() => netlog.fromHook(tabId, event));
       // Lo que necesita la revisión de Codex: si el turno ha editado código y, al pararse,
       // si se va a revisar (la interfaz no lo da por terminado mientras tanto).
-      if (event.event === 'UserPromptSubmit') review.turnStarted(tabId, event.prompt);
+      if (event.event === 'UserPromptSubmit') review.turnStarted(tabId, event.prompt, event.request);
       if (event.event === 'PostToolUse') review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
       if (event.event === 'Stop') event.reviewing = review.willReview(tabId, event);
       // Con /clear la pestaña pasa a otra conversación: los hooks llevan la actual.
       const tab = tabs.get(tabId);
       if (event.sessionId && tab && tab.folder) tab.session = event.sessionId;
+      if (event.cwd && tab) tab.cwd = event.cwd; // donde trabaja ahora (para preguntar a Codex)
+      // La carpeta del agente que va a pedir una segunda opinión (puede ser un subagente en otra copia).
+      if (event.event === 'PreToolUse' && event.toolName === `mcp__${CODEX_SERVER}__${codex.OPINION_TOOL.name}` && tab) tab.opinionCwd = event.cwd;
       if (limits && (event.event === 'Stop' || event.event === 'StopFailure')) limits.refreshSoon();
       send('hook', tabId, event);
     });
@@ -580,6 +594,8 @@ if (!app.requestSingleInstanceLock()) {
     hookServer.respond = async (tabId, eventName, event, signal) => {
       // Al pararse Claude: la revisión de Codex, si toca.
       if (eventName === 'Stop') return review.onStop(tabId, event, signal);
+      // Al presentar un plan: la crítica de Codex, si toca.
+      if (eventName === 'PlanReview') return review.onPlan(tabId, event, signal);
       if (eventName === 'PostToolUse') {
         const tab = tabs.get(tabId);
         const file = event && EDIT_TOOLS.has(event.toolName) && event.toolInput && event.toolInput.file;
@@ -610,15 +626,16 @@ if (!app.requestSingleInstanceLock()) {
     hookServer.mcp = createMcp({
       name: 'claudes-codex',
       version: app.getVersion(),
-      tools: [codex.IMAGE_TOOL],
-      callTool: codexTool,
+      // La segunda opinión siempre; las imágenes, si están activadas.
+      tools: () => [...(codexState.installed && codexState.advisor !== false ? [codex.OPINION_TOOL] : []), ...(codexState.enabled && codexUsable() ? [codex.IMAGE_TOOL] : [])],
+      callTool: (tabId, name, args, signal) => (name === codex.OPINION_TOOL.name ? review.secondOpinion(tabId, args, signal) : codexTool(tabId, name, args)),
     });
     const innerMcp = hookServer.mcp;
-    hookServer.mcp = (tabId, body) => {
+    hookServer.mcp = (tabId, body, signal) => {
       const methods = [].concat(body).map((m) => (m && m.method) || '?').join(', ');
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[mcp]', methods);
       appLog(`MCP de ${tabLabel(tabId)}: ${methods}`);
-      return innerMcp(tabId, body);
+      return innerMcp(tabId, body, signal);
     };
     await hookServer.start();
     pasteboard.cleanOld();

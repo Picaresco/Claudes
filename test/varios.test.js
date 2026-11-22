@@ -76,6 +76,41 @@ test('el servidor MCP atiende lo necesario para ofrecer herramientas', async () 
   assert.equal(batch.json.length, 1);
 });
 
+test('el servidor MCP mira la lista de herramientas en cada consulta y avisa de la cancelación', async () => {
+  let images = false;
+  const seen = [];
+  const handle = createMcp({
+    name: 'prueba', version: '1.0.0',
+    tools: () => [{ name: 'opinion' }, ...(images ? [{ name: 'imagen' }] : [])],
+    callTool: async (tabId, name, args, signal) => { seen.push([name, signal]); return 'ok'; },
+  });
+  const list = async () => (await handle('t1', { jsonrpc: '2.0', id: 1, method: 'tools/list' })).json.result.tools.map((x) => x.name);
+  assert.deepEqual(await list(), ['opinion']);
+  assert.equal((await handle('t1', { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'imagen' } })).json.error.code, -32602);
+  images = true;
+  assert.deepEqual(await list(), ['opinion', 'imagen']);
+  // Si la conexión ya se ha cortado, la herramienta recibe la señal de cancelación activada.
+  const controller = new AbortController();
+  controller.abort();
+  await handle('t1', { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'opinion', arguments: {} } }, controller.signal);
+  assert.equal(seen[0][1].aborted, true);
+});
+
+test('el servidor MCP para una herramienta si el cliente avisa de que la cancela', async () => {
+  let signal;
+  const handle = createMcp({
+    name: 'prueba', version: '1.0.0', tools: [{ name: 'lenta' }],
+    callTool: (tabId, name, args, s) => new Promise((resolve) => { signal = s; s.addEventListener('abort', () => resolve('parada')); }),
+  });
+  const pending = handle('t1', { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'lenta', arguments: {} } });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(await handle('t2', { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 9 } }), { status: 202 }); // otra pestaña: no
+  assert.equal(signal.aborted, false);
+  assert.deepEqual(await handle('t1', { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 9 } }), { status: 202 });
+  assert.equal(signal.aborted, true);
+  assert.equal((await pending).json.result.content[0].text, 'parada');
+});
+
 test('el plugin explicativo incluido está completo y su texto se puede leer', () => {
   const dir = path.join(__dirname, '..', 'src', 'plugins', 'explanatory-output-style');
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8')).name, 'explanatory-output-style');

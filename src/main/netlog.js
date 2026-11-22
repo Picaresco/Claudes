@@ -14,6 +14,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Servidor MCP propio de ClaudHome (Codex: imágenes y segunda opinión).
+const OWN_MCP = 'claudhome-codex';
 
 const MAX_ENTRIES = 3000;
 const GROUP_MS = 5 * 60 * 1000;
@@ -26,6 +28,9 @@ const KIND_LABEL = {
   web: 'Página web',
   busqueda: 'Búsqueda en internet',
   revision: 'Revisión de Codex',
+  opinion: 'Segunda opinión de Codex',
+  plan: 'Crítica de un plan (Codex)',
+  imagen: 'Imagen con Codex',
 };
 
 // ── Direcciones locales o de internet ────────────────────────────────
@@ -115,6 +120,19 @@ class NetLog {
 
   entries() {
     return this.list.slice();
+  }
+
+  // Lo que Claude recibió de una herramienta propia: se suma a su última salida a Codex.
+  addSize(tabId, size) {
+    if (!size) return;
+    for (let i = this.list.length - 1; i >= 0; i -= 1) {
+      const entry = this.list[i];
+      if (entry.tabId !== tabId || !['opinion', 'imagen'].includes(entry.kind)) continue;
+      if (Date.now() - entry.last > GROUP_MS * 3) return;
+      entry.size += size;
+      this.send('netlog:update', entry);
+      return;
+    }
   }
 
   record({ tabId, kind, target, detail = '', dest, external = false, size = 0 }) {
@@ -222,10 +240,11 @@ class NetLog {
     } else if (tool.startsWith('mcp__')) {
       const [, server = '', name = ''] = /^mcp__(.+?)__(.+)$/.exec(tool) || [];
       if (!server) return;
+      if (server === OWN_MCP) { this.addSize(tabId, size); return; } // el de ClaudHome ya anotó adónde va (OpenAI)
       const host = server.startsWith('claude_ai_') ? 'claude.ai' : this.remoteMcp(this.cwdOf(tabId)).get(server) || null;
       this.record({ ...base, kind: 'mcp', target: `${server} · ${name}`, detail: input.summary || '', dest: host ? `${host} y Anthropic` : 'Anthropic', external: Boolean(host) });
     }
   }
 }
 
-module.exports = { NetLog, redact, isPublic, isPublicHost, isExternalCommand, externalTargets };
+module.exports = { OWN_MCP, NetLog, redact, isPublic, isPublicHost, isExternalCommand, externalTargets };

@@ -15,21 +15,23 @@ export function renderCodex(info) {
   let title;
   if (!codexInfo.installed) {
     label = 'Codex no detectado';
-    title = 'No encuentro Codex en este equipo. Si lo instalas e inicias sesión con tu suscripción de ChatGPT, Claude podrá pedirle imágenes. Pulsa para volver a comprobar.';
+    title = 'No encuentro Codex en este equipo. Si lo instalas e inicias sesión con tu suscripción de ChatGPT, Claude podrá pedirle segundas opiniones, revisiones e imágenes. Pulsa para volver a comprobar.';
   } else if (!codexInfo.loggedIn) {
     label = 'Codex sin sesión';
     title = 'Codex está instalado pero sin sesión iniciada. Ejecuta «codex login» y pulsa aquí para volver a comprobar.';
   } else if (codexInfo.mode !== 'chatgpt') {
     label = 'Codex sin suscripción';
     title = 'Codex tiene sesión con una clave de API, no con una suscripción de ChatGPT. Las imágenes con Codex solo se activan con suscripción.';
+  } else if (codexInfo.busy > 0) {
+    state = 'busy';
+    label = 'Codex trabajando…';
+    title = 'Codex está trabajando para una sesión: una segunda opinión, la crítica de un plan o una imagen.';
   } else if (!codexInfo.enabled) {
     state = 'ready';
     label = 'Codex detectado';
-    title = 'Suscripción de ChatGPT detectada en Codex. Pulsa para que Claude pueda pedirle imágenes a Codex.';
-  } else if (codexInfo.busy > 0) {
-    state = 'busy';
-    label = 'Codex generando…';
-    title = 'Codex está generando una imagen para una sesión.';
+    title = codexInfo.advisor === false
+      ? 'Suscripción de ChatGPT detectada en Codex, pero esta versión de Codex es antigua para asesorar a Claude: actualízala (npm i -g @openai/codex). Pulsa para que Claude pueda pedirle imágenes.'
+      : 'Suscripción de ChatGPT detectada en Codex. Enciende «Codex asesora» para que asesore a Claude; pulsa aquí para que también pueda pedirle imágenes.';
   } else {
     state = 'on';
     label = 'Imágenes con Codex';

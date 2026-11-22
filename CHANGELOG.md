@@ -4,6 +4,16 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.16.0 — 2026-11-22
+- Codex pasa a ser el asesor de Claude. Si tienes Codex con tu cuenta de ChatGPT, Claude puede pedirle una segunda opinión cuando se enfrenta a una decisión importante o a un problema que no sale, en cualquier ámbito: código, seguridad, planes o flujos de trabajo. También puedes pedírsela tú: «pide una segunda opinión a Codex». Claude compara las dos opiniones y te da una sola recomendación, diciéndote en qué coinciden y en qué no.
+- El interruptor «Codex revisa» pasa a llamarse «Codex asesora» y lo controla todo: segunda opinión, crítica de planes y revisión del código. Viene apagado: enciéndelo si quieres que Claude use Codex. Apagado, Claude no le consulta nada a Codex ni se gasta de tu plan; las imágenes siguen con su propio indicador.
+- Con «Codex asesora» encendido, Codex también critica cada plan de Claude antes de que lo veas. Claude lo ajusta y te lo presenta con una sección «Segunda opinión (Codex)». Mientras tanto, la pestaña muestra «Codex está revisando el plan».
+- Codex siempre trabaja en solo lectura y aislado (sin tu configuración de Codex ni sus servidores MCP, sin control del ordenador ni navegador): lee el proyecto para opinar, pero nunca cambia nada. Quien decide y actúa es Claude, y quien aprueba, tú. Lo que se le pregunta sale hacia OpenAI y queda en el «Log»; si lleva una clave, no se envía.
+- El indicador de Codex de la barra superior muestra «Codex trabajando…» mientras da una opinión, critica un plan o genera una imagen.
+- Arreglado: con Codex instalado con npm, una carpeta con espacios en su ruta, o en una unidad de red, podía hacer fallar la generación de imágenes.
+- Si tu versión de Codex es demasiado antigua para asesorar a Claude, el indicador de Codex te pide actualizarla.
+- Al apagar «Codex asesora» se para al momento lo que Codex estuviera haciendo para Claude.
+
 ## 0.15.1 — 2026-11-22
 - «Codex revisa» comprueba justo antes de cada revisión que Codex tiene la sesión de tu cuenta de ChatGPT, sin riesgo de cerrarte la sesión de Codex si algún día usas una clave de API. Usa siempre el modelo que anuncia, aunque tu configuración de Codex diga otro.
 - Si Claude ya ha confirmado sus cambios, o apagas el interruptor mientras se prepara la revisión, Codex no se lanza.

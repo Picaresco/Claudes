@@ -91,3 +91,12 @@ test('NetLog marca lo que sale a internet y tapa los secretos', (t) => {
   assert.ok(!web.target.includes('abc'));
   assert.equal(mcp.dest, 'claude.ai y Anthropic');
 });
+
+test('la respuesta de las herramientas propias se suma a su salida a Codex, sin otra entrada', (t) => {
+  const { log } = makeLog(t);
+  log.record({ tabId: 't1', kind: 'opinion', target: 'Segunda opinión (código)', dest: 'OpenAI (Codex)', external: true });
+  log.fromHook('t1', { event: 'PostToolUse', toolName: 'mcp__claudhome-codex__segunda_opinion', toolInput: { summary: '{}' }, size: 5000 });
+  const entries = log.entries();
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].size, 5000);
+});

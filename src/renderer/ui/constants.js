@@ -37,6 +37,8 @@ export const STATUS = {
   idle: { icon: 'idle', label: 'Activa, esperando tu mensaje' },
   working: { icon: 'working', label: 'Trabajando' },
   reviewing: { icon: 'working', label: 'Codex está revisando el código' },
+  planreview: { icon: 'working', label: 'Codex está revisando el plan' },
+  consulting: { icon: 'working', label: 'Claude le pide una segunda opinión a Codex' },
   needs: { icon: 'attn', label: 'Te necesita', tone: 'alert' },
   done: { icon: 'done', label: 'Ha terminado', tone: 'done' },
   failed: { icon: 'failed', label: 'Se ha detenido por un error', tone: 'warn' },

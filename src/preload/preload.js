@@ -75,7 +75,7 @@ contextBridge.exposeInMainWorld('api', {
   briefGet: () => ipcRenderer.invoke('brief:get'),
   briefSet: (on) => ipcRenderer.invoke('brief:set', Boolean(on)),
 
-  // Interruptor «Codex revisa»: Codex revisa el código que cambia Claude al terminar cada turno.
+  // Interruptor «Codex asesora»: segunda opinión, crítica de planes y revisión del código.
   reviewGet: () => ipcRenderer.invoke('review:get'),
   reviewSet: (on) => ipcRenderer.invoke('review:set', Boolean(on)),
   onReviewResult: on('review:result'), // (tabId, { state, count, priorities, seconds, file, reason })

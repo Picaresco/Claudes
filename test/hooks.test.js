@@ -50,7 +50,7 @@ test('un aviso de hook llega con lo que interesa y sin token no se atiende', asy
   await waitFor(() => events.length === 1);
   assert.deepEqual({ ...events[0], size: null }, {
     tabId: 't1', event: 'PostToolUse', sessionId: 's1', notificationType: null, message: null,
-    toolName: 'Bash', toolInput: { command: 'npm test' }, background: true, size: null, prompt: null, cwd: null, stopHookActive: false,
+    toolName: 'Bash', toolInput: { command: 'npm test' }, background: true, size: null, prompt: null, request: null, plan: null, planTooBig: false, cwd: null, stopHookActive: false,
   });
   assert.ok(events[0].size > 0);
   const bad = await post(`http://127.0.0.1:${server.port}/hook/${'0'.repeat(32)}/t1/Stop`, {});
@@ -195,4 +195,59 @@ test('si la respuesta no llega a tiempo, se contesta vacío y quien responde se 
   const res = await post(urlOf('PostToolUse'), { tool_name: 'Edit', tool_input: { file_path: 'a.js' } });
   assert.equal(res.status, 200); // a los 2 s, vacío
   assert.equal(signal.aborted, true);
+});
+
+test('el plan que presenta Claude llega aparte, con espera larga y sin repetir el aviso', async (t) => {
+  const { server, events, settings, post } = await startServer(t);
+  const entry = settings.hooks.PreToolUse.find((h) => h.matcher === 'ExitPlanMode');
+  assert.equal(entry.hooks[0].timeout, 900);
+  assert.match(entry.hooks[0].url, /\/t1\/PlanReview$/);
+  assert.equal(settings.hooks.PreToolUse[0].matcher, undefined); // el normal, para todas las herramientas
+  let seen = null;
+  server.respond = (tabId, eventName, event) => new Promise((resolve) => {
+    seen = { eventName, plan: event.plan };
+    setTimeout(() => resolve({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'crítica' } }), 2300); // más que los 2 s normales
+  });
+  const res = await post(entry.hooks[0].url, { tool_name: 'ExitPlanMode', tool_input: { plan: '1. Hacer A\n2. Hacer B' } });
+  assert.equal((await res.json()).hookSpecificOutput.permissionDecision, 'deny');
+  assert.deepEqual(seen, { eventName: 'PlanReview', plan: '1. Hacer A\n2. Hacer B' });
+  assert.equal(events.length, 0); // a la interfaz ya le llega el PreToolUse normal
+});
+
+test('el mensaje del usuario llega entero para criticar un plan', async (t) => {
+  const { events, urlOf, post } = await startServer(t);
+  await post(urlOf('UserPromptSubmit'), { prompt: 'x'.repeat(5000) });
+  await waitFor(() => events.length === 1);
+  assert.equal(events[0].prompt.length, 80);
+  assert.equal(events[0].request.length, 4000);
+});
+
+test('si Claude Code deja de esperar a una herramienta MCP, esta se entera', async (t) => {
+  const { server } = await startServer(t);
+  let signal;
+  server.mcp = (tabId, body, s) => { signal = s; return new Promise(() => {}); };
+  const url = `http://127.0.0.1:${server.port}/mcp/${server.token}/t1`;
+  const controller = new AbortController();
+  const pending = fetch(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' }), signal: controller.signal }).catch(() => null);
+  await waitFor(() => signal);
+  controller.abort();
+  await pending;
+  await waitFor(() => signal.aborted);
+});
+
+test('un plan grande se lee entero, y uno enorme se marca', async (t) => {
+  const { server, settings, post } = await startServer(t);
+  const url = settings.hooks.PreToolUse.find((h) => h.matcher === 'ExitPlanMode').hooks[0].url;
+  const seen = [];
+  server.respond = (tabId, eventName, event) => { seen.push(event); return null; };
+  const plan = `1. ${'ñ'.repeat(40000)}`; // 40 000 caracteres y unos 80 KB: más que el principio que se guarda de otros avisos
+  await post(url, { cwd: 'C:\\p', tool_name: 'ExitPlanMode', tool_input: { plan } });
+  assert.equal(seen[0].plan, plan);
+  assert.equal(seen[0].planTooBig, false);
+  assert.equal(seen[0].cwd, 'C:\\p');
+  // Más de 60 000 caracteres: no se recorta en silencio, se marca.
+  await post(url, { tool_name: 'ExitPlanMode', tool_input: { plan: 'x'.repeat(70000) } });
+  assert.deepEqual([seen[1].plan, seen[1].planTooBig], [null, true]);
+  await post(url, { tool_name: 'ExitPlanMode', tool_input: { plan: 'x'.repeat(1100 * 1024) } });
+  assert.equal(seen[2].planTooBig, true);
 });

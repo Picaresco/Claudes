@@ -42,7 +42,7 @@ export async function toggleBrief() {
   focusTerminal();
 }
 
-// ── Interruptor «Codex revisa» ─────────────────────────────────────
+// ── Interruptor «Codex asesora» ─────────────────────────────────────
 // Encendido: al terminar un turno en el que Claude ha cambiado código, Codex lo revisa y
 // Claude corrige lo que encuentre. Solo se ve con Codex instalado y sesión de ChatGPT.
 
@@ -55,16 +55,16 @@ export function renderReview(state) {
   button.hidden = false;
   button.setAttribute('aria-checked', String(reviewOn));
   button.title = reviewOn
-    ? `Codex revisa: activado. Al terminar un turno en el que Claude ha cambiado código, Codex (${state.model}, razonamiento ${state.effort}) revisa todos los cambios sin confirmar del proyecto, también los tuyos, y Claude corrige lo que sea un fallo real. Lo revisado se envía a OpenAI (si lleva claves, no se envía) y gasta de tu plan de ChatGPT; como Claude, Codex puede abrir otros archivos del proyecto para entender los cambios. Añade entre medio minuto y unos minutos por turno. Solo en proyectos con git. Pulsa para desactivarlo.`
-    : 'Codex revisa: desactivado. Pulsa para que Codex revise, como segundo revisor, los cambios sin confirmar del proyecto cuando Claude termine un turno en el que ha cambiado código. Lo revisado se envía a OpenAI.';
+    ? `Codex asesora: activado. Codex (${state.model}, razonamiento ${state.effort}) ayuda a Claude a decidir mejor, siempre en solo lectura: Claude le pide una segunda opinión ante decisiones importantes o problemas que no salen (o cuando tú se la pidas), Codex critica cada plan antes de que lo veas y revisa el código que cambie Claude al terminar cada turno (también tus cambios sin confirmar, en proyectos con git). Lo consultado se envía a OpenAI (si lleva claves, no se envía) y gasta de tu plan de ChatGPT. Pulsa para apagarlo: Claude dejará de consultar a Codex.`
+    : 'Codex asesora: apagado. Claude no consulta nada a Codex ni se gasta de tu plan de ChatGPT. Pulsa para que Codex le dé segundas opiniones, critique sus planes y revise su código, siempre en solo lectura.';
 }
 
 export async function toggleReview() {
   const state = await api.reviewSet(!reviewOn);
   renderReview(state);
   toast(reviewOn
-    ? 'Desde el siguiente turno, en todas las pestañas, Codex revisará los cambios sin confirmar del proyecto (también los tuyos) cuando Claude cambie código. Se envían a OpenAI.'
-    : 'Codex ya no revisa el código al terminar cada turno.');
+    ? 'Codex asesora a Claude en todas las pestañas: segundas opiniones, crítica de los planes y revisión del código (estas dos, desde el siguiente turno). Gasta de tu plan de ChatGPT.'
+    : 'Codex ya no asesora a Claude: no se le consulta nada ni gasta de tu plan de ChatGPT.');
   focusTerminal();
 }
 

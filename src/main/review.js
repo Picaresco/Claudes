@@ -1,4 +1,15 @@
-// Codex como segundo revisor del código que escribe Claude (interruptor «Codex revisa»).
+// Codex como asesor de Claude, siempre en solo lectura: opina y critica; quien decide y
+// cambia es Claude, y quien aprueba, el usuario.
+//
+// Todo depende del interruptor «Codex asesora», que viene apagado: lo enciende el usuario si
+// quiere usar Codex. Apagado, no se le consulta nada ni se gasta del plan de ChatGPT.
+// - Segunda opinión (herramienta «segunda_opinion»): Claude se la pide ante decisiones
+//   importantes o problemas que no salen, en cualquier ámbito (código, seguridad, planes,
+//   flujos de trabajo), o cuando el usuario se lo pide.
+// - Crítica de cada plan antes de que el usuario lo vea (hook PreToolUse de ExitPlanMode).
+// - Revisión del código al terminar un turno.
+//
+// Revisión del código:
 //
 // Con el interruptor encendido, cuando Claude termina un turno en el que ha editado código
 // (Edit, Write, MultiEdit o NotebookEdit sobre un archivo de código), la app lo retiene en
@@ -21,6 +32,28 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { EDIT_TOOLS, CODE } = require('./growth');
+const { scanText, decodeText } = require('./secrets');
+
+// ¿Lleva algo con pinta de clave? Con todos los patrones (también los de configuración: un
+// YAML pegado en una pregunta), y un carácter nulo no puede esconder el resto del texto.
+const hasSecret = (...texts) => scanText(texts.map((t) => String(t || '')).join('\n').replace(/\0/g, ''), '', { allPatterns: true }).length > 0;
+const MAX_FILE = 2 * 1024 * 1024;
+
+// De los archivos que Claude le señala a Codex, el primero que lleve claves o no se pueda
+// comprobar: { file, why } o null. Los que no existen no cuentan (Codex no los verá).
+async function checkFiles(cwd, files) {
+  for (const file of files.slice(0, 30)) {
+    const full = path.resolve(cwd, file);
+    let st;
+    try { st = await fs.promises.stat(full); } catch { continue; }
+    if (!st.isFile()) continue;
+    if (st.size > MAX_FILE) return { file, why: 'big' };
+    let text;
+    try { text = decodeText(await fs.promises.readFile(full)); } catch { return { file, why: 'unreadable' }; }
+    if (text !== null && scanText(text, full).length) return { file, why: 'secret' };
+  }
+  return null;
+}
 
 const MODEL = 'gpt-6.2-astra'; // el más capaz de los que ofrece Codex con ChatGPT (noviembre de 2026)
 const EFFORT = 'xhigh';
@@ -93,14 +126,26 @@ function reasonFor(parsed, text) {
 // registros; detailedLogs(): si se guarda la salida completa de cada revisión (el
 // interruptor de depuración); netlog(): el «Log» (o null si aún no existe);
 // checkSecrets(cwd, signal): { ok, files, aborted, empty } de lo que se enviaría a Codex
-// (secrets.js); checkLogin(): si Codex tiene ahora mismo la sesión de ChatGPT.
-function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true }) {
-  let enabled = store.get('codexReview', false) === true;
+// (secrets.js); checkLogin(): si Codex tiene ahora mismo la sesión de ChatGPT;
+// onBusy(+1 | -1): Codex empieza o deja de trabajar (indicador de la barra superior).
+function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true, onBusy = () => {} }) {
+  let enabled = store.get('codexReview', false) === true; // apagado hasta que el usuario lo encienda
+  // Consultas a Codex en marcha: al apagar el interruptor se paran todas.
+  const running = new Set();
+  function linked(signal) {
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    if (signal) { if (signal.aborted) controller.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+    running.add(controller);
+    return { signal: controller.signal, done: () => { running.delete(controller); if (signal) signal.removeEventListener('abort', onAbort); } };
+  }
 
   // Empieza un turno: todavía no ha editado nada ni se ha revisado. Se revisará solo si el
   // interruptor estaba encendido al empezar, y nunca el turno de cerrar la sesión.
-  function turnStarted(tabId, prompt) {
+  function turnStarted(tabId, prompt, request = null) {
     const tab = tabs.ensure(tabId);
+    tab.request = typeof request === 'string' ? request : (typeof prompt === 'string' ? prompt : ''); // para criticar un plan
+    tab.planReviewed = false;
     tab.turn = (tab.turn || 0) + 1;
     tab.edited = false;
     tab.reviewRepo = undefined; // repositorio de lo editado: undefined = aún nada, '' = sin git, null = varios
@@ -172,6 +217,14 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       return null;
     }
     // Lo que se va a enviar no puede llevar claves (y tiene que poder comprobarse).
+    const link = linked(signal);
+    try {
+      return await reviewRun(tabId, tab, turn, post, cwd, link.signal);
+    } finally { link.done(); }
+  }
+
+  // La revisión, ya decidido el repositorio: comprobación de claves, cuenta y Codex.
+  async function reviewRun(tabId, tab, turn, post, cwd, signal) {
     const input = await checkSecrets(cwd, signal);
     if (input.aborted || (signal && signal.aborted)) {
       post({ state: 'aborted', seconds: 0 });
@@ -215,6 +268,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     }
     const result = await codex.reviewChanges({ cwd, model: MODEL, effort: EFFORT, signal });
     const file = saveDetails(cwd, result);
+    if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras revisaba
     if (tab.turn !== turn) { // el usuario ya ha seguido: lo encontrado no se le devuelve a Claude
       log(`revisión de Codex: terminada tras ${result.seconds} s, pero el turno ya había cambiado; no se usa`);
       return null;
@@ -238,13 +292,133 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     return { decision: 'block', reason: reasonFor(parsed, result.text) };
   }
 
+  // Anota una salida hacia OpenAI antes de hacerla.
+  function recordOut(tabId, kind, target, cwd) {
+    const record = netlog();
+    if (record) record.record({ tabId, kind, target, detail: `${MODEL} · ${EFFORT} · ${cwd}`, dest: 'OpenAI (Codex)', external: true });
+  }
+
+  // Claude presenta un plan (PreToolUse de ExitPlanMode). Con «Codex asesora», Codex lo
+  // critica antes y se le devuelve a Claude («deny» con la crítica) para que lo ajuste y lo
+  // vuelva a presentar: una vez por turno. Devuelve la respuesta al hook, o null.
+  async function onPlan(tabId, event, signal) {
+    const tab = tabs.get(tabId);
+    const plan = event && typeof event.plan === 'string' ? event.plan.trim() : '';
+    if (!tab || !tab.folder || !enabled || !tab.reviewArmed || tab.planReviewed || tab.reviewSkip || !usable()) return null;
+    const turn = tab.turn;
+    const post = (result) => { if (tab.turn === turn) send('review:result', tabId, result); };
+    if (!plan) {
+      // Demasiado grande para leerlo del aviso: se dice, en vez de dejarlo pasar sin más.
+      if (event && event.planTooBig) {
+        tab.planReviewed = true;
+        log('crítica del plan: el plan es demasiado grande para enviárselo a Codex');
+        post({ state: 'plan-error', reason: 'big' });
+      }
+      return null;
+    }
+    tab.planReviewed = true;
+    // En la carpeta en la que trabaja Claude ahora (p. ej. otra copia del repositorio).
+    const cwd = (event && event.cwd) || tab.cwd || tab.folder;
+    if (hasSecret(tab.request, plan)) {
+      log('crítica del plan: el plan o la petición llevan algo con pinta de clave; no se envía a Codex');
+      post({ state: 'plan-secret' });
+      return null;
+    }
+    if (!(await checkLogin()) || (signal && signal.aborted) || tab.turn !== turn || !enabled) return null;
+    post({ state: 'plan-running' });
+    log(`crítica del plan: empieza en ${cwd} (${MODEL}, ${EFFORT})`);
+    recordOut(tabId, 'plan', 'Plan de Claude y la petición del usuario', cwd);
+    onBusy(1);
+    const link = linked(signal);
+    let result;
+    try {
+      result = await codex.askCodex({ cwd, prompt: codex.planPrompt({ request: tab.request, plan }), model: MODEL, effort: EFFORT, signal: link.signal });
+    } finally { onBusy(-1); link.done(); }
+    if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras criticaba
+    if (tab.turn !== turn) return null;
+    if (result.aborted) { post({ state: 'aborted', seconds: result.seconds }); return null; }
+    if (!result.ok) {
+      log(`crítica del plan: Codex no ha respondido tras ${result.seconds} s${result.failure ? ` (${result.failure})` : ''}`);
+      post({ state: 'plan-error', seconds: result.seconds });
+      return null;
+    }
+    log(`crítica del plan: lista en ${result.seconds} s`);
+    post({ state: 'plan-done', seconds: result.seconds });
+    const reason = [
+      `ClaudHome · segundo revisor: Codex (${MODEL}, razonamiento ${EFFORT}) ha criticado tu plan antes de que el usuario lo vea. Todavía no se lo has presentado.`,
+      `Su crítica:\n${result.text}`,
+      'Revísalo con criterio propio: incorpora lo que lo mejore y descarta lo que no aplique a este proyecto.',
+      'Después vuelve a presentarlo con ExitPlanMode, añadiendo al final una sección breve «Segunda opinión (Codex)» con en qué coincidís, qué has cambiado por su crítica y en qué discrepas y por qué.',
+      'Codex no volverá a criticar el plan en este turno.',
+    ].join('\n\n');
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } };
+  }
+
+  // Herramienta «segunda_opinion»: Claude le plantea algo a Codex y recibe su análisis.
+  // Lanza un error con un mensaje para Claude si no se puede.
+  async function secondOpinion(tabId, args, signal) {
+    if (!enabled) {
+      throw new Error('El usuario tiene apagado el asesoramiento de Codex en ClaudHome (interruptor «Codex asesora»), así que no se le consulta nada. No vuelvas a intentarlo salvo que el usuario lo encienda; sigue con tu propio criterio.');
+    }
+    const tab = tabs.get(tabId);
+    // En la carpeta del agente que la pide (la de su aviso PreToolUse), o la de la pestaña.
+    const cwd = tab && (tab.opinionCwd || tab.cwd || tab.folder);
+    if (!cwd) throw new Error('Esta sesión ya no está abierta en ClaudHome.');
+    const question = args && typeof args.pregunta === 'string' ? args.pregunta.trim() : '';
+    if (!question) throw new Error('Falta la pregunta para Codex (campo «pregunta»).');
+    const files = args && Array.isArray(args.archivos) ? args.archivos.filter((f) => typeof f === 'string') : [];
+    if (hasSecret(question, ...files)) {
+      throw new Error('La pregunta o las rutas llevan lo que parece una clave o contraseña. Quítala (o pon solo el nombre de la variable) y vuelve a pedirla: las claves no se envían a Codex.');
+    }
+    if (!usable() || !(await checkLogin())) {
+      throw new Error('Codex no tiene ahora la sesión de la cuenta de ChatGPT del usuario, y la segunda opinión solo se pide con ella.');
+    }
+    if ((signal && signal.aborted) || !enabled) throw new Error('La segunda opinión se ha cancelado.');
+    // Los archivos que se le señalan a Codex, que los va a leer: sin claves.
+    const blocked = await checkFiles(cwd, files);
+    if (blocked) {
+      throw new Error(blocked.why === 'secret'
+        ? `${blocked.file} lleva lo que parece una clave o contraseña, así que no se le pide a Codex que lo lea. Quita ese archivo de «archivos» (o pasa la clave a un .env que git no suba) y vuelve a pedirla.`
+        : `No se ha podido comprobar si ${blocked.file} lleva claves (${blocked.why === 'big' ? 'es demasiado grande' : 'no se puede leer'}). Quítalo de «archivos» y vuelve a pedirla.`);
+    }
+    const scope = codex.SCOPES[args.ambito] ? args.ambito : 'otro';
+    log(`segunda opinión: ${tabs.label ? tabs.label(tabId) : tabId} pregunta a Codex (${scope}, ${question.length} caracteres)`);
+    recordOut(tabId, 'opinion', `Segunda opinión (${codex.SCOPES[scope]})`, cwd);
+    send('review:result', tabId, { state: 'opinion-running' });
+    onBusy(1);
+    const link = linked(signal);
+    let result;
+    try {
+      result = await codex.askCodex({ cwd, prompt: codex.opinionPrompt({ question, scope, files }), model: MODEL, effort: EFFORT, signal: link.signal });
+    } finally { onBusy(-1); link.done(); }
+    send('review:result', tabId, { state: 'opinion-done', ok: result.ok, seconds: result.seconds });
+    if (!enabled) throw new Error('El usuario ha apagado el asesoramiento de Codex mientras respondía: no se usa su respuesta.');
+    if (result.aborted) throw new Error('La segunda opinión se ha cancelado.');
+    if (!result.ok) {
+      log(`segunda opinión: Codex no ha respondido tras ${result.seconds} s${result.failure ? ` (${result.failure})` : ''}`);
+      throw new Error(`Codex no ha podido responder${result.failure ? `: ${result.failure}` : '.'}`);
+    }
+    log(`segunda opinión: lista en ${result.seconds} s`);
+    return [
+      `Segunda opinión de Codex (${MODEL}, razonamiento ${EFFORT}, ${result.seconds} s):`,
+      result.text,
+      'Compárala con tu propio análisis y no la sigas a ciegas. Dale al usuario una sola recomendación y cuéntale en una o dos frases en qué coincidís y en qué no.',
+    ].join('\n\n');
+  }
+
   return {
     turnStarted,
     toolUsed,
     willReview,
     onStop,
+    onPlan,
+    secondOpinion,
     get enabled() { return enabled; },
-    set enabled(value) { enabled = Boolean(value); store.set('codexReview', enabled); },
+    set enabled(value) {
+      enabled = Boolean(value);
+      store.set('codexReview', enabled);
+      if (!enabled) for (const controller of running) controller.abort(); // apagado: nada sigue
+    },
     MODEL,
     EFFORT,
   };

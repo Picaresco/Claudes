@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createReview, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
-const { parseReview } = require('../src/main/codex');
+const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting } = require('../src/main/codex');
 const { Tabs } = require('../src/main/tabs');
 const { tempDir } = require('./helpers');
 
@@ -79,12 +79,13 @@ test('lo que se le dice a Claude incluye los hallazgos y le deja decidir', () =>
   assert.match(reasonFor(parseReview(huge), huge), /\[… recortado\]/);
 });
 
-function makeReview(t, { enabled = true, usable = true, result = null, detailed = true, reviewChanges = null, checkSecrets = null, checkLogin = null } = {}) {
+function makeReview(t, { enabled = true, usable = true, result = null, detailed = true, reviewChanges = null, checkSecrets = null, checkLogin = null, askCodex = null } = {}) {
   const saved = { codexReview: enabled };
   const sent = [];
   const logs = [];
   const records = [];
   const calls = [];
+  const busy = [];
   const tabs = new Tabs();
   const logs_ = tempDir(t);
   const review = createReview({
@@ -92,7 +93,8 @@ function makeReview(t, { enabled = true, usable = true, result = null, detailed 
     store: { get: (k, f) => (k in saved ? saved[k] : f), set: (k, v) => { saved[k] = v; } },
     usable: () => usable,
     codex: {
-      parseReview,
+      parseReview, opinionPrompt, planPrompt, SCOPES,
+      askCodex: async (opts) => { calls.push({ ask: opts }); return askCodex ? askCodex(opts) : { ok: true, text: 'Opinión de Codex: falta el paso de las pruebas.', seconds: 12, aborted: false }; },
       reviewChanges: async (opts) => { calls.push(opts); if (reviewChanges) return reviewChanges(opts); return result || { ok: true, code: 0, text: SAMPLE, log: 'registro', seconds: 37, aborted: false }; },
     },
     send: (...args) => sent.push(args),
@@ -101,9 +103,10 @@ function makeReview(t, { enabled = true, usable = true, result = null, detailed 
     detailedLogs: () => detailed,
     ...(checkSecrets ? { checkSecrets } : {}),
     ...(checkLogin ? { checkLogin } : {}),
+    onBusy: (delta) => { busy.push(delta); },
     netlog: () => ({ record: (entry) => records.push(entry) }),
   });
-  return { review, tabs, saved, sent, logs, records, calls, logsDir: logs_ };
+  return { review, tabs, saved, sent, logs, records, calls, busy, logsDir: logs_ };
 }
 
 // Un repositorio git de verdad, con un cambio sin confirmar.
@@ -417,4 +420,227 @@ test('con el turno sin revisión, las ediciones no se siguen', (t) => {
   review.toolUsed('t1', 'Edit', 'a.js');
   assert.equal(tabs.get('t1').edited, false);
   assert.equal(tabs.get('t1').reviewRepo, undefined); // ni se busca el repositorio
+});
+
+test('lo que se le pide a Codex: solo lectura, el ámbito, y el plan con la petición', () => {
+  const opinion = opinionPrompt({ question: '¿Uso colas o un cron?', scope: 'seguridad', files: ['src/a.js', '', 7] });
+  assert.match(opinion, /solo lectura/);
+  assert.match(opinion, /no cambies nada/);
+  assert.match(opinion, /Ámbito: seguridad/);
+  assert.match(opinion, /- src\/a\.js/);
+  assert.match(opinion, /en qué discrepas/);
+  assert.match(opinionPrompt({ question: 'x', scope: 'raro' }), /Ámbito: otro/);
+  const plan = planPrompt({ request: 'Añade login', plan: '1. Crear tabla' });
+  assert.match(plan, /todavía no se lo ha presentado/);
+  assert.match(plan, /Petición del usuario:\nAñade login/);
+  assert.match(plan, /Plan de Claude:\n1\. Crear tabla/);
+  assert.deepEqual(Object.keys(SCOPES), OPINION_TOOL.inputSchema.properties.ambito.enum);
+  assert.deepEqual(OPINION_TOOL.inputSchema.required, ['pregunta']);
+});
+
+test('del registro de Codex se saca su último mensaje o su error', () => {
+  const out = [
+    JSON.stringify({ type: 'thread.started' }),
+    JSON.stringify({ type: 'item.completed', item: { type: 'command_execution', aggregated_output: 'x' } }),
+    JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Primero.' } }),
+    'no es json',
+    JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: '  Mi opinión final.  ' } }),
+  ].join('\n');
+  assert.deepEqual(lastAgentMessage(out), { message: 'Mi opinión final.', failure: '' });
+  assert.deepEqual(lastAgentMessage(JSON.stringify({ type: 'turn.failed', error: { message: 'límite de uso' } })), { message: '', failure: 'límite de uso' });
+});
+
+// Una pestaña con un turno empezado, en una carpeta de verdad.
+function started(t, options, request = 'Añade un inicio de sesión') {
+  const fixture = makeReview(t, options);
+  const dir = tempDir(t);
+  fixture.tabs.ensure('t1').folder = dir;
+  fixture.review.turnStarted('t1', request.slice(0, 80), request);
+  return { ...fixture, dir };
+}
+
+test('con «Codex asesora», cada plan se critica antes de presentarlo, una vez por turno', async (t) => {
+  const { review, calls, sent, records, busy, dir } = started(t);
+  const answer = await review.onPlan('t1', { plan: '1. Crear la tabla de usuarios\n2. Añadir el formulario' });
+  assert.equal(answer.hookSpecificOutput.permissionDecision, 'deny');
+  assert.match(answer.hookSpecificOutput.permissionDecisionReason, /falta el paso de las pruebas/);
+  assert.match(answer.hookSpecificOutput.permissionDecisionReason, /Segunda opinión \(Codex\)/);
+  assert.equal(calls[0].ask.cwd, dir);
+  assert.match(calls[0].ask.prompt, /Petición del usuario:\nAñade un inicio de sesión/);
+  assert.match(calls[0].ask.prompt, /1\. Crear la tabla de usuarios/);
+  assert.equal(calls[0].ask.model, 'gpt-6.2-astra');
+  assert.deepEqual(sent.map(([, , r]) => r.state), ['plan-running', 'plan-done']);
+  assert.equal(records[0].external, true);
+  assert.deepEqual(busy, [1, -1]);
+  // Claude lo ajusta y lo vuelve a presentar: ya no se critica.
+  assert.equal(await review.onPlan('t1', { plan: '1. Crear la tabla\n2. Pruebas\n3. Formulario' }), null);
+  assert.equal(calls.length, 1);
+});
+
+test('la crítica del plan no se hace sin «Codex asesora», con claves en el plan o si Codex falla', async (t) => {
+  const off = started(t, { enabled: false });
+  assert.equal(await off.review.onPlan('t1', { plan: '1. Algo' }), null);
+  assert.equal(off.calls.length, 0);
+  const secret = started(t);
+  assert.equal(await secret.review.onPlan('t1', { plan: `1. Poner password = "${'Hosp'}ital2024!" en config.js` }), null);
+  assert.equal(secret.calls.length, 0);
+  assert.deepEqual(secret.sent.map(([, , r]) => r.state), ['plan-secret']);
+  const failing = started(t, { askCodex: () => ({ ok: false, text: '', failure: 'límite de uso', seconds: 3, aborted: false }) });
+  assert.equal(await failing.review.onPlan('t1', { plan: '1. Algo' }), null);
+  assert.deepEqual(failing.sent.map(([, , r]) => r.state), ['plan-running', 'plan-error']);
+  const noLogin = started(t, { checkLogin: async () => false });
+  assert.equal(await noLogin.review.onPlan('t1', { plan: '1. Algo' }), null);
+  assert.equal(noLogin.calls.length, 0);
+  assert.equal(await started(t).review.onPlan('t1', { plan: '   ' }), null); // sin plan
+});
+
+test('la segunda opinión responde con el análisis de Codex y le pide a Claude que lo contraste', async (t) => {
+  const { review, calls, sent, records, busy, dir } = started(t);
+  const text = await review.secondOpinion('t1', { pregunta: '¿Separo esto en dos servicios?', ambito: 'codigo', archivos: ['src/app.js'] });
+  assert.match(text, /Segunda opinión de Codex \(gpt-6\.2-astra, razonamiento xhigh, 12 s\)/);
+  assert.match(text, /falta el paso de las pruebas/);
+  assert.match(text, /no la sigas a ciegas/);
+  assert.equal(calls[0].ask.cwd, dir);
+  assert.match(calls[0].ask.prompt, /Ámbito: código/);
+  assert.match(calls[0].ask.prompt, /- src\/app\.js/);
+  assert.deepEqual(sent.map(([, , r]) => r.state), ['opinion-running', 'opinion-done']);
+  assert.match(records[0].target, /Segunda opinión/);
+  assert.deepEqual(busy, [1, -1]);
+});
+
+test('la segunda opinión no se pide sin pregunta, con claves, sin la cuenta de ChatGPT o si falla', async (t) => {
+  const base = started(t);
+  await assert.rejects(base.review.secondOpinion('t1', {}), /Falta la pregunta/);
+  await assert.rejects(base.review.secondOpinion('t1', { pregunta: `La contraseña es password = "${'Hosp'}ital2024!"` }), /clave o contraseña/);
+  await assert.rejects(base.review.secondOpinion('otra', { pregunta: 'x' }), /ya no está abierta/);
+  assert.equal(base.calls.length, 0);
+  await assert.rejects(started(t, { checkLogin: async () => false }).review.secondOpinion('t1', { pregunta: 'x' }), /cuenta de ChatGPT/);
+  await assert.rejects(started(t, { usable: false }).review.secondOpinion('t1', { pregunta: 'x' }), /cuenta de ChatGPT/);
+  const failing = started(t, { askCodex: () => ({ ok: false, text: '', failure: 'límite de uso', seconds: 3, aborted: false }) });
+  await assert.rejects(failing.review.secondOpinion('t1', { pregunta: 'x' }), /no ha podido responder: límite de uso/);
+  const cancelled = started(t, { askCodex: () => ({ ok: false, text: '', failure: '', seconds: 3, aborted: true }) });
+  await assert.rejects(cancelled.review.secondOpinion('t1', { pregunta: 'x' }), /cancelado/);
+});
+
+test('con «Codex asesora» apagado no se le consulta nada a Codex', async (t) => {
+  const off = started(t, { enabled: false });
+  await assert.rejects(off.review.secondOpinion('t1', { pregunta: '¿Qué hago?' }), /apagado el asesoramiento/);
+  assert.equal(await off.review.onPlan('t1', { plan: '1. Algo' }), null);
+  assert.equal(off.calls.length, 0);
+  assert.equal(off.records.length, 0);
+  // Apagarlo vale al momento, también a mitad de turno.
+  const on = started(t);
+  on.review.enabled = false;
+  await assert.rejects(on.review.secondOpinion('t1', { pregunta: 'x' }), /apagado/);
+  assert.equal(await on.review.onPlan('t1', { plan: '1. Algo' }), null);
+  assert.equal(on.calls.length, 0);
+});
+
+test('«Codex asesora» viene apagado: lo enciende el usuario si quiere usar Codex', () => {
+  const make = (saved) => createReview({ tabs: new Tabs(), store: { get: (k, f) => (k in saved ? saved[k] : f), set: () => {} }, usable: () => true, codex: {}, send: () => {}, log: () => {}, logsDir: () => '' });
+  assert.equal(make({}).enabled, false);
+  assert.equal(make({ codexReview: false }).enabled, false);
+  assert.equal(make({ codexReview: true }).enabled, true);
+});
+
+test('Codex trabaja aislado: sin la configuración ni las reglas del usuario, sin control del ordenador ni imágenes', () => {
+  assert.ok(ISOLATED.includes('--ignore-user-config'));
+  assert.ok(ISOLATED.includes('--ignore-rules'));
+  for (const feature of ['computer_use', 'browser_use', 'apps', 'image_generation']) {
+    assert.equal(ISOLATED[ISOLATED.indexOf(`features.${feature}=false`) - 1], '-c', feature); // con -c: si no existe en otra versión, se ignora
+  }
+  assert.ok(!ISOLATED.includes('--disable'));
+});
+
+test('con la instalación de npm, Codex se lanza sin cmd.exe', (t) => {
+  const dir = tempDir(t);
+  const cmd = path.join(dir, 'codex.cmd');
+  fs.writeFileSync(cmd, '@echo off');
+  assert.equal(launcher(cmd).shell, true); // sin su codex.js al lado: a través del intérprete
+  const script = path.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  fs.mkdirSync(path.dirname(script), { recursive: true });
+  fs.writeFileSync(script, '');
+  fs.writeFileSync(path.join(dir, 'node.exe'), '');
+  assert.deepEqual(launcher(cmd), { command: path.join(dir, 'node.exe'), prefix: [script], shell: false });
+  assert.deepEqual(launcher('C:\\x\\codex.exe'), { command: 'C:\\x\\codex.exe', prefix: [], shell: false });
+});
+
+test('las rutas de la segunda opinión también se miran por si llevan claves', async (t) => {
+  const { review, calls } = started(t);
+  await assert.rejects(review.secondOpinion('t1', { pregunta: '¿Está bien esta conexión?', archivos: [`postgres://admin:${'Hosp'}ital2024@10.0.0.5/db`] }), /clave o contraseña/);
+  // Un carácter nulo no esconde una clave.
+  await assert.rejects(review.secondOpinion('t1', { pregunta: `\0 password = "${'Hosp'}ital2024!"` }), /clave o contraseña/);
+  assert.equal(calls.length, 0);
+  const plan = started(t);
+  plan.review.turnStarted('t1', 'x', '\0');
+  assert.equal(await plan.review.onPlan('t1', { plan: `1. Poner password = "${'Hosp'}ital2024!"` }), null);
+  assert.deepEqual(plan.sent.map(([, , r]) => r.state), ['plan-secret']);
+});
+
+test('si se cancela mientras se comprueba la cuenta, no se pregunta a Codex', async (t) => {
+  const controller = new AbortController();
+  const { review, calls, records } = started(t, { checkLogin: async () => { controller.abort(); return true; } });
+  await assert.rejects(review.secondOpinion('t1', { pregunta: 'x' }, controller.signal), /cancelado/);
+  assert.equal(calls.length, 0);
+  assert.equal(records.length, 0);
+});
+
+test('el plan se critica en la carpeta en la que trabaja Claude, y uno demasiado grande se avisa', async (t) => {
+  const { review, calls } = started(t);
+  const other = tempDir(t);
+  await review.onPlan('t1', { plan: '1. Algo', cwd: other });
+  assert.equal(calls[0].ask.cwd, other);
+  const big = started(t);
+  assert.equal(await big.review.onPlan('t1', { plan: null, planTooBig: true }), null);
+  assert.deepEqual(big.sent.map(([, , r]) => r), [{ state: 'plan-error', reason: 'big' }]);
+  assert.equal(big.calls.length, 0);
+});
+
+test('al apagar «Codex asesora», lo que está en marcha se para y no se usa', async (t) => {
+  const fixture = started(t, { askCodex: ({ signal }) => new Promise((resolve) => {
+    signal.addEventListener('abort', () => resolve({ ok: false, text: '', failure: '', seconds: 4, aborted: true }));
+  }) });
+  const pending = fixture.review.secondOpinion('t1', { pregunta: '¿Qué hago?' });
+  await new Promise((r) => setTimeout(r, 20));
+  fixture.review.enabled = false;
+  await assert.rejects(pending, /apagado el asesoramiento de Codex mientras respondía/);
+  // La crítica del plan, igual: no llega a Claude.
+  const plan = started(t, { askCodex: ({ signal }) => new Promise((resolve) => {
+    signal.addEventListener('abort', () => resolve({ ok: false, text: '', failure: '', seconds: 4, aborted: true }));
+  }) });
+  const answer = plan.review.onPlan('t1', { plan: '1. Algo' });
+  await new Promise((r) => setTimeout(r, 20));
+  plan.review.enabled = false;
+  assert.equal(await answer, null);
+  assert.equal(plan.sent[plan.sent.length - 1][2].state, 'aborted');
+});
+
+test('los archivos que se le señalan a Codex se miran antes, y un YAML pegado también', async (t) => {
+  const { review, dir, calls } = started(t);
+  fs.writeFileSync(path.join(dir, 'config.yml'), `db:\n  password: ${'Kx9m'}P2vLq\n`);
+  fs.writeFileSync(path.join(dir, 'grande.txt'), 'x'.repeat(3 * 1024 * 1024));
+  fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 1;\n');
+  await assert.rejects(review.secondOpinion('t1', { pregunta: '¿Está bien la configuración?', archivos: ['app.js', 'config.yml'] }), /config\.yml lleva lo que parece una clave/);
+  await assert.rejects(review.secondOpinion('t1', { pregunta: 'x', archivos: ['grande.txt'] }), /demasiado grande/);
+  await assert.rejects(review.secondOpinion('t1', { pregunta: `Mira esto:\ndb:\n  password: ${'Kx9m'}P2vLq` }), /clave o contraseña/);
+  assert.equal(calls.length, 0);
+  await review.secondOpinion('t1', { pregunta: 'x', archivos: ['app.js', 'no-existe.js'] }); // limpio: sí
+  assert.equal(calls.length, 1);
+});
+
+test('la segunda opinión se pide en la carpeta del agente que la pide', async (t) => {
+  const { review, tabs, calls } = started(t);
+  const other = tempDir(t);
+  tabs.get('t1').cwd = tempDir(t); // un aviso posterior, de otro agente
+  tabs.get('t1').opinionCwd = other;
+  await review.secondOpinion('t1', { pregunta: 'x' });
+  assert.equal(calls[0].ask.cwd, other);
+});
+
+test('de la configuración del usuario se conservan solo su almacén de sesión y su zona protegida de Windows', () => {
+  const toml = ['model = "gpt-6.2-sol"', 'cli_auth_credentials_store = "keyring"', '', '[windows]', 'sandbox = "elevated"', '', '[mcp_servers.node_repl]', 'command = "x"', 'sandbox = "otro"'].join('\n');
+  assert.equal(userSetting(toml, null, 'cli_auth_credentials_store'), 'keyring');
+  assert.equal(userSetting(toml, 'windows', 'sandbox'), 'elevated');
+  assert.equal(userSetting(toml, null, 'sandbox'), null); // fuera de [windows] no cuenta
+  assert.equal(userSetting('', 'windows', 'sandbox'), null);
 });

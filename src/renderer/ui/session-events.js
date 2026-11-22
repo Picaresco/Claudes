@@ -59,8 +59,12 @@ export function onHook(tabId, ev) {
     return;
   }
   switch (ev.event) {
-    case 'UserPromptSubmit':
     case 'PreToolUse':
+      // Mientras Codex critica el plan, la pestaña lo sigue diciendo.
+      if (ev.toolName === 'ExitPlanMode' && view.status === 'planreview') break;
+      setStatus(view, 'working');
+      break;
+    case 'UserPromptSubmit':
     case 'PostToolUse':
     case 'PostToolUseFailure':
       setStatus(view, 'working');
@@ -100,7 +104,27 @@ export function onReviewResult(tabId, r) {
       : `Codex ha encontrado ${r.count} posibles problemas en ${name} (${r.seconds} s). Claude los está revisando.`);
     return;
   }
-  if (view.status === 'reviewing') finished(view, false);
+  // El plan y la segunda opinión: Claude sigue trabajando con lo que diga Codex.
+  if (r.state === 'plan-running') { setStatus(view, 'planreview'); return; }
+  if (r.state === 'opinion-running') { setStatus(view, 'consulting'); return; }
+  if (r.state === 'opinion-done') { if (view.status === 'consulting') setStatus(view, 'working'); return; }
+  if (r.state === 'plan-done') {
+    setStatus(view, 'working');
+    toast(`Codex ha revisado el plan de ${name} (${r.seconds} s). Claude lo está ajustando antes de enseñártelo.`);
+    return;
+  }
+  if (r.state === 'plan-error') {
+    if (view.status === 'planreview') setStatus(view, 'working');
+    toast(r.reason === 'big'
+      ? `El plan de ${name} es demasiado grande para enviárselo a Codex: Claude te lo presenta sin su crítica.`
+      : `Codex no ha podido revisar el plan de ${name}: Claude te lo presenta sin su crítica.`);
+    return;
+  }
+  if (r.state === 'plan-secret') {
+    toast(`${name}: el plan lleva lo que parece una clave o contraseña, así que no se ha enviado a Codex.`);
+    return;
+  }
+  if (['reviewing', 'planreview', 'consulting'].includes(view.status)) finished(view, false);
   if (r.state === 'secret') {
     const files = (r.files || []).join(', ');
     if (files) toast(`${name}: Codex no ha revisado los cambios porque ${files} lleva una clave o contraseña, y no se envía a OpenAI. Pásala a un .env que git no suba.`);

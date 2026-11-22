@@ -24,9 +24,33 @@ function findCodex() {
 // los argumentos que se le pasan aquí nunca llevan texto del usuario.
 const viaShell = (exe) => /\.(cmd|bat)$/i.test(exe);
 
+// Un programa, buscado solo en las carpetas absolutas del PATH (nunca en la actual).
+function findOnPath(name) {
+  const dirs = (process.env.PATH || process.env.Path || '').split(path.delimiter).filter((d) => d && path.isAbsolute(d));
+  for (const dir of dirs) {
+    const candidate = path.join(dir, name);
+    try { if (fs.statSync(candidate).isFile()) return candidate; } catch { /* no está aquí */ }
+  }
+  return null;
+}
+
+// Cómo lanzar Codex. Con la instalación de npm, codex.cmd solo llama a node con su
+// codex.js: se lanza eso directamente, sin cmd.exe. Así las rutas con espacios o de red
+// (UNC) van tal cual y no se busca ningún programa en la carpeta del proyecto. Si no se
+// encuentra, se usa el .cmd a través del intérprete.
+function launcher(exe) {
+  if (!viaShell(exe)) return { command: exe, prefix: [], shell: false };
+  const script = path.join(path.dirname(exe), 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  const bundled = path.join(path.dirname(exe), 'node.exe');
+  const node = fs.existsSync(bundled) ? bundled : findOnPath(process.platform === 'win32' ? 'node.exe' : 'node');
+  if (node && fs.existsSync(script)) return { command: node, prefix: [script], shell: false };
+  return { command: exe, prefix: [], shell: true };
+}
+
 function run(exe, args, timeout) {
+  const l = launcher(exe);
   return new Promise((resolve) => {
-    execFile(exe, args, { encoding: 'utf8', windowsHide: true, timeout, shell: viaShell(exe) }, (error, stdout, stderr) => {
+    execFile(l.command, [...l.prefix, ...args], { encoding: 'utf8', windowsHide: true, timeout, shell: l.shell }, (error, stdout, stderr) => {
       resolve({ ok: !error, text: `${stdout || ''}\n${stderr || ''}` });
     });
   });
@@ -43,7 +67,10 @@ async function detect() {
   const loggedIn = status.ok && /logged in/i.test(status.text) && !/not logged in/i.test(status.text);
   let mode = null;
   if (loggedIn) mode = /chatgpt/i.test(status.text) ? 'chatgpt' : 'apikey';
-  return { installed: true, loggedIn, mode };
+  // El asesor necesita poder lanzar Codex aislado (versiones recientes).
+  const help = await run(exe, ['exec', '--help'], 15000);
+  const advisor = help.ok && /--ignore-user-config/.test(help.text) && /--ignore-rules/.test(help.text);
+  return { installed: true, loggedIn, mode, advisor };
 }
 
 const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
@@ -136,8 +163,10 @@ function generateImage({ description, shape, transparent, file, cwd, workDir }) 
     // La petición va por la entrada estándar («-»): así no hay límites ni comillas que escapar.
     // --ephemeral: no deja la petición en el historial de sesiones de Codex.
     // --sandbox read-only: Codex no puede cambiar nada del equipo; la imagen la guarda él en su carpeta.
-    const args = ['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'read-only', '--json', '-C', workDir, '-'];
-    const child = spawn(exe, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: viaShell(exe) });
+    // La carpeta de trabajo, como directorio (con -C, una ruta con espacios se partiría en cmd.exe).
+    const args = ['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'read-only', '--json', '-'];
+    const l = launcher(exe);
+    const child = spawn(l.command, [...l.prefix, ...args], { cwd: workDir, env: reviewEnv(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: l.shell });
 
     let stdout = '';
     let stderr = '';
@@ -217,7 +246,7 @@ const IMAGE_TOOL = {
   },
 };
 
-// ── Revisión de código ───────────────────────────────────────────────
+// ── Revisión de código, segunda opinión y crítica de planes ──────────
 // `codex exec review --uncommitted` revisa los cambios sin confirmar de un repositorio git:
 // en solo lectura, sin pedir aprobaciones y sin guardar la sesión (--ephemeral), con el
 // proveedor de OpenAI y sin claves de API del entorno. Que la sesión sea la de ChatGPT se
@@ -239,25 +268,60 @@ function chatgptLogin() {
   const exe = findCodex();
   if (!exe) return Promise.resolve(false);
   return new Promise((resolve) => {
-    execFile(exe, ['login', 'status'], { encoding: 'utf8', windowsHide: true, timeout: 15000, shell: viaShell(exe), env: reviewEnv() }, (error, stdout, stderr) => {
+    const l = launcher(exe);
+    execFile(l.command, [...l.prefix, 'login', 'status'], { encoding: 'utf8', windowsHide: true, timeout: 15000, shell: l.shell, env: reviewEnv() }, (error, stdout, stderr) => {
       const text = `${stdout || ''}\n${stderr || ''}`;
       resolve(!error && /logged in/i.test(text) && !/not logged in/i.test(text) && /chatgpt/i.test(text));
     });
   });
 }
-const activeReviews = new Set(); // cómo parar cada revisión en marcha
+const activeRuns = new Set(); // cómo parar cada ejecución de Codex en marcha
+// Codex como asesor, aislado: sin la configuración del usuario (sus servidores MCP, que no
+// respetan el modo solo lectura) y sin las funciones que actúan fuera de él.
+const OFF_FEATURES = ['computer_use', 'browser_use', 'browser_use_external', 'in_app_browser', 'apps', 'image_generation'];
+const ISOLATED = ['--ignore-user-config', '--ignore-rules', ...OFF_FEATURES.flatMap((f) => ['-c', `features.${f}=false`])];
+// Un ajuste de texto de config.toml (section null: fuera de cualquier [tabla]), o null.
+function userSetting(text, section, key) {
+  let current = null;
+  for (const line of String(text).split(/\r?\n/)) {
+    const table = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+    if (table) { current = table[1].trim(); continue; }
+    if (current !== section) continue;
+    const m = new RegExp(`^\\s*${key}\\s*=\\s*"([\\w-]+)"`).exec(line);
+    if (m) return m[1];
+  }
+  return null;
+}
 
-function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT }) {
+// Sin la configuración del usuario se pierden dos ajustes que hacen falta: dónde guarda su
+// sesión (cli_auth_credentials_store) y la zona protegida de Windows ([windows] sandbox, sin
+// la cual Codex bloquea hasta un «git status» y no puede leer el proyecto). Se pasan esos dos.
+function isolation() {
+  let text = '';
+  try { text = fs.readFileSync(path.join(codexHome(), 'config.toml'), 'utf8'); } catch { /* sin config.toml */ }
+  const args = [...ISOLATED];
+  const store = userSetting(text, null, 'cli_auth_credentials_store');
+  if (store) args.push('-c', `cli_auth_credentials_store="${store}"`);
+  const sandbox = userSetting(text, 'windows', 'sandbox');
+  if (sandbox) args.push('-c', `windows.sandbox="${sandbox}"`);
+  return args;
+}
+
+// Lanza Codex con estos argumentos y, si se da, este texto por la entrada estándar.
+// Siempre sin claves de API del entorno; se para con `signal`, al pasar `timeout` o al
+// cerrar la app (stopReviews). Devuelve { ok, code, text (salida), log (errores y
+// progreso), seconds, aborted }.
+function runCodex({ args, cwd, stdin = null, signal = null, timeout }) {
   return new Promise((resolve) => {
     const start = Date.now();
     const exe = findCodex();
     if (!exe) { resolve({ ok: false, code: null, text: '', log: 'Codex no está instalado.', seconds: 0, aborted: false }); return; }
-    const args = ['exec', 'review', '--uncommitted', '--ephemeral',
-      '-c', 'history.persistence="none"', '-c', 'sandbox_mode="read-only"', '-c', 'model_provider="openai"'];
-    // review_model manda sobre model en las revisiones: se fijan los dos.
-    if (model) args.push('-c', `model="${model}"`, '-c', `review_model="${model}"`);
-    if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
-    const child = spawn(exe, args, { cwd, env: reviewEnv(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: viaShell(exe) });
+    if (signal && signal.aborted) { resolve({ ok: false, code: null, text: '', log: '', seconds: 0, aborted: true }); return; }
+    const l = launcher(exe);
+    // La ruta completa (sin nombres abreviados de Windows), que es la que la zona protegida reconoce.
+    let dir = cwd;
+    try { dir = fs.realpathSync.native(cwd); } catch { /* se usa tal cual */ }
+    const child = spawn(l.command, [...l.prefix, ...args], { cwd: dir, env: reviewEnv(), stdio: [stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true, shell: l.shell });
     let text = '';
     let log = '';
     let settled = false;
@@ -272,15 +336,15 @@ function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT })
     const finish = (result) => {
       if (settled) return;
       settled = true;
-      activeReviews.delete(stop);
+      activeRuns.delete(stop);
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onAbort);
       resolve({ ...result, seconds: Math.round((Date.now() - start) / 1000), aborted });
     };
     const onAbort = () => { aborted = true; kill(); };
     const stop = () => onAbort();
-    activeReviews.add(stop);
-    const timer = setTimeout(() => { kill(); log += '\n[ClaudHome] la revisión ha tardado demasiado y se ha cancelado'; }, timeout);
+    activeRuns.add(stop);
+    const timer = setTimeout(() => { kill(); log += '\n[ClaudHome] Codex ha tardado demasiado y se ha cancelado'; }, timeout);
     if (signal) {
       if (signal.aborted) { onAbort(); } else signal.addEventListener('abort', onAbort);
     }
@@ -288,13 +352,121 @@ function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT })
     child.stderr.on('data', (chunk) => { log += chunk; });
     child.on('error', (err) => finish({ ok: false, code: null, text, log: `${log}\nNo se pudo ejecutar Codex: ${err.message}` }));
     child.on('close', (code) => finish({ ok: code === 0 && !aborted, code, text, log }));
+    if (stdin !== null) {
+      child.stdin.on('error', () => { /* Codex cerró la entrada antes de tiempo */ });
+      child.stdin.end(stdin);
+    }
   });
 }
 
-// Para todas las revisiones en marcha (al cerrar la app).
-function stopReviews() {
-  for (const stop of [...activeReviews]) stop();
+function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIMEOUT }) {
+  const args = ['exec', 'review', '--uncommitted', '--ephemeral', ...isolation(),
+    '-c', 'history.persistence="none"', '-c', 'sandbox_mode="read-only"', '-c', 'model_provider="openai"'];
+  // review_model manda sobre model en las revisiones: se fijan los dos.
+  if (model) args.push('-c', `model="${model}"`, '-c', `review_model="${model}"`);
+  if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
+  return runCodex({ args, cwd, signal, timeout });
 }
+
+// Para todo lo de Codex en marcha (al cerrar la app).
+function stopReviews() {
+  for (const stop of [...activeRuns]) stop();
+}
+
+// ── Segunda opinión ──────────────────────────────────────────────────
+// Codex como asesor de Claude: lee el proyecto en solo lectura y responde a lo que Claude
+// le plantea (código, seguridad, planes, flujos de trabajo, un problema que no sale…).
+// Nunca cambia nada: opina, y quien decide y actúa es Claude.
+const OPINION_TIMEOUT = 9 * 60 * 1000; // por debajo de MCP_TOOL_TIMEOUT (10 min)
+const MAX_PROMPT = 60000;
+const SCOPES = { codigo: 'código', seguridad: 'seguridad', plan: 'plan o enfoque', flujo: 'flujo de trabajo', problema: 'un problema sin resolver', otro: 'otro' };
+const clipText = (text, max) => (text.length > max ? `${text.slice(0, max)}\n[… recortado]` : text);
+
+// Lo que se le pide a Codex cuando Claude quiere una segunda opinión.
+function opinionPrompt({ question, scope, files }) {
+  const list = (Array.isArray(files) ? files : []).filter((f) => typeof f === 'string' && f.trim()).slice(0, 30);
+  return [
+    'Eres el asesor de Claude Code, otro agente que trabaja en este mismo proyecto, y te pide una segunda opinión.',
+    'Trabajas en solo lectura: lee los archivos y haz las consultas que necesites para entender el proyecto, pero no cambies nada.',
+    `Ámbito: ${SCOPES[scope] || SCOPES.otro}.`,
+    `Lo que te plantea Claude:\n${clipText(String(question).trim(), MAX_PROMPT)}`,
+    list.length ? `Archivos que Claude considera relevantes:\n${list.map((f) => `- ${f}`).join('\n')}` : '',
+    'Da tu análisis con independencia: qué harías tú y por qué, riesgos o puntos ciegos, alternativas, y en qué discrepas del planteamiento de Claude.',
+    'Sé concreto (archivos, funciones, líneas, comandos) y responde en español, en menos de 600 palabras.',
+  ].filter(Boolean).join('\n\n');
+}
+
+// Lo que se le pide a Codex para criticar un plan antes de que el usuario lo vea.
+function planPrompt({ request, plan }) {
+  return [
+    'Eres el segundo revisor de Claude Code, otro agente que trabaja en este mismo proyecto. Claude ha preparado el plan de abajo y todavía no se lo ha presentado al usuario.',
+    'Trabajas en solo lectura: lee los archivos que necesites para comprobar el plan contra el proyecto real, pero no cambies nada.',
+    request ? `Petición del usuario:\n${clipText(String(request).trim(), 4000)}` : '',
+    `Plan de Claude:\n${clipText(String(plan).trim(), MAX_PROMPT)}`,
+    'Critícalo con independencia: riesgos, pasos que faltan o sobran, supuestos que no se cumplen en este proyecto, alternativas mejores y cuestiones de seguridad si las hay.',
+    'Sé concreto (archivos, funciones, comandos) y breve: como mucho 500 palabras, en español. Si el plan te parece bien, dilo y señala solo lo que mejorarías.',
+  ].filter(Boolean).join('\n\n');
+}
+
+// Del registro de eventos de `codex exec --json`: el último mensaje de Codex y el error, si lo hubo.
+function lastAgentMessage(stdout) {
+  let message = '';
+  let failure = '';
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    if (event.type === 'item.completed' && event.item && event.item.type === 'agent_message') message = String(event.item.text || '');
+    if (event.type === 'error' || event.type === 'turn.failed') failure = String(event.message || (event.error && event.error.message) || failure);
+  }
+  return { message: message.trim(), failure };
+}
+
+// Pide a Codex una respuesta en solo lectura, en la carpeta del proyecto. Devuelve lo de
+// runCodex con `text` = la respuesta de Codex y `failure` = su error, si lo hubo.
+async function askCodex({ cwd, prompt, model, effort, signal, timeout = OPINION_TIMEOUT }) {
+  // La carpeta va solo como directorio de trabajo: con -C y una ruta abreviada de Windows
+  // (C:\Users\NOMBRE~1\…), la zona protegida le niega a Codex la lectura del proyecto.
+  const args = ['exec', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '--json', ...isolation(),
+    '-c', 'history.persistence="none"', '-c', 'model_provider="openai"'];
+  if (model) args.push('-c', `model="${model}"`);
+  if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
+  args.push('-'); // la petición, por la entrada estándar: sin límites ni comillas que escapar
+  const result = await runCodex({ args, cwd, stdin: prompt, signal, timeout });
+  const { message, failure } = lastAgentMessage(result.text);
+  return { ...result, ok: result.ok && Boolean(message), text: message, failure };
+}
+
+// La herramienta tal como la ve Claude en sus sesiones.
+const OPINION_TOOL = {
+  name: 'segunda_opinion',
+  description: 'Pide a Codex (OpenAI, su modelo más capaz, razonando a fondo) una segunda opinión independiente. '
+    + 'Codex es tu asesor en este proyecto: puede leer sus archivos, pero no cambia nada. '
+    + 'Úsala ante decisiones importantes (arquitectura, enfoque de una tarea grande, cambios de seguridad o de infraestructura), '
+    + 'cuando lleves varios intentos sin resolver un problema, o cuando el usuario te la pida. No la uses para cosas sencillas. '
+    + 'Tarda entre medio minuto y varios minutos y gasta del plan de ChatGPT del usuario. '
+    + 'Devuelve su análisis: compáralo con el tuyo y dale al usuario una sola recomendación, señalando en qué coincidís y en qué no.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pregunta: {
+        type: 'string',
+        description: 'Qué quieres que analice: el problema, la decisión o el plan, con el contexto necesario, lo que ya has pensado o probado y tu propuesta. Sin claves ni contraseñas.',
+      },
+      ambito: {
+        type: 'string',
+        enum: Object.keys(SCOPES),
+        description: 'De qué trata: codigo, seguridad, plan, flujo (de trabajo), problema (algo que no sale) u otro.',
+      },
+      archivos: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Rutas de los archivos más relevantes, para que Codex empiece por ellos.',
+      },
+    },
+    required: ['pregunta'],
+  },
+};
 
 // Los hallazgos de una revisión: «- [P1] Título — ruta:líneas» y su explicación sangrada.
 function parseReview(text) {
@@ -316,4 +488,7 @@ function parseReview(text) {
   return out;
 }
 
-module.exports = { detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews, chatgptLogin };
+module.exports = {
+  detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews, chatgptLogin,
+  askCodex, opinionPrompt, planPrompt, lastAgentMessage, OPINION_TOOL, SCOPES, ISOLATED, launcher, userSetting,
+};
