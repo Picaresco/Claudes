@@ -1,4 +1,5 @@
 // ── Límites de uso del plan y tokens (barra inferior) ──
+// En la barra, solo los porcentajes (y cuándo se renueva); los tokens, al pasar el ratón.
 // El límite semanal con su porcentaje, los tokens usados en la semana y cuándo se
 // renueva; si el plan tiene además límite de 5 horas, se añade su porcentaje. El
 // detalle, al pasar el ratón. Los tokens de la conversación van junto a su llenado.
@@ -9,11 +10,6 @@ import { clamp } from './state.js';
 export let limitsSnap = { plan: null, conversations: {} }; // de limits.js
 export const setLimitsSnap = (value) => { limitsSnap = value; };
 
-export function tokensShort(n) {
-  if (n < 1000) return `${n} tokens`;
-  if (n < 1e6) return `${Math.round(n / 1000)} mil tokens`;
-  return `${(n / 1e6).toLocaleString('es-ES', { maximumFractionDigits: n < 1e7 ? 1 : 0 })} M tokens`;
-}
 
 export const tokensBreakdown = (t) => `entrada ${nf.format(t.input)} · salida ${nf.format(t.output)} · caché escrita ${nf.format(t.cacheWrite)} · caché leída ${nf.format(t.cacheRead)}`;
 
@@ -132,9 +128,8 @@ function drawPlanLimits() {
   box.dataset.level = level;
   $('#sb-plan-fill').style.width = `${clamp(pct, 0, 100)}%`;
   setPieces($('#sb-plan-text'), main.expired
-    ? [{ text: `${label}: renovada` }, ...whenPieces(main.resetsAt, ' ', ' '), { kind: 'extra', text: ` · ${tokensShort(main.tokens.total)} desde entonces` }]
-    : [{ text: `${label} ${main.pct} %` }, five ? { text: ` · 5 h ${five.pct} %` } : null,
-      { kind: 'extra', text: ` · ${tokensShort(main.tokens.total)}` }, ...whenPieces(main.resetsAt, ' · se renueva ', ' · renueva ')]);
+    ? [{ text: `${label}: renovada` }, ...whenPieces(main.resetsAt, ' ', ' ')]
+    : [{ text: `${label} ${main.pct} %` }, five ? { text: ` · 5 h ${five.pct} %` } : null, ...whenPieces(main.resetsAt, ' · se renueva ', ' · renueva ')]);
   const parts = [];
   if (plan.seven_day) parts.push(limitDetail('Límite semanal', plan.seven_day));
   if (plan.five_hour) parts.push(limitDetail('Límite de 5 horas', plan.five_hour));

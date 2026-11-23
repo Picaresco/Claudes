@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.6 — 2026-11-23
+- La barra inferior es más clara: el uso del plan y de la conversación se ven solo con su porcentaje (y cuándo se renueva), sin el número de tokens, y las barritas son más largas. Los tokens siguen al pasar el ratón por cada dato.
+
 ## 0.24.5 — 2026-11-23
 - «Codex asesora» ahora entra cuando hace falta: con el interruptor encendido, ClaudHome le dice a cada sesión, con su primer mensaje, cuándo pedirle a Codex una segunda opinión por su cuenta (decisiones de arquitectura, seguridad, infraestructura, planes grandes y problemas que se resisten), y si lo apagas, que ya no lo haga. Antes Claude no lo veía si tenías muchos servidores MCP (sus herramientas se cargan bajo demanda): en una prueba real, ante una decisión de contraseñas y arquitectura, no consultaba a Codex; ahora sí.
 - Codex razona lo que haga falta en vez de siempre al máximo: la revisión del código va a fondo en cambios de seguridad, despliegue o datos y en cambios grandes, y más ligera en cambios pequeños; la crítica de un plan, a fondo si el plan es largo; y en la segunda opinión, Claude elige la profundidad («rápida», «normal» o «a fondo») según la pregunta. Así las consultas sencillas tardan menos y gastan menos de tu plan de ChatGPT.

@@ -4,7 +4,7 @@ import { codexInfo } from './codex.js';
 import { colorHex, SIDES, SVG, STATUS } from './constants.js';
 import { contextCount } from './context.js';
 import { api, $, el } from './dom.js';
-import { limitsSnap, tokensShort, tokensBreakdown, renderPlanLimits, setPieces } from './limits.js';
+import { limitsSnap, tokensBreakdown, renderPlanLimits, setPieces } from './limits.js';
 import { logEntriesOf } from './log.js';
 import { hidePreview } from './preview.js';
 import { acknowledge } from './session-events.js';
@@ -153,7 +153,7 @@ export function renderHeads() {
 
 // La barra inferior, en una sola línea: si no cabe todo, se compacta por pasos (estilos de
 // #statusbar[data-compact]) hasta que cabe: 1 sin la pista de atajos · 2 con las fechas
-// abreviadas · 3 sin los tokens · 4 sin las fechas · 5 sin el recuento de sesiones ni las
+// abreviadas · 3 (sin uso desde que los tokens solo están en el texto emergente) · 4 sin las fechas · 5 sin el recuento de sesiones ni las
 // barritas, y en una línea pase lo que pase: si aun así no cabe, la parte izquierda se
 // recorta (su texto entero queda en el texto emergente). Al haber sitio, vuelve a mostrarlo todo.
 const ONE_LINE = 40; // px: más alto que esto es que ha saltado a otra línea
@@ -227,22 +227,20 @@ export function renderStatusbar() {
 
   renderPlanLimits();
 
-  // Conversación de la pestaña activa: cuánto ocupa de su contexto y los tokens que lleva usados.
+  // Conversación de la pestaña activa: cuánto ocupa de su contexto (los tokens que lleva
+  // usados, al pasar el ratón).
   const activeView = tab && views.get(tab.id);
   const usage = activeView && activeView.usage && activeView.usage.pct !== null ? activeView.usage : null;
   const spent = tab && limitsSnap.conversations[tab.id];
   const usageEl = $('#sb-usage');
-  usageEl.hidden = !usage && !spent;
-  if (usage || spent) {
-    usageEl.dataset.level = usage ? usageLevel(usage.pct) : 'low';
-    usageEl.querySelector('.sb-meter').hidden = !usage;
-    $('#sb-usage-fill').style.width = `${usage ? clamp(usage.pct, 0, 100) : 0}%`;
-    // Con el porcentaje a la vista, los tokens son lo primero que se quita si no cabe la barra.
-    setPieces($('#sb-usage-text'), [{ text: `Conversación${usage ? ` ${usage.pct} %` : ''}` }, spent ? { kind: usage ? 'extra' : '', text: ` · ${tokensShort(spent.total)}` } : null]);
-    const lines = [];
-    if (usage) lines.push(`${usageText(usage)}.`);
+  usageEl.hidden = !usage;
+  if (usage) {
+    usageEl.dataset.level = usageLevel(usage.pct);
+    $('#sb-usage-fill').style.width = `${clamp(usage.pct, 0, 100)}%`;
+    setPieces($('#sb-usage-text'), [{ text: `Conversación ${usage.pct} %` }]);
+    const lines = [`${usageText(usage)}.`];
     if (spent) lines.push(`Tokens usados en esta conversación: ${nf.format(spent.total)} (${tokensBreakdown(spent)}). Incluye los de sus subagentes.`);
-    if (usage) lines.push('Cuanto más llena, peor rinde Claude y más gasta: /compact la resume y sigue, /clear empieza de cero.');
+    lines.push('Cuanto más llena, peor rinde Claude y más gasta: /compact la resume y sigue, /clear empieza de cero.');
     usageEl.title = lines.join('\n');
   }
   $('#sb-hint').textContent = S.split

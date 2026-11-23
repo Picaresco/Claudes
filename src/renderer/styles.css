@@ -148,7 +148,7 @@ h1, p { margin: 0; }
 .tab-usage[data-level="mid"] i, .sb-usage[data-level="mid"] .sb-meter i { background: var(--warn); }
 .tab-usage[data-level="high"] i, .sb-usage[data-level="high"] .sb-meter i { background: var(--attn); }
 .sb-usage { display: flex; align-items: center; gap: 6px; }
-.sb-meter { width: 46px; height: 5px; overflow: hidden; border-radius: 3px; background: var(--line2); }
+.sb-meter { width: 64px; height: 6px; overflow: hidden; border-radius: 3px; background: var(--line2); }
 .sb-usage[data-level="high"] { color: var(--attn); }
 .tab-main { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 2px 0 12px; }
 .tab-main svg { flex: none; }
