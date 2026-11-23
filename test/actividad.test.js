@@ -427,3 +427,42 @@ test('un mensaje del usuario que empieza por una etiqueta sigue siendo suyo; los
   assert.ok(!similar('Las pruebas pasan', 'Las pruebas no pasan'));
   assert.ok(!similar('Las pruebas de calc.js pasan', 'Las pruebas de calc.js fallan'));
 });
+
+test('lo que enseña Claude (imagen, PDF, página o web) se ofrece con «Pincha aquí para verlo», una vez', async (t) => {
+  const { showables } = require('../src/main/narrator');
+  const { dir, last, ev } = setup(t);
+  fs.writeFileSync(path.join(dir, 'barra.png'), 'x');
+  fs.mkdirSync(path.join(dir, 'docs'));
+  fs.writeFileSync(path.join(dir, 'docs', 'informe.pdf'), 'x');
+  const found = showables(`La imagen está en \`${path.join(dir, 'barra.png')}\`; el informe, en [informe](docs/informe.pdf); y la guía, en https://example.com/guia. calc.js no se enseña y falta.png no existe.`, { folder: dir, cwd: dir });
+  assert.deepEqual(found.map((x) => [x.what, x.name]), [['la imagen', 'barra.png'], ['el PDF', 'informe.pdf'], ['la web', 'example.com/guia']]);
+  assert.equal(found[1].target, path.join(dir, 'docs', 'informe.pdf'));
+  assert.deepEqual(showables('Edité calc.js y README.md.', { folder: dir, cwd: dir }), []);
+  // En el panel: al terminar, con la respuesta final; y la misma imagen no se vuelve a ofrecer.
+  ev('UserPromptSubmit', { request: 'Hazme una imagen' });
+  ev('Stop', { narr: { last: `Hecho: ${path.join(dir, 'barra.png')}` } });
+  ev('UserPromptSubmit', { request: 'Otra vez' });
+  ev('Stop', { narr: { last: `La tienes en ${path.join(dir, 'barra.png')}` } });
+  const links = last().entries.filter((e) => e.src === 'link');
+  assert.equal(links.length, 1);
+  assert.equal(links[0].text, 'Pincha aquí para ver la imagen barra.png');
+  assert.equal(links[0].link.target, path.join(dir, 'barra.png'));
+  await wait(60);
+  assert.ok(last().entries.some((e) => e.src === 'link')); // Haiku no la sustituye
+});
+
+test('las webs se ofrecen solo de la respuesta final; los archivos, de cualquier texto de Claude', async (t) => {
+  const { showables } = require('../src/main/narrator');
+  const { dir, last, ev } = setup(t);
+  assert.deepEqual(showables('Mira https://example.com', { folder: dir, urls: false }), []);
+  fs.writeFileSync(path.join(dir, 'plano.png'), 'x');
+  const conv = path.join(dir, 'conv.jsonl');
+  fs.writeFileSync(conv, '');
+  const add = (content) => fs.appendFileSync(conv, `${JSON.stringify({ type: 'assistant', message: { content } })}\n`);
+  ev('UserPromptSubmit', { request: 'Haz el plano', narr: { transcript: conv } });
+  add([{ type: 'text', text: `Según https://docs.example.com/svg, hago el plano en ${path.join(dir, 'plano.png')}.` }]);
+  ev('PreToolUse', { toolName: 'Read', toolUseId: 'r1', narr: { input: { file: path.join(dir, 'plano.png') }, transcript: conv } });
+  assert.deepEqual(last().entries.filter((e) => e.src === 'link').map((e) => e.text), ['Pincha aquí para ver la imagen plano.png']);
+  ev('Stop', { narr: { transcript: conv, last: 'Listo. La guía que he seguido: https://docs.example.com/svg' } });
+  assert.deepEqual(last().entries.filter((e) => e.src === 'link').map((e) => e.text), ['Pincha aquí para ver la imagen plano.png', 'Pincha aquí para ver la web docs.example.com/svg']);
+});

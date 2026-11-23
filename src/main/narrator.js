@@ -246,6 +246,40 @@ function describe(tool, input, { folder = null, cwd = null, exists = fs.existsSy
   return typeof tool === 'string' && tool ? step('tool', `Usando ${tool}`) : null;
 }
 
+// ── Lo que Claude enseña ─────────────────────────────────────────
+
+// Lo que se puede abrir de lo que escribe Claude: imágenes, PDF y páginas (archivos que existen,
+// con ruta absoluta o relativa a la carpeta de trabajo) y direcciones web (urls: false, sin
+// ellas). Como mucho 3.
+const SHOW_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|pdf|html?)$/i;
+const SHOW_WHAT = { pdf: 'el PDF', html: 'la página', htm: 'la página' };
+function showables(text, { folder = null, cwd = null, exists = fs.existsSync, urls = true } = {}) {
+  const out = [];
+  const seen = new Set();
+  const add = (item) => { if (out.length < 3 && !seen.has(item.target.toLowerCase())) { seen.add(item.target.toLowerCase()); out.push(item); } };
+  const body = String(text || '');
+  // Primero los archivos (lo que Claude ha hecho o encontrado) y después las webs.
+  const files = [
+    ...[...body.matchAll(/[A-Za-z]:[\\/][^\s"'<>|*?`]+/g)].map((m) => m[0]),
+    ...[...body.matchAll(/(?:^|[\s(`"'«[])((?:\.{1,2}[\\/])?[\w.-]+(?:[\\/][\w.-]+)*\.[A-Za-z]{2,4})(?=$|[\s)`"'»\],;:!?]|\.(?:\s|$))/g)].map((m) => m[1]),
+  ];
+  for (const raw of files) {
+    const file = raw.replace(/[.,;:!?»)]+$/, '');
+    if (!SHOW_EXT.test(file)) continue;
+    const full = path.resolve(cwd || folder || '.', file);
+    try { if (!exists(full)) continue; } catch { continue; }
+    const ext = path.extname(full).slice(1).toLowerCase();
+    add({ type: 'file', target: full, what: SHOW_WHAT[ext] || 'la imagen', name: path.basename(full) });
+  }
+  for (const m of urls ? body.matchAll(/https?:\/\/[^\s<>"'`)\]]+/gi) : []) {
+    const url = m[0].replace(/[.,;:!?»]+$/, '');
+    let where;
+    try { const u = new URL(url); where = `${u.host}${u.pathname !== '/' ? u.pathname : ''}`; } catch { continue; }
+    add({ type: 'url', target: url, what: 'la web', name: clip(where, 60) });
+  }
+  return out;
+}
+
 // ── Registro de la conversación ──────────────────────────────────
 
 // Lo nuevo del registro (JSONL) desde `offset`: [{ type: 'text', text } | { type: 'tool', id }]
@@ -345,6 +379,8 @@ function createNarrator({
         known: new Map(), // agentes que se han visto empezar (los de otros, como el de un plugin, no se cuentan)
         seenTools: new Set(), // herramientas que ya tienen su paso (para saber si un texto llega tarde)
         finals: [], // las últimas respuestas finales (llegan con Stop; en el registro, a veces más tarde)
+        offered: new Set(), // lo que ya se ha ofrecido abrir («Pincha aquí»)
+        cwd: null, // la carpeta de trabajo de la sesión (para las rutas relativas)
         agentDoneAt: 0, // cuándo terminó el último agente (su informe llega después como mensaje)
       });
     }
@@ -352,7 +388,7 @@ function createNarrator({
   };
 
   const snapshot = (st) => ({
-    entries: st.entries.slice(-MAX_ENTRIES).map(({ id, at, kind, text, src, pending }) => ({ id, at, kind, text, src, pending })),
+    entries: st.entries.slice(-MAX_ENTRIES).map(({ id, at, kind, text, src, pending, link }) => ({ id, at, kind, text, src, pending, ...(link ? { link } : {}) })),
     now: st.now,
     enabled: isOn,
   });
@@ -454,6 +490,7 @@ function createNarrator({
     const { items, offset } = readTranscript(file, st.transcript.offset);
     st.transcript.offset = offset;
     if (skip) return;
+    for (const item of items) if (item.type === 'text') offerLinks(tabId, st, item.text);
     let held = [];
     for (const item of items) {
       // Una respuesta final que ya llegó con Stop no se cuenta otra vez.
@@ -466,6 +503,22 @@ function createNarrator({
       held = [];
     }
     for (const text of held) addStep(tabId, st, sayStep(text));
+  }
+  // «Pincha aquí para ver la imagen x.png»: una línea propia (Haiku no la sustituye), una vez por cosa.
+  // Las webs, solo de la respuesta final: lo que Claude cita de pasada mientras trabaja no se ofrece.
+  function offerLinks(tabId, st, text, { urls = false } = {}) {
+    const tab = tabs.get(tabId) || {};
+    for (const item of showables(text, { folder: tab.folder || null, cwd: st.cwd || tab.folder || null, urls })) {
+      const key = item.target.toLowerCase();
+      if (st.offered.has(key)) continue;
+      st.offered.add(key);
+      if (st.offered.size > 300) st.offered.delete(st.offered.values().next().value);
+      st.entries.push({
+        id: `l${tabId.slice(0, 8)}-${++st.seq}`, at: now(), kind: 'link', text: `Pincha aquí para ver ${item.what} ${item.name}`,
+        src: 'link', pending: false, steps: [], items: [], link: { target: item.target },
+      });
+      trim(st);
+    }
   }
   const sayStep = (text) => ({ kind: 'say', show: firstSentence(text), info: `Claude escribe: «${clip(plain(text), 600)}»`, text });
 
@@ -571,6 +624,7 @@ function createNarrator({
     const tab = tabs.get(tabId) || {};
     const ctx = { folder: tab.folder || null, cwd: ev.cwd || tab.folder || null };
     const agent = n.agentId ? (n.agentType || 'agente') : null;
+    if (ev.cwd && !agent) st.cwd = ev.cwd;
     if (n.transcript && !agent) pullTranscript(tabId, st, n.transcript, { skip: ev.event === 'UserPromptSubmit' });
     switch (ev.event) {
       case 'UserPromptSubmit': {
@@ -697,6 +751,7 @@ function createNarrator({
   // Fin de la tarea: el «Ha terminado», con la respuesta final para que Haiku la resuma.
   function finish(tabId, st, last) {
     st.reviewing = null;
+    if (last) offerLinks(tabId, st, last, { urls: true });
     dropSaid(st, last);
     if (last) st.finals = [...st.finals, norm(last)].slice(-3);
     addStep(tabId, st, { kind: 'done', show: 'Ha terminado', info: last ? `Termina la tarea y le responde al usuario: «${clip(plain(last), 900)}»` : 'Termina la tarea' });
@@ -763,4 +818,4 @@ function createNarrator({
   return { event, review, exited, setEnabled, isEnabled: () => isOn, get, forget, stop };
 }
 
-module.exports = { createNarrator, describe, commandLabel, shortName, readTranscript, buildPrompt, parseLines, firstSentence, similar, fresh, ARGS };
+module.exports = { createNarrator, showables, describe, commandLabel, shortName, readTranscript, buildPrompt, parseLines, firstSentence, similar, fresh, ARGS };

@@ -104,6 +104,10 @@ function createPreview({ app, nativeImage }) {
         }
         if (!image) image = await thumbnail(file);
         if (image) { result.kind = 'image'; result.image = image.toDataURL(); }
+      } else if (/\.svg$/i.test(file) && st.size < 2 * 1024 * 1024) {
+        // Un SVG se enseña tal cual, como imagen (en <img> no ejecuta nada de lo que lleve).
+        result.kind = 'image';
+        result.image = `data:image/svg+xml;base64,${fs.readFileSync(file).toString('base64')}`;
       } else if (PDF.test(file)) {
         const page = await renderPdf(file);
         if (page) { result.kind = 'page'; result.image = page.image; result.pages = page.pages; }

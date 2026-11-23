@@ -4,6 +4,12 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.8 — 2026-11-24
+- La barra inferior distingue a simple vista el gasto de cada uno: Claude en un recuadro terracota y Codex en uno verde agua, cada uno con su nombre, su barra de su color, el porcentaje y cuándo se renueva. Cerca del límite, el porcentaje pasa a ámbar y, muy cerca, a rojo con «⚠».
+- Cuando Claude te enseña algo (una imagen, un PDF, una página o una web), el panel «Actividad» lo dice con «Pincha aquí para verlo»: «aquí» lo abre y, al pasar el ratón por encima, lo ves en grande. Solo archivos que existen, una vez cada uno; las webs, solo las de su respuesta final (no las que cita mientras trabaja).
+- Debajo de «Pincha aquí», una miniatura de la imagen (o de la primera página del PDF): pulsándola se abre y, al pasar el ratón, se ve en grande.
+- La vista previa también enseña las imágenes SVG.
+
 ## 0.24.7 — 2026-11-23
 - «Codex asesora» no se olvida a mitad de trabajo: el aviso que le dice a Claude cuándo pedir a Codex una segunda opinión se vuelve a dar tras /clear (conversación nueva), cuando la conversación se resume (/compact o al llenarse) y, en conversaciones largas, cada 30 mensajes. Antes solo se daba al abrir la sesión.
 - El panel «Actividad» cuenta cuando Claude resume la conversación para hacer sitio.

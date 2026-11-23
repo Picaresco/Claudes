@@ -5,6 +5,7 @@
 // La rueda de opciones la activa o desactiva (desactivada, Haiku no cuenta nada y no hay
 // pestaña); la pestaña lateral solo muestra u oculta la columna (oculta, sigue contando).
 import { api, $, el } from './dom.js';
+import { previewAt, hidePreview } from './preview.js';
 import { focusAfterToggle } from './settings.js';
 import { S, byId, applySwatch, toast } from './state.js';
 
@@ -29,6 +30,7 @@ const ICONS = {
   say: '<path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/>',
   done: '<circle cx="8" cy="8" r="6"/><path d="M5.3 8.2l1.9 1.9 3.6-3.8"/>',
   error: '<path d="M8 2 14.5 13.5h-13z"/><path d="M8 6.5v3.2M8 11.6h.01"/>',
+  link: '<path d="M9 2.5h4.5V7"/><path d="M13.5 2.5 7.5 8.5"/><path d="M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3"/>',
 };
 const icon = (kind) => {
   const span = el('span', 'act-ico');
@@ -49,6 +51,37 @@ function since(ms) {
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
 }
 
+// La miniatura de lo que enseña Claude (una imagen o la primera página de un PDF), debajo de
+// su línea. Pulsarla lo abre; al pasar el ratón, se ve en grande. Se pide una vez por archivo.
+const thumbs = new Map(); // ruta → promesa de la imagen (data URL) o null
+function thumbnail(target) {
+  if (!thumbs.has(target)) {
+    if (thumbs.size > 200) thumbs.clear();
+    thumbs.set(target, api.preview(target)
+      .then((data) => (data && data.image && (data.kind === 'image' || data.kind === 'page') ? data.image : null))
+      .catch(() => null));
+  }
+  return thumbs.get(target);
+}
+function addThumb(li, target) {
+  const box = el('button', 'act-thumb');
+  box.type = 'button';
+  box.hidden = true;
+  box.title = `Abrir ${target}`;
+  box.addEventListener('click', () => { hidePreview(); api.openPath(target); });
+  box.addEventListener('mouseenter', (e) => previewAt(target, e));
+  box.addEventListener('mouseleave', () => hidePreview());
+  li.append(box);
+  thumbnail(target).then((image) => {
+    if (!image) return;
+    const img = el('img');
+    img.alt = '';
+    img.src = image;
+    box.replaceChildren(img);
+    box.hidden = false;
+  });
+}
+
 function item(entry) {
   const li = el('li', 'act-item');
   li.dataset.kind = entry.kind;
@@ -58,9 +91,24 @@ function item(entry) {
   li.title = `${hhmm(entry.at)} · ${entry.text}`; // entera, aunque no quepa en dos renglones
   li.append(icon(entry.kind));
   const text = el('p', 'act-text', entry.src === 'user' ? `«${entry.text}»` : entry.text);
+  // «Pincha aquí para ver…»: «aquí» abre la imagen, el PDF, la página o la web.
+  if (entry.link && entry.link.target && entry.text.includes('aquí')) {
+    const at = entry.text.indexOf('aquí');
+    const here = el('button', 'act-link', 'aquí');
+    here.type = 'button';
+    here.title = entry.link.target;
+    here.addEventListener('click', () => { hidePreview(); api.openPath(entry.link.target); });
+    // Al pasar el ratón, la vista previa grande (la de las rutas de la terminal); las webs, no.
+    if (!/^https?:\/\//i.test(entry.link.target)) {
+      here.addEventListener('mouseenter', (e) => previewAt(entry.link.target, e));
+      here.addEventListener('mouseleave', () => hidePreview());
+    }
+    text.replaceChildren(entry.text.slice(0, at), here, entry.text.slice(at + 4));
+  }
   if (entry.src === 'user') li.append(el('span', 'act-who', 'Tú'));
   li.append(text);
   if (entry.src !== 'local') li.append(el('time', 'act-time', hhmm(entry.at)));
+  if (entry.link && entry.link.target && !/^https?:\/\//i.test(entry.link.target)) addThumb(li, entry.link.target);
   return li;
 }
 

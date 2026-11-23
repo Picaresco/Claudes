@@ -13,6 +13,8 @@
   --ok: #7FD4A0;     /* bien: activo, detectado, ha terminado */
   --warn: #F2B866;   /* ojo: a medias, cerca de un límite */
   --accent: #6AA5F8; /* azul de la app: actualizar */
+  --claude: #E08A68; /* gasto de Claude (barra inferior) */
+  --codex: #6FC3A8;  /* gasto de Codex (barra inferior) */
   --sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
 }
@@ -433,7 +435,14 @@ body.dragging #workspace * { pointer-events: none; }
 .act-item[data-kind="done"] .act-ico { color: var(--ok); }
 .act-item[data-kind="done"][data-src="haiku"] .act-text { font-weight: 500; }
 .act-item[data-kind="tests"] .act-ico, .act-item[data-kind="wait"] .act-ico, .act-item[data-kind="ask"] .act-ico { color: var(--warn); }
-.act-item[data-kind="codex"] .act-ico, .act-item[data-kind="agent"] .act-ico { color: var(--accent); }
+.act-item[data-kind="codex"] .act-ico, .act-item[data-kind="agent"] .act-ico, .act-item[data-kind="link"] .act-ico { color: var(--accent); }
+/* «Pincha aquí para verlo»: «aquí» abre lo que enseña Claude. */
+.act-link { display: inline; color: var(--focus); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.act-link:hover { color: var(--txt); }
+/* Su miniatura, debajo de la línea: entera, sin recortar. */
+.act-thumb { grid-column: 2 / 4; justify-self: start; margin-top: 6px; padding: 0; overflow: hidden; border: 1px solid var(--line2); border-radius: 6px; background: var(--bg1); cursor: pointer; }
+.act-thumb:hover { border-color: var(--focus); }
+.act-thumb img { display: block; max-width: min(290px, 100%); max-height: 120px; object-fit: contain; }
 .act-item.fresh { animation: act-in 0.35s ease-out; }
 @keyframes act-in { from { opacity: 0; transform: translateY(4px); } }
 .act-now { display: flex; align-items: center; gap: 8px; flex: none; padding: 9px 14px; border-top: 1px solid var(--line); background: var(--bg1); font-size: 12px; color: var(--dim); }
@@ -476,6 +485,21 @@ body.dragging #workspace * { pointer-events: none; }
 #statusbar[data-compact="5"] .sb-right { flex: none; }
 #statusbar[data-compact="5"] .sb-left > *, #statusbar[data-compact="5"] .sb-right > * { flex: none; }
 #statusbar[data-compact="5"] #sb-count, #statusbar[data-compact="5"] .sb-meter { display: none; }
+/* El gasto semanal de Claude y de Codex: un recuadro del color de cada uno, con su barra del
+   mismo color. Cerca del límite, el porcentaje pasa a ámbar y, muy cerca, a rojo con «⚠». */
+.sb-chip { padding: 1px 10px 1px 8px; border: 1px solid; border-radius: 7px; }
+.sb-chip[data-who="claude"] { background: rgba(224, 138, 104, 0.12); border-color: rgba(224, 138, 104, 0.45); }
+.sb-chip[data-who="codex"] { background: rgba(111, 195, 168, 0.12); border-color: rgba(111, 195, 168, 0.45); }
+.sb-who { font-weight: 600; }
+.sb-chip[data-who="claude"] .sb-who { color: var(--claude); }
+.sb-chip[data-who="codex"] .sb-who { color: var(--codex); }
+.sb-chip[data-who="claude"][data-level] .sb-meter i { background: var(--claude); }
+.sb-chip[data-who="codex"][data-level] .sb-meter i { background: var(--codex); }
+.sb-chip[data-level] { color: var(--mute); }
+.sb-pct { color: var(--txt); font-weight: 600; }
+.sb-chip[data-level="mid"] .sb-pct { color: var(--warn); }
+.sb-chip[data-level="high"] .sb-pct { color: var(--alert); }
+.sb-chip[data-level="high"] { border-color: var(--alert); }
 .sb-attn { color: var(--alert); }
 .sb-done { color: var(--ok); }
 .sb-failed { color: var(--warn); }

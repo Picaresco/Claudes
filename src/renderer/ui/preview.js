@@ -198,6 +198,9 @@ function showPreview(file, event) {
   }, 150);
 }
 
+// La misma vista previa, para otra parte de la interfaz (el «aquí» del panel «Actividad»).
+export const previewAt = (file, event) => showPreview(file, event);
+
 export function hidePreview() {
   clearTimeout(previewTimer);
   previewToken += 1;

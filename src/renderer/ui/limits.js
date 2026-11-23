@@ -75,19 +75,19 @@ function drawCodexLimits(info) {
   meter.hidden = !l;
   box.dataset.level = l ? (l.reached ? 'high' : usageLevel(l.pct)) : 'low';
   if (!info.installed) {
-    $('#sb-codex-text').textContent = 'Codex no detectado';
+    $('#sb-codex-text').textContent = 'no detectado';
     box.title = 'Codex no está instalado en este equipo. Si lo instalas e inicias sesión con tu cuenta de ChatGPT, Claude podrá usarlo como asesor y para generar imágenes.';
     return;
   }
   if (!info.usable) {
-    $('#sb-codex-text').textContent = info.loggedIn ? 'Codex con clave de API' : 'Codex sin sesión';
+    $('#sb-codex-text').textContent = info.loggedIn ? 'con clave de API' : 'sin sesión';
     box.title = info.loggedIn
       ? 'Codex está instalado, pero con una clave de API: ClaudHome solo lo usa con tu cuenta de ChatGPT.'
       : 'Codex está instalado, pero sin sesión. Ejecuta «codex login» con tu cuenta de ChatGPT y pulsa el indicador de Codex de arriba.';
     return;
   }
   if (!l) {
-    $('#sb-codex-text').textContent = 'Codex detectado';
+    $('#sb-codex-text').textContent = 'detectado';
     box.title = 'Codex está instalado con tu cuenta de ChatGPT. Su uso aparecerá aquí en cuanto se pueda leer.';
     return;
   }
@@ -97,9 +97,11 @@ function drawCodexLimits(info) {
   $('#sb-codex-fill').style.width = `${clamp(l.pct, 0, 100)}%`;
   // Agotado: hasta cuándo, el de la ventana agotada (si se sabe), y el porcentaje semanal aparte.
   const reached = l.reachedWindow;
+  // «Codex [barra] 11 % jue 26 11:51»; si su límite no es semanal, con su ventana («5 h 40 %»).
+  const high = l.reached || usageLevel(l.pct) === 'high';
   const pieces = l.reached
-    ? [{ text: 'Codex: límite alcanzado' }, ...(reached && reached.resetsAt ? whenPieces(reached.resetsAt, ' hasta ', ' hasta ') : []), { kind: 'extra', text: ` · ${label} ${l.pct} %` }]
-    : [{ text: `Codex: ${label} ${l.pct} %` }, ...(l.resetsAt ? whenPieces(l.resetsAt, ' · se renueva ', ' · renueva ') : [])];
+    ? [{ kind: 'pct', text: '⚠ límite alcanzado' }, ...(reached && reached.resetsAt ? whenPieces(reached.resetsAt, ' hasta ', ' hasta ') : []), { kind: 'extra', text: ` · ${label} ${l.pct} %` }]
+    : [{ kind: 'pct', text: `${high ? '⚠ ' : ''}${l.windowMins === 10080 ? '' : `${label} `}${l.pct} %` }, ...(l.resetsAt ? whenPieces(l.resetsAt, ' · se renueva ', ' ') : [])];
   // Si la última lectura falló, el dato que se ve es el anterior: con su hora.
   if (l.stale && l.checkedAt) pieces.push({ text: ` · dato de las ${hm(l.checkedAt)}` });
   setPieces($('#sb-codex-text'), pieces);
@@ -119,7 +121,6 @@ function drawPlanLimits() {
   const main = plan && (plan.seven_day || plan.five_hour);
   box.hidden = !main;
   if (!main) return;
-  const label = plan.seven_day ? 'Semana' : 'Límite 5 h';
   const five = plan.seven_day && plan.five_hour && !plan.five_hour.expired ? plan.five_hour : null;
   const pct = main.expired ? 0 : main.pct;
   let level = usageLevel(pct);
@@ -127,9 +128,10 @@ function drawPlanLimits() {
   else if (five && usageLevel(five.pct) === 'mid' && level === 'low') level = 'mid';
   box.dataset.level = level;
   $('#sb-plan-fill').style.width = `${clamp(pct, 0, 100)}%`;
+  // «Claude [barra] 50 % vie 27 21:00» (cerca del límite, «⚠ 88 %» en rojo). Sin límite semanal, el de 5 horas.
   setPieces($('#sb-plan-text'), main.expired
-    ? [{ text: `${label}: renovada` }, ...whenPieces(main.resetsAt, ' ', ' ')]
-    : [{ text: `${label} ${main.pct} %` }, five ? { text: ` · 5 h ${five.pct} %` } : null, ...whenPieces(main.resetsAt, ' · se renueva ', ' · renueva ')]);
+    ? [{ kind: 'pct', text: 'renovada' }, ...whenPieces(main.resetsAt, ' ', ' ')]
+    : [{ kind: 'pct', text: `${level === 'high' ? '⚠ ' : ''}${plan.seven_day ? '' : '5 h '}${main.pct} %` }, five ? { text: ` · 5 h ${five.pct} %` } : null, ...whenPieces(main.resetsAt, ' · se renueva ', ' ')]);
   const parts = [];
   if (plan.seven_day) parts.push(limitDetail('Límite semanal', plan.seven_day));
   if (plan.five_hour) parts.push(limitDetail('Límite de 5 horas', plan.five_hour));
