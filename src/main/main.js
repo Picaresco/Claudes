@@ -322,6 +322,8 @@ if (!app.requestSingleInstanceLock()) {
       }
       // Pruebas antes de terminar: qué se cambia, qué pruebas se pasan y cómo acaban.
       if (event.event === 'PreToolUse') testcheck.toolStarting(tabId, event.toolName, event.toolUseId);
+      // Conversación resumida: con el siguiente mensaje se le recuerda cuándo pedir a Codex.
+      if (event.event === 'PostCompact') review.compacted(tabId);
       if (event.event === 'PostToolUse' || event.event === 'PostToolUseFailure') {
         testcheck.toolUsed(tabId, event.toolName, event.toolInput, {
           cwd: event.cwd, failed: event.event === 'PostToolUseFailure', background: event.background, shell: event.shell, toolUseId: event.toolUseId,
@@ -407,7 +409,7 @@ if (!app.requestSingleInstanceLock()) {
       if (ctx) parts.push(ctx.hookSpecificOutput.additionalContext);
       // Botón «Optimiza»: las instrucciones completas, si se acaba de confirmar.
       // «Codex asesora»: cuándo pedir la segunda opinión (o que se ha apagado), si la sesión no lo sabe.
-      const advisor = review.advisorNote(tabId, event && event.prompt);
+      const advisor = review.advisorNote(tabId, event && event.prompt, event && event.sessionId);
       if (advisor) parts.push(advisor);
       const optimize = optimizer.consume(tabId, event && event.prompt);
       if (optimize) { parts.push(optimize); optimizeHints.optimized(tabId); }

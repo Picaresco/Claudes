@@ -163,6 +163,7 @@ async function init() {
     limitsArrived = true;
     setLimitsSnap({ plan: snap.plan || null, conversations: snap.conversations || {} });
     renderStatusbar();
+    renderTabs(); // los tokens de cada conversación van en el texto emergente de su pestaña
   };
   api.onLimits(takeLimits);
   api.limitsGet().then((snap) => { if (!limitsArrived) takeLimits(snap); }).catch(() => { /* sin límites */ });

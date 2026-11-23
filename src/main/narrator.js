@@ -676,6 +676,10 @@ function createNarrator({
         finish(tabId, st, n.last);
         break;
       }
+      case 'PreCompact':
+        addStep(tabId, st, { kind: 'plan', show: 'Resumiendo la conversación para hacer sitio', info: 'Resume la conversación para hacer sitio (se le está llenando la memoria)' });
+        setNow(st, 'think', 'Resumiendo la conversación…');
+        break;
       case 'StopFailure':
         addStep(tabId, st, { kind: 'error', show: 'Se ha detenido por un error', info: 'Se detiene por un error del servicio de Anthropic' });
         st.tools.clear();

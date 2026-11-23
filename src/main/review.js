@@ -93,6 +93,7 @@ const ADVISOR_ON = 'ClaudHome · Codex asesora (activado por el usuario): tienes
   + 'y cuando lleves dos o tres intentos sin resolver un problema (ámbito «problema»). '
   + 'Elige la profundidad (campo «profundidad»): «rapida» para una duda concreta, «normal» para una decisión de código corriente y «a_fondo» para seguridad, arquitectura de algo grande o un problema que se resiste (si no la indicas, ClaudHome la elige por el ámbito). '
   + 'No la uses para cosas sencillas. Tarda entre medio minuto y unos minutos (más cuanto más a fondo): dile al usuario que la pides. Con su respuesta, compárala con tu análisis y dale una sola recomendación, diciendo en qué coincidís y en qué no.';
+const ADVISOR_EVERY = 30; // mensajes tras los que se le vuelve a recordar en una conversación larga
 const ADVISOR_OFF = 'ClaudHome · Codex asesora desactivado por el usuario: ya no pidas segundas opiniones a Codex (la herramienta mcp__claudhome-codex__segunda_opinion se negará). Si el usuario te la pide, dile que lo active en la rueda de opciones, «Codex asesora».';
 
 // Lo que cuenta como código para revisar: lo del aviso de crecimiento y las páginas HTML.
@@ -472,13 +473,21 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
 
   // Lo que la sesión tiene que saber de «Codex asesora» con este mensaje: cuándo pedir la
   // segunda opinión (una vez por sesión) o que se ha apagado; null si ya lo sabe.
-  function advisorNote(tabId, prompt) {
+  // Se vuelve a decir si la conversación ya no lo tiene: otra conversación (/clear, que cambia
+  // su identificador), una conversación resumida (/compact o al llenarse: compacted) y, en una
+  // conversación larga, cada ADVISOR_EVERY mensajes, para que no quede enterrado muy atrás.
+  function advisorNote(tabId, prompt, sessionId = null) {
     const tab = tabs.ensure(tabId);
     if (typeof prompt === 'string' && prompt.startsWith(WRAPUP_START.slice(0, 30))) return null; // al cerrar, no
     const on = enabled && usable();
-    if (on && tab.advisorTold !== true) {
+    tab.advisorPrompts = (tab.advisorPrompts || 0) + 1;
+    const stale = tab.advisorTold === true && ((sessionId && tab.advisorSession && sessionId !== tab.advisorSession) || tab.advisorPrompts > ADVISOR_EVERY);
+    if (on && (tab.advisorTold !== true || stale)) {
+      const why = tab.advisorTold !== true ? 'cuándo pedir la segunda opinión' : 'otra vez cuándo pedir la segunda opinión';
       tab.advisorTold = true;
-      log(`«Codex asesora»: se le dice a la sesión ${tabId} cuándo pedir la segunda opinión`);
+      tab.advisorSession = sessionId || tab.advisorSession || null;
+      tab.advisorPrompts = 0;
+      log(`«Codex asesora»: se le dice a la sesión ${tabId} ${why}`);
       return ADVISOR_ON;
     }
     if (!on && tab.advisorTold === true) {
@@ -489,10 +498,13 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   }
   // Una sesión que arranca (nueva o retomada) no sabe nada todavía.
   const sessionStarted = (tabId) => { tabs.ensure(tabId).advisorTold = undefined; };
+  // La conversación se ha resumido (PostCompact): el aviso puede haberse quedado fuera.
+  const compacted = (tabId) => { const tab = tabs.get(tabId); if (tab && tab.advisorTold === true) tab.advisorTold = undefined; };
 
   return {
     advisorNote,
     sessionStarted,
+    compacted,
     turnStarted,
     toolUsed,
     willReview,
@@ -510,4 +522,4 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   };
 }
 
-module.exports = { createReview, isGitRepo, repoRoot, reasonFor, verdict, reviewEffort, planEffort, opinionEffort, MODEL, EFFORT, WRAPUP_START, ADVISOR_ON, ADVISOR_OFF };
+module.exports = { createReview, isGitRepo, repoRoot, reasonFor, verdict, reviewEffort, planEffort, opinionEffort, MODEL, EFFORT, WRAPUP_START, ADVISOR_ON, ADVISOR_OFF, ADVISOR_EVERY };

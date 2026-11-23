@@ -80,3 +80,27 @@ test('Codex razona lo que haga falta: más a fondo en seguridad, cambios grandes
   assert.equal(opinionEffort('problema', 'inventada'), 'xhigh');
   assert.match(ADVISOR_ON, /«profundidad»/);
 });
+
+test('el aviso se repite si la conversación ya no lo tiene: tras /clear, al resumirse y cada 30 mensajes', () => {
+  const { ADVISOR_EVERY } = require('../src/main/review');
+  const { review, tabs } = setup();
+  tabs.ensure('t1');
+  assert.equal(review.advisorNote('t1', 'Hola', 's1'), ADVISOR_ON);
+  assert.equal(review.advisorNote('t1', 'Sigue', 's1'), null);
+  // /clear: otra conversación (otro identificador).
+  assert.equal(review.advisorNote('t1', 'Tarea nueva', 's2'), ADVISOR_ON);
+  assert.equal(review.advisorNote('t1', 'Sigue', 's2'), null);
+  // La conversación se resume.
+  review.compacted('t1');
+  assert.equal(review.advisorNote('t1', 'Sigue', 's2'), ADVISOR_ON);
+  // Conversación larga: se recuerda cada ADVISOR_EVERY mensajes, no antes.
+  let told = 0;
+  // (pasados 30 mensajes sin él, el siguiente lo lleva)
+  for (let i = 0; i < (ADVISOR_EVERY + 1) * 2; i += 1) if (review.advisorNote('t1', `mensaje ${i}`, 's2')) told += 1;
+  assert.equal(told, 2);
+  // Apagado, resumir no hace que se le diga nada.
+  review.enabled = false;
+  assert.equal(review.advisorNote('t1', 'Sigue', 's2'), ADVISOR_OFF);
+  review.compacted('t1');
+  assert.equal(review.advisorNote('t1', 'Sigue', 's2'), null);
+});

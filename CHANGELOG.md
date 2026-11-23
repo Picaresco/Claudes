@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.7 — 2026-11-23
+- «Codex asesora» no se olvida a mitad de trabajo: el aviso que le dice a Claude cuándo pedir a Codex una segunda opinión se vuelve a dar tras /clear (conversación nueva), cuando la conversación se resume (/compact o al llenarse) y, en conversaciones largas, cada 30 mensajes. Antes solo se daba al abrir la sesión.
+- El panel «Actividad» cuenta cuando Claude resume la conversación para hacer sitio.
+- La barra inferior solo muestra el uso semanal de Claude y de Codex, con barras más grandes para ver el gasto de un vistazo. El llenado de cada conversación ya se ve en la barrita de su pestaña, y sus tokens, al pasar el ratón por ella.
+
 ## 0.24.6 — 2026-11-23
 - La barra inferior es más clara: el uso del plan y de la conversación se ven solo con su porcentaje (y cuándo se renueva), sin el número de tokens, y las barritas son más largas. Los tokens siguen al pasar el ratón por cada dato.
 

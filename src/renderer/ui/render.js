@@ -4,7 +4,7 @@ import { codexInfo } from './codex.js';
 import { colorHex, SIDES, SVG, STATUS } from './constants.js';
 import { contextCount } from './context.js';
 import { api, $, el } from './dom.js';
-import { limitsSnap, tokensBreakdown, renderPlanLimits, setPieces } from './limits.js';
+import { limitsSnap, tokensBreakdown, renderPlanLimits } from './limits.js';
 import { logEntriesOf } from './log.js';
 import { hidePreview } from './preview.js';
 import { acknowledge } from './session-events.js';
@@ -30,7 +30,8 @@ function tabElement(tab, shown) {
   main.setAttribute('aria-selected', String(tab.id === S.activeId));
   const usage = view && view.usage && view.usage.pct !== null ? view.usage : null;
   main.setAttribute('aria-label', `${tab.name}, ${st.label.toLowerCase()}${usage ? `, conversación al ${usage.pct} %` : ''}`);
-  main.title = `${tab.name} · ${st.label}\n${tab.cwd}${usage ? `\n${usageText(usage)}` : ''}`;
+  const spent = limitsSnap.conversations[tab.id];
+  main.title = `${tab.name} · ${st.label}\n${tab.cwd}${usage ? `\n${usageText(usage)}` : ''}${spent ? `\nTokens usados en esta conversación: ${nf.format(spent.total)} (${tokensBreakdown(spent)}).` : ''}`;
   main.innerHTML = SVG[st.icon];
   // Los puntos de «te necesita» y «ha terminado» parpadean. La fase sale del reloj
   // para que no vuelva a empezar cada vez que se repintan las pestañas.
@@ -227,22 +228,8 @@ export function renderStatusbar() {
 
   renderPlanLimits();
 
-  // Conversación de la pestaña activa: cuánto ocupa de su contexto (los tokens que lleva
-  // usados, al pasar el ratón).
-  const activeView = tab && views.get(tab.id);
-  const usage = activeView && activeView.usage && activeView.usage.pct !== null ? activeView.usage : null;
-  const spent = tab && limitsSnap.conversations[tab.id];
-  const usageEl = $('#sb-usage');
-  usageEl.hidden = !usage;
-  if (usage) {
-    usageEl.dataset.level = usageLevel(usage.pct);
-    $('#sb-usage-fill').style.width = `${clamp(usage.pct, 0, 100)}%`;
-    setPieces($('#sb-usage-text'), [{ text: `Conversación ${usage.pct} %` }]);
-    const lines = [`${usageText(usage)}.`];
-    if (spent) lines.push(`Tokens usados en esta conversación: ${nf.format(spent.total)} (${tokensBreakdown(spent)}). Incluye los de sus subagentes.`);
-    lines.push('Cuanto más llena, peor rinde Claude y más gasta: /compact la resume y sigue, /clear empieza de cero.');
-    usageEl.title = lines.join('\n');
-  }
+  // La conversación de cada pestaña ya se ve en su barrita (y sus tokens, al pasar el ratón):
+  // la barra inferior solo lleva el uso semanal de Claude y de Codex.
   $('#sb-hint').textContent = S.split
     ? 'Ctrl+Alt+flechas cambia de lado · Ctrl+Tab cambia de pestaña'
     : 'Ctrl+Tab cambia de pestaña · Ctrl+1…9 va directa';

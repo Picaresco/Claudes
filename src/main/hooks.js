@@ -20,6 +20,10 @@ const EVENTS = [
   // Cuándo empieza y acaba cada agente (panel «Actividad», narrator.js).
   'SubagentStart',
   'SubagentStop',
+  // La conversación se resume (/compact o al llenarse): hay que volver a decirle lo que
+  // ClaudHome le dijo una vez (cuándo pedir a Codex la segunda opinión, review.js).
+  'PreCompact',
+  'PostCompact',
 ];
 
 const HEAD_LIMIT = 64 * 1024; // de cada aviso solo interesa el principio
