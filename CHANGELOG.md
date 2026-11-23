@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.1 — 2026-11-23
+- La actividad se activa o desactiva en la rueda de opciones («Actividad», activada de serie). Desactivada, Haiku no cuenta nada y no gasta.
+- Ya no hay botón en la cabecera: con la actividad activada, una pestaña vertical en el borde derecho muestra u oculta la columna. Oculta, Haiku sigue contando (así, al volver a mostrarla, está todo), y un punto verde en la pestaña te dice que Claude está trabajando.
+
 ## 0.24.0 — 2026-11-23
 - Nuevo panel «Actividad», a la derecha: te va contando, como lo haría un compañero y en palabras sencillas, lo que hace Claude en la pestaña. Qué archivos mira, qué cambia o crea, qué busca en internet, a qué agentes llama y qué le dicen, cuándo pasa las pruebas, qué le ha fallado y qué prueba en su lugar, y al final cómo ha quedado («Listo: …»). Cada línea ocupa como mucho dos renglones.
 - Cada paso aparece al momento en gris y, a los pocos segundos, Haiku lo cuenta con sus palabras. Abajo ves lo que está haciendo ahora mismo y cuánto lleva («Pasando las pruebas · 12 s», «Esperando tu permiso», «Esperando al agente…»). Lo que pides queda como separador entre una tarea y otra.

@@ -120,14 +120,19 @@ function registerIpc({
     return reviewInfo();
   });
 
-  // Panel «Actividad»: abierto o cerrado (cerrado, Haiku no cuenta nada) y lo de cada pestaña.
-  ipcMain.handle('activity:get', (_e, tabId) => (typeof tabId === 'string' ? narrator.get(tabId) : { open: narrator.isOpen() }));
+  // Panel «Actividad»: activada o no (rueda de opciones: si no, Haiku no cuenta nada), la
+  // columna a la vista u oculta (la pestaña lateral; oculta, sigue contando) y lo de cada pestaña.
+  const activityState = () => ({ enabled: narrator.isEnabled(), open: store.get('activityOpen', true) !== false });
+  ipcMain.handle('activity:get', (_e, tabId) => (typeof tabId === 'string' ? narrator.get(tabId) : activityState()));
   // Al cerrar la pestaña (no al dormirla: dormida conserva lo contado).
   ipcMain.on('activity:forget', (_e, tabId) => { if (typeof tabId === 'string') narrator.forget(tabId); });
+  ipcMain.handle('activity:setEnabled', (_e, on) => {
+    store.set('activityEnabled', narrator.setEnabled(on));
+    return activityState();
+  });
   ipcMain.handle('activity:setOpen', (_e, on) => {
-    const open = narrator.setOpen(on);
-    store.set('activityOpen', open);
-    return { open };
+    store.set('activityOpen', Boolean(on));
+    return activityState();
   });
 
   ipcMain.handle('brief:get', () => ({ enabled: style.brief }));

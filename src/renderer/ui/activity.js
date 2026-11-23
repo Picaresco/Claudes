@@ -2,9 +2,11 @@
 // A la derecha: lo que va haciendo Claude en la pestaña activa, contado como lo contaría un
 // compañero (src/main/narrator.js). Cada paso sale al momento en gris; a los pocos segundos,
 // Haiku lo cuenta con sus palabras. Abajo, lo que está haciendo ahora mismo y desde cuándo.
-// Cerrado, Haiku no cuenta nada.
+// La rueda de opciones la activa o desactiva (desactivada, Haiku no cuenta nada y no hay
+// pestaña); la pestaña lateral solo muestra u oculta la columna (oculta, sigue contando).
 import { api, $, el } from './dom.js';
-import { S, byId, applySwatch } from './state.js';
+import { focusAfterToggle } from './settings.js';
+import { S, byId, applySwatch, toast } from './state.js';
 
 // Un icono por tipo de paso (trazos de 16×16).
 const ICONS = {
@@ -36,7 +38,8 @@ const icon = (kind) => {
 
 const data = new Map(); // id de pestaña → { entries, now }
 const seen = new Set(); // líneas ya pintadas (las nuevas entran con una animación)
-let open = false;
+let enabled = false; // activada en la rueda de opciones
+let open = false; // la columna, a la vista
 let shownTab = null;
 let painted = []; // lo pintado, una clave por línea (id, si es gris, tipo y texto)
 
@@ -73,8 +76,21 @@ function renderNow(snap) {
 export function renderActivity() {
   const tab = byId(S.activeId);
   const panel = $('#activity');
-  $('#btn-activity').setAttribute('aria-pressed', String(open));
-  panel.hidden = !open || !tab;
+  // El interruptor de la rueda de opciones.
+  const button = $('#activity-btn');
+  button.hidden = false;
+  button.setAttribute('aria-checked', String(enabled));
+  button.title = enabled
+    ? 'Actividad: activada. Haiku cuenta lo que hace Claude, aunque ocultes la columna con su pestaña lateral (gasta muy poco de tu plan). Pulsa para desactivarla.'
+    : 'Actividad: desactivada. Pulsa para que Haiku te cuente en una pestaña lateral lo que va haciendo Claude.';
+  // La pestaña lateral: muestra u oculta la columna; oculta, el punto dice si Claude está trabajando.
+  const toggle = $('#act-toggle');
+  toggle.hidden = !tab || !enabled;
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.title = open ? 'Ocultar la columna (Haiku sigue contando; se desactiva en la rueda de opciones)' : 'Mostrar la actividad: lo que va haciendo Claude, contado en palabras sencillas';
+  const busy = Boolean(tab && (data.get(tab.id) || {}).now);
+  $('#act-toggle-dot').hidden = open || !busy;
+  panel.hidden = !enabled || !open || !tab;
   if (panel.hidden) return;
   applySwatch($('#act-swatch'), tab.color);
   $('#act-tab').textContent = tab.name;
@@ -108,7 +124,7 @@ export function renderActivity() {
 export function setActivity(tabId, snap) {
   if (!snap || typeof snap !== 'object') return;
   data.set(tabId, snap);
-  if (tabId === S.activeId && open) renderActivity();
+  if (tabId === S.activeId) renderActivity(); // cerrado, por el punto de la pestaña lateral
 }
 
 // Se olvida lo de una pestaña cerrada (aquí y en el proceso principal).
@@ -117,24 +133,37 @@ export function forgetActivity(tabId) {
   api.activityForget(tabId);
 }
 
+const take = (r) => { if (r && typeof r === 'object') { enabled = Boolean(r.enabled); open = Boolean(r.open); } };
+
+// La pestaña lateral: la columna, a la vista u oculta (Haiku sigue contando).
 export async function toggleActivity(force) {
   const want = typeof force === 'boolean' ? force : !open;
-  try { open = (await api.activitySetOpen(want)).open; } catch { open = want; }
-  if (open && S.activeId) {
-    // Lo que haya pasado con el panel cerrado (con sus palabras fijas).
-    try { setActivity(S.activeId, await api.activityGet(S.activeId)); } catch { /* llegará con el próximo paso */ }
-  }
+  try { take(await api.activitySetOpen(want)); } catch { open = want; }
   renderActivity();
 }
 
+// La rueda de opciones: activar o desactivar la actividad.
+async function switchActivity() {
+  try { take(await api.activitySetEnabled(!enabled)); } catch { return; }
+  if (enabled && S.activeId) {
+    // Lo que haya pasado mientras estaba desactivada (con sus palabras fijas).
+    try { setActivity(S.activeId, await api.activityGet(S.activeId)); } catch { /* llegará con el próximo paso */ }
+  }
+  renderActivity();
+  toast(enabled
+    ? 'Actividad activada: Haiku te cuenta lo que hace Claude. La pestaña lateral muestra u oculta la columna.'
+    : 'Actividad desactivada: Haiku deja de contar y no gasta nada.');
+  focusAfterToggle($('#activity-btn'));
+}
+
 export function wireActivity() {
-  $('#btn-activity').addEventListener('click', () => { toggleActivity(); });
-  $('#act-close').addEventListener('click', () => { toggleActivity(false); });
+  $('#act-toggle').addEventListener('click', () => { toggleActivity(); });
+  $('#activity-btn').addEventListener('click', () => { switchActivity(); });
   api.onActivity(setActivity);
-  api.activityGet().then((r) => { open = Boolean(r && r.open); renderActivity(); }).catch(() => { /* cerrado */ });
+  api.activityGet().then((r) => { take(r); renderActivity(); }).catch(() => { /* sin actividad */ });
   // El «desde hace…» de la línea de ahora.
   setInterval(() => {
-    if (!open || !S.activeId) return;
+    if (!enabled || !open || !S.activeId) return;
     const snap = data.get(S.activeId);
     if (snap && snap.now) $('#act-now-time').textContent = since(snap.now.since);
   }, 1000);

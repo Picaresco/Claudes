@@ -382,6 +382,14 @@ body.dragging #workspace * { pointer-events: none; }
 #empty p { max-width: 380px; font-size: 13px; }
 #empty .btn { margin-top: 8px; height: 44px; padding: 0 18px; }
 
+/* Pestaña lateral que abre y cierra el panel «Actividad». */
+.act-toggle { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; flex: none; width: 22px; padding: 12px 0; background: var(--bg0); border-left: 1px solid var(--line); color: var(--dim); font-size: 12px; font-weight: 500; }
+.act-toggle:hover { background: var(--bg2); color: var(--txt); }
+.act-toggle-label { writing-mode: vertical-rl; letter-spacing: 0.04em; }
+.act-toggle[aria-expanded="true"] .act-toggle-arrow { transform: rotate(180deg); }
+.act-toggle-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: act-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .act-toggle-dot { animation: none; } }
+
 /* ── Panel «Actividad» ─────────────────────────────────────────── */
 #activity { display: flex; flex-direction: column; flex: none; width: clamp(300px, 27vw, 420px); min-height: 0; background: var(--bg0); border-left: 1px solid var(--line); }
 .act-head { display: flex; align-items: center; gap: 8px; flex: none; padding: 4px 4px 4px 14px; border-bottom: 1px solid var(--line); }

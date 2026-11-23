@@ -294,13 +294,14 @@ if (!app.requestSingleInstanceLock()) {
         return answer;
       },
     });
-    // Panel «Actividad»: con el panel abierto, Haiku cuenta lo que va haciendo Claude.
+    // Panel «Actividad»: activada en la rueda de opciones, Haiku cuenta lo que va haciendo Claude
+    // (también con la columna oculta).
     narrator = createNarrator({
       tabs, send, log: appLog,
       findClaude: sessions.findClaude,
       env: haikuEnv,
       workDir: () => path.join(app.getPath('temp'), 'Claudes-haiku'),
-      open: store.get('activityOpen', true) !== false,
+      enabled: store.get('activityEnabled', true) !== false,
     });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');

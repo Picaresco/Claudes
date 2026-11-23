@@ -10,7 +10,8 @@
 // ese instante. Cada pocos segundos, Haiku (haiku.js) junta los pasos nuevos y los cuenta en
 // una a tres frases sencillas, que sustituyen a las grises.
 //
-// Solo se le pregunta a Haiku con el panel abierto: cerrado, no gasta nada y los pasos se
+// Solo se le pregunta a Haiku con la actividad activada (rueda de opciones), aunque la columna
+// esté oculta; desactivada, no gasta nada y los pasos se
 // quedan con sus palabras fijas. Si Haiku falla varias veces seguidas, se descansa un rato.
 const fs = require('fs');
 const path = require('path');
@@ -320,19 +321,19 @@ function parseLines(stdout) {
 // findClaude(), env(), workDir(): cómo lanzar Haiku (haiku.js) · open: si el panel está abierto ·
 // run(cmd, entrada): sustituye al lanzamiento real (pruebas) · gather, gap: esperas (ms).
 function createNarrator({
-  tabs, send, log = () => {}, findClaude, env, workDir, open = true, now = Date.now, run = null, gather = GATHER, gap = MIN_GAP,
+  tabs, send, log = () => {}, findClaude, env, workDir, enabled = true, now = Date.now, run = null, gather = GATHER, gap = MIN_GAP,
 }) {
   const runner = createRunner({ env, workDir, timeout: TIMEOUT });
   const exec = run || runner.run;
   const states = new Map();
   const queued = new Set();
-  let isOpen = Boolean(open);
+  let isOn = Boolean(enabled); // la actividad, activada en la rueda de opciones
   let asking = 0;
   let fails = 0;
   let pausedUntil = 0;
   let epoch = 0; // cambia al cerrar el panel: lo que contestara Haiku después ya no vale
 
-  const haikuOn = () => isOpen && now() >= pausedUntil;
+  const haikuOn = () => isOn && now() >= pausedUntil;
   const state = (tabId) => {
     if (!states.has(tabId)) {
       states.set(tabId, {
@@ -353,7 +354,7 @@ function createNarrator({
   const snapshot = (st) => ({
     entries: st.entries.slice(-MAX_ENTRIES).map(({ id, at, kind, text, src, pending }) => ({ id, at, kind, text, src, pending })),
     now: st.now,
-    open: isOpen,
+    enabled: isOn,
   });
   // A la interfaz, una vez por vuelta aunque cambien varias cosas seguidas.
   function changed(tabId) {
@@ -395,7 +396,7 @@ function createNarrator({
     }
   }
 
-  // Un paso nuevo: su línea gris al momento y, con el panel abierto, a la cola de Haiku.
+  // Un paso nuevo: su línea gris al momento y, con la actividad activada, a la cola de Haiku.
   // `late`: un texto de Claude que llega cuando lo que le sigue ya se ha contado: solo le
   // sirve a Haiku de contexto, sin línea propia.
   function addStep(tabId, st, d, { before = null } = {}) {
@@ -733,16 +734,17 @@ function createNarrator({
     changed(tabId);
   }
 
-  // Panel abierto o cerrado: cerrado no se pregunta a Haiku, y lo que estuviera preguntando se corta.
-  function setOpen(on) {
-    isOpen = Boolean(on);
-    if (!isOpen) {
+  // Actividad activada o desactivada (rueda de opciones; la columna oculta no cuenta):
+  // desactivada no se pregunta a Haiku, y lo que estuviera preguntando se corta.
+  function setEnabled(on) {
+    isOn = Boolean(on);
+    if (!isOn) {
       epoch += 1;
       runner.stop();
       for (const [tabId, st] of states) { settle(st); changed(tabId); }
     }
-    log(`Actividad: panel ${isOpen ? 'abierto (Haiku cuenta lo que pasa)' : 'cerrado (sin Haiku)'}`);
-    return isOpen;
+    log(`Actividad: ${isOn ? 'activada (Haiku cuenta lo que pasa)' : 'desactivada (sin Haiku)'}`);
+    return isOn;
   }
   const get = (tabId) => snapshot(state(tabId));
   function forget(tabId) {
@@ -754,7 +756,7 @@ function createNarrator({
     for (const st of states.values()) clearTimeout(st.timer);
     runner.stop();
   }
-  return { event, review, exited, setOpen, isOpen: () => isOpen, get, forget, stop };
+  return { event, review, exited, setEnabled, isEnabled: () => isOn, get, forget, stop };
 }
 
 module.exports = { createNarrator, describe, commandLabel, shortName, readTranscript, buildPrompt, parseLines, firstSentence, similar, fresh, ARGS };

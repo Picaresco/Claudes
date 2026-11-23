@@ -102,14 +102,14 @@ test('lo que se le pregunta a Haiku y cómo se entiende lo que contesta', () => 
 // Una pestaña de prueba con su carpeta y un Haiku de mentira que apunta lo que recibe y contesta
 // cada vez una frase distinta.
 const SAID = ['Miro calc.js e iva.js', 'Las pruebas fallan por el redondeo', 'Cambio el tipo del impuesto', 'Reviso el total final', 'Compruebo otra cosa distinta', 'Leo la documentación'];
-function setup(t, { open = true, reply = null } = {}) {
+function setup(t, { enabled = true, reply = null } = {}) {
   const dir = tempDir(t);
   const tabs = new Map([['t1', { name: 'Prueba', folder: dir }]]);
   const sent = [];
   const asked = [];
   const logs = [];
   const narrator = createNarrator({
-    tabs, open, gather: 30, gap: 0, findClaude: () => 'claude.exe', workDir: () => dir, log: (x) => logs.push(x),
+    tabs, enabled, gather: 30, gap: 0, findClaude: () => 'claude.exe', workDir: () => dir, log: (x) => logs.push(x),
     send: (channel, tabId, snap) => sent.push({ channel, tabId, snap }),
     run: async (_cmd, input) => { asked.push(input); return reply ? reply(input, asked.length) : answer([{ tipo: 'leer', texto: SAID[(asked.length - 1) % SAID.length] }]); },
   });
@@ -156,20 +156,20 @@ test('cada paso sale al momento en gris y, a los pocos segundos, Haiku lo cuenta
   await waitFor(() => !last().entries.some((e) => e.pending));
 });
 
-test('con el panel cerrado no se le pregunta a Haiku y los pasos se quedan con sus palabras', async (t) => {
-  const { dir, narrator, asked, last, ev } = setup(t, { open: false });
+test('con la actividad desactivada no se le pregunta a Haiku y los pasos se quedan con sus palabras', async (t) => {
+  const { dir, narrator, asked, last, ev } = setup(t, { enabled: false });
   ev('UserPromptSubmit', { request: 'Hola' });
   ev('PreToolUse', { toolName: 'Edit', toolUseId: 'a', narr: { input: { file: path.join(dir, 'a.js') } } });
   await wait(120);
   assert.equal(asked.length, 0);
   assert.deepEqual(last().entries.map((e) => [e.text, e.pending]), [['Hola', false], ['Cambiando a.js', false]]);
-  assert.equal(last().open, false);
+  assert.equal(last().enabled, false);
   // Se abre: lo nuevo ya se cuenta. Se cierra con pasos esperando: se quedan como están.
-  narrator.setOpen(true);
+  narrator.setEnabled(true);
   ev('PreToolUse', { toolName: 'Edit', toolUseId: 'b', narr: { input: { file: path.join(dir, 'b.js') } } });
   await waitFor(() => asked.length === 1);
   ev('PreToolUse', { toolName: 'Edit', toolUseId: 'c', narr: { input: { file: path.join(dir, 'c.js') } } });
-  narrator.setOpen(false);
+  narrator.setEnabled(false);
   await wait(120);
   assert.equal(asked.length, 1);
   assert.deepEqual(last().entries.slice(-1).map((e) => [e.text, e.pending]), [['Cambiando c.js', false]]);
@@ -401,7 +401,7 @@ test('si Codex revisa y no encuentra nada, la tarea termina; si encuentra algo, 
   await waitFor(() => asked.some((q) => /responde al usuario: «Hecho lo otro\.»/.test(q)));
 });
 
-test('si el proceso de Claude termina a medias, deja de contar que trabaja; cerrar el panel corta lo que preguntaba', async (t) => {
+test('si el proceso de Claude termina a medias, deja de contar que trabaja; desactivar la actividad corta lo que preguntaba', async (t) => {
   let release;
   const gate = new Promise((r) => { release = r; });
   const { narrator, asked, last, ev } = setup(t, { reply: async () => { await gate; return answer([{ tipo: 'leer', texto: 'Respuesta que llega tarde' }]); } });
@@ -411,7 +411,7 @@ test('si el proceso de Claude termina a medias, deja de contar que trabaja; cerr
   narrator.exited('t1');
   assert.equal(last().now, null);
   await waitFor(() => asked.length === 1);
-  narrator.setOpen(false);
+  narrator.setEnabled(false);
   release();
   await wait(80);
   assert.ok(!last().entries.some((e) => /llega tarde/.test(e.text)));
