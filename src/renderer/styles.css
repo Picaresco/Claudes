@@ -635,7 +635,6 @@ body.dragging #workspace * { pointer-events: none; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: min(74vw, 980px);
   padding: 6px;
   background: var(--bg2);
   border: 1px solid var(--line2);
@@ -643,19 +642,18 @@ body.dragging #workspace * { pointer-events: none; }
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
   pointer-events: none; /* que no le quite el ratón a la terminal */
 }
-.pv-body { display: flex; justify-content: center; }
-/* La imagen entera, sin recortar: tan grande como quepa (hasta 960 × 720 y el 70 % de la ventana). */
-.pv-img { display: block; max-width: min(72vw, 960px); max-height: 70vh; object-fit: contain; border-radius: 6px; background: var(--bg0); }
-.preview[data-kind="page"] .pv-img { background: #fff; border: 1px solid var(--line2); border-radius: 3px; }
+/* Un recuadro del mismo tamaño para todas (400 × 260; menos si la ventana es pequeña), con la
+   imagen, la página o el texto entero dentro, sin recortar ni deformar. */
+.pv-body { display: flex; align-items: center; justify-content: center; width: min(400px, 80vw); height: min(260px, 55vh); overflow: hidden; border-radius: 6px; background: var(--bg0); }
+.pv-img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.preview[data-kind="page"] .pv-img { background: #fff; }
 .pv-text {
-  max-width: min(60vw, 720px);
-  max-height: 50vh;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
   margin: 0;
   padding: 8px 10px;
   overflow: hidden;
-  background: var(--bg0);
-  border: 1px solid var(--line);
-  border-radius: 6px;
   font: 11px/1.45 var(--mono);
   color: var(--dim);
   white-space: pre;

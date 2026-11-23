@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.9 — 2026-11-24
+- La vista previa al pasar el ratón por una ruta tiene siempre el mismo tamaño (400 × 260, menos si la ventana es pequeña), sea una imagen ancha o alta, la página de un PDF o un texto: ni grande ni pequeña, y la imagen se ve entera.
+- En el panel «Actividad», si ya se ve la miniatura, pasar el ratón por «aquí» o por ella no abre además la vista grande (sí la abre lo que no tiene miniatura, como una página). En la terminal, la vista previa al pasar el ratón sigue igual.
+
 ## 0.24.8 — 2026-11-24
 - La barra inferior distingue a simple vista el gasto de cada uno: Claude en un recuadro terracota y Codex en uno verde agua, cada uno con su nombre, su barra de su color, el porcentaje y cuándo se renueva. Cerca del límite, el porcentaje pasa a ámbar y, muy cerca, a rojo con «⚠».
 - Cuando Claude te enseña algo (una imagen, un PDF, una página o una web), el panel «Actividad» lo dice con «Pincha aquí para verlo»: «aquí» lo abre y, al pasar el ratón por encima, lo ves en grande. Solo archivos que existen, una vez cada uno; las webs, solo las de su respuesta final (no las que cita mientras trabaja).

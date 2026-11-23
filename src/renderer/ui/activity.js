@@ -52,7 +52,8 @@ function since(ms) {
 }
 
 // La miniatura de lo que enseña Claude (una imagen o la primera página de un PDF), debajo de
-// su línea. Pulsarla lo abre; al pasar el ratón, se ve en grande. Se pide una vez por archivo.
+// su línea. Pulsarla lo abre. Se pide una vez por archivo. Con ella a la vista, pasar el ratón
+// no abre además la vista grande (sí en la terminal, donde no se ve la imagen).
 const thumbs = new Map(); // ruta → promesa de la imagen (data URL) o null
 function thumbnail(target) {
   if (!thumbs.has(target)) {
@@ -69,8 +70,6 @@ function addThumb(li, target) {
   box.hidden = true;
   box.title = `Abrir ${target}`;
   box.addEventListener('click', () => { hidePreview(); api.openPath(target); });
-  box.addEventListener('mouseenter', (e) => previewAt(target, e));
-  box.addEventListener('mouseleave', () => hidePreview());
   li.append(box);
   thumbnail(target).then((image) => {
     if (!image) return;
@@ -79,6 +78,8 @@ function addThumb(li, target) {
     img.src = image;
     box.replaceChildren(img);
     box.hidden = false;
+    li.dataset.thumb = 'true';
+    hidePreview(); // si se estaba viendo en grande mientras cargaba
   });
 }
 
@@ -100,7 +101,8 @@ function item(entry) {
     here.addEventListener('click', () => { hidePreview(); api.openPath(entry.link.target); });
     // Al pasar el ratón, la vista previa grande (la de las rutas de la terminal); las webs, no.
     if (!/^https?:\/\//i.test(entry.link.target)) {
-      here.addEventListener('mouseenter', (e) => previewAt(entry.link.target, e));
+      // Sin miniatura (p. ej. una página), al pasar el ratón se ve en grande; con ella, ya se ve.
+      here.addEventListener('mouseenter', (e) => { if (li.dataset.thumb !== 'true') previewAt(entry.link.target, e); });
       here.addEventListener('mouseleave', () => hidePreview());
     }
     text.replaceChildren(entry.text.slice(0, at), here, entry.text.slice(at + 4));
