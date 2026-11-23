@@ -38,4 +38,20 @@ const paths = await packager({
   win32metadata: { FileDescription: 'ClaudHome', ProductName: 'ClaudHome' },
 });
 
+// Chromium trae sus textos en 55 idiomas (unos 49 MB). La app está en español: basta con el
+// español y el inglés, que es el que usa Chromium si falta el del sistema.
+const LOCALES = new Set(['es.pak', 'es-419.pak', 'en-US.pak']);
+for (const dir of paths) {
+  const locales = path.join(dir, 'locales');
+  if (!fs.existsSync(locales)) continue;
+  let freed = 0;
+  for (const name of fs.readdirSync(locales)) {
+    if (LOCALES.has(name)) continue;
+    const file = path.join(locales, name);
+    freed += fs.statSync(file).size;
+    fs.rmSync(file);
+  }
+  console.log(`Idiomas de Chromium: quedan ${[...LOCALES].join(', ')} (${Math.round(freed / 1048576)} MB menos)`);
+}
+
 console.log('Empaquetado en:', paths.join(', '));

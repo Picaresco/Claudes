@@ -8,6 +8,7 @@ import {
   renderRecents, openPlusMenu, closePlusMenu, reopenRecent, cleanFolder, setNameTouched, openNewDialog,
   suggestName, submitNew,
 } from './newtab.js';
+import { optimizeProject } from './optimize.js';
 import { hidePreview } from './preview.js';
 import { renderTabs } from './render.js';
 import { acknowledge } from './session-events.js';
@@ -161,6 +162,7 @@ export function wireChrome() {
 
   $('#btn-terminal').addEventListener('click', () => toggleExtra());
   $('#btn-context').addEventListener('click', () => toggleContext());
+  $('#btn-optimize').addEventListener('click', () => { optimizeProject().catch((err) => api.log(`Optimiza: ${err.message}`)); });
   $('#btn-split').addEventListener('click', toggleSplit);
   $('#btn-swap').addEventListener('click', swapSides);
   $('#btn-folder').addEventListener('click', () => { const tab = byId(S.activeId); if (tab) api.openPath(tab.cwd); });

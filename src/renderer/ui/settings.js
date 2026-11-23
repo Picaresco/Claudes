@@ -12,7 +12,7 @@ export function focusAfterToggle(button) {
   else focusTerminal();
 }
 
-export function openSettings() {
+function openSettings() {
   const menu = $('#settings-menu');
   menu.hidden = false;
   $('#btn-settings').setAttribute('aria-expanded', 'true');

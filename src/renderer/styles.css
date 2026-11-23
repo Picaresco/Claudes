@@ -10,6 +10,9 @@
   --attn: #FF8A65;
   --alert: #F26B6B; /* sesión que te necesita: el punto rojo de las pestañas */
   --focus: #8DBBFA;
+  --ok: #7FD4A0;     /* bien: activo, detectado, ha terminado */
+  --warn: #F2B866;   /* ojo: a medias, cerca de un límite */
+  --accent: #6AA5F8; /* azul de la app: actualizar */
   --sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
 }
@@ -138,8 +141,8 @@ h1, p { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .dot-attn { animation: none; } }
 /* Llenado de la conversación: barrita al pie de la pestaña y medidor en la barra inferior. */
 .tab-usage { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; overflow: hidden; border-radius: 1px; background: rgba(255, 255, 255, 0.08); pointer-events: none; }
-.tab-usage i, .sb-meter i { display: block; height: 100%; border-radius: inherit; background: #7FD4A0; }
-.tab-usage[data-level="mid"] i, .sb-usage[data-level="mid"] .sb-meter i { background: #F2B866; }
+.tab-usage i, .sb-meter i { display: block; height: 100%; border-radius: inherit; background: var(--ok); }
+.tab-usage[data-level="mid"] i, .sb-usage[data-level="mid"] .sb-meter i { background: var(--warn); }
 .tab-usage[data-level="high"] i, .sb-usage[data-level="high"] .sb-meter i { background: var(--attn); }
 .sb-usage { display: flex; align-items: center; gap: 6px; }
 .sb-meter { width: 46px; height: 5px; overflow: hidden; border-radius: 3px; background: var(--line2); }
@@ -204,11 +207,11 @@ h1, p { margin: 0; }
   height: 30px;
   margin-right: 8px;
   padding: 0 12px;
-  border: 1px solid #6AA5F8;
+  border: 1px solid var(--accent);
   border-radius: 15px;
   font-size: 12px;
   font-weight: 600;
-  color: #8DBBFA;
+  color: var(--focus);
   white-space: nowrap;
   -webkit-app-region: no-drag;
 }
@@ -216,29 +219,8 @@ h1, p { margin: 0; }
 .update-icon { display: flex; }
 .update-btn[data-state="working"] { border-color: var(--line2); color: var(--dim); font-weight: 500; cursor: default; }
 .update-btn[data-state="working"]:hover { background: none; }
-.update-btn[data-state="ready"] { background: #6AA5F8; color: var(--bg0); }
-.update-btn[data-state="ready"]:hover { background: #8DBBFA; }
-
-/* Micrófono para dictar: gris oscuro y hueco = apagado; amarillo oscuro y relleno = activado. */
-.mic-btn {
-  --mic-off: #5C636E;
-  --mic-on: #B8860B;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  margin-right: 8px;
-  border-radius: 8px;
-  color: var(--mic-off);
-  -webkit-app-region: no-drag;
-}
-.mic-btn:hover { color: #7A818C; background: rgba(255, 255, 255, 0.06); }
-.mic-btn[aria-pressed="true"] { color: var(--mic-on); }
-.mic-btn[aria-pressed="true"]:hover { color: #CC9A1A; }
-.mic-btn[aria-pressed="true"] .mic-body { fill: currentColor; }
+.update-btn[data-state="ready"] { background: var(--accent); color: var(--bg0); }
+.update-btn[data-state="ready"]:hover { background: var(--focus); }
 
 /* Rueda de opciones: un panel con cada interruptor en su fila (nombre, qué hace e interruptor). */
 .gear-wrap { position: relative; display: flex; align-self: center; margin-right: 6px; -webkit-app-region: no-drag; }
@@ -250,12 +232,12 @@ h1, p { margin: 0; }
    (un bocadillo; un escudo si es de seguridad) o generar una imagen (un pincel pintando). */
 .codex-status { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: #7A818C; }
 .codex-status:hover { background: rgba(255, 255, 255, 0.06); }
-.codex-status[data-state="ready"] { color: #7FD4A0; }
-.codex-status[data-state="partial"] { color: #F2B866; }
+.codex-status[data-state="ready"] { color: var(--ok); }
+.codex-status[data-state="partial"] { color: var(--warn); }
 .cx-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .codex-status[data-state="missing"] .cx-dot { background: none; box-shadow: inset 0 0 0 1.5px currentColor; }
 /* Cerca del límite de uso de Codex (o agotado), el nombre lo avisa con su porcentaje. */
-.codex-status[data-state="ready"][data-limit="high"] { color: #F2B866; }
+.codex-status[data-state="ready"][data-limit="high"] { color: var(--warn); }
 .codex-status[data-state="ready"][data-limit="reached"] { color: var(--alert); }
 .cx-limit { font-weight: 500; font-variant-numeric: tabular-nums; }
 .cx-work { display: flex; align-items: center; gap: 4px; color: var(--txt); }
@@ -290,61 +272,16 @@ h1, p { margin: 0; }
 .opt-desc { font-size: 12px; color: var(--dim); }
 .opt-row[aria-checked="true"] .brief-switch, .opt-row[aria-pressed="true"] .brief-switch { background: rgba(141, 187, 250, 0.35); }
 .opt-row[aria-checked="true"] .brief-switch i, .opt-row[aria-pressed="true"] .brief-switch i { transform: translateX(11px); background: var(--focus); }
-#codex-chip[data-state="busy"] .opt-desc { color: #7FD4A0; }
-.opt-row.opt-warn .opt-desc { color: #F2B866; }
+#codex-chip[data-state="busy"] .opt-desc { color: var(--ok); }
+.opt-row.opt-warn .opt-desc { color: var(--warn); }
 
-/* Interruptor «Resumido»: encendido, respuestas cortas; apagado, con explicaciones. */
-.brief-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  align-self: center;
-  flex: none;
-  height: 30px;
-  margin-right: 8px;
-  padding: 0 12px 0 8px;
-  border: 1px solid var(--line2);
-  border-radius: 15px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--dim);
-  white-space: nowrap;
-  -webkit-app-region: no-drag;
-}
-.brief-chip:hover { border-color: var(--mute); color: var(--txt); }
+/* El interruptor de cada opción de la rueda: a la derecha encendido, a la izquierda apagado. */
 .brief-switch { position: relative; flex: none; width: 26px; height: 15px; border-radius: 8px; background: var(--line2); transition: background 0.15s; }
 .brief-switch i { position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--mute); transition: transform 0.15s, background 0.15s; }
-.brief-chip[aria-checked="true"] { border-color: var(--focus); color: var(--txt); font-weight: 600; }
-.brief-chip[aria-checked="true"] .brief-switch { background: rgba(141, 187, 250, 0.35); }
-.brief-chip[aria-checked="true"] .brief-switch i { transform: translateX(11px); background: var(--focus); }
 @media (prefers-reduced-motion: reduce) { .brief-switch, .brief-switch i { transition: none; } }
 
-/* Indicador de Codex: punto hueco = detectado o no disponible (lo dice el texto),
-   punto relleno = imágenes activadas, aro girando = generando una imagen. */
+/* Hueco flexible de la barra superior: empuja los botones a la derecha. */
 .strip-space { flex: 1 1 0; min-width: 8px; }
-.codex-chip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  align-self: center;
-  flex: none;
-  height: 30px;
-  margin-right: 10px;
-  padding: 0 12px;
-  border: 1px solid var(--line2);
-  border-radius: 15px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--dim);
-  white-space: nowrap;
-  -webkit-app-region: no-drag;
-}
-.codex-chip:hover { border-color: var(--mute); color: var(--txt); }
-.codex-dot { flex: none; width: 9px; height: 9px; border: 1.5px solid var(--mute); border-radius: 50%; }
-.codex-chip[data-state="ready"] .codex-dot { border-color: #7FD4A0; }
-.codex-chip[data-state="on"], .codex-chip[data-state="busy"] { border-color: #7FD4A0; color: var(--txt); font-weight: 600; }
-.codex-chip[data-state="on"] .codex-dot { border-color: #7FD4A0; background: #7FD4A0; }
-.codex-chip[data-state="busy"] .codex-dot { width: 11px; height: 11px; border-color: var(--line2); border-top-color: #7FD4A0; animation: spin 0.9s linear infinite; }
 .badge { flex: none; padding: 2px 8px; border: 1px solid var(--line2); border-radius: 10px; font-size: 11px; color: var(--dim); white-space: nowrap; }
 
 /* ── Cabecera de la sesión ─────────────────────────────────────── */
@@ -402,8 +339,8 @@ h1, p { margin: 0; }
 .ph-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .ph-status[data-tone] { font-weight: 600; }
 .ph-status[data-tone="alert"] { color: var(--alert); }
-.ph-status[data-tone="done"] { color: #7FD4A0; }
-.ph-status[data-tone="warn"] { color: #F2B866; }
+.ph-status[data-tone="done"] { color: var(--ok); }
+.ph-status[data-tone="warn"] { color: var(--warn); }
 .pane-body { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; }
 /* Lado de la zona de trabajo donde caería la pestaña que se está arrastrando. */
 #drop-hint {
@@ -476,8 +413,8 @@ body.dragging #workspace * { pointer-events: none; }
 #statusbar[data-compact="5"] .sb-left > *, #statusbar[data-compact="5"] .sb-right > * { flex: none; }
 #statusbar[data-compact="5"] #sb-count, #statusbar[data-compact="5"] .sb-meter { display: none; }
 .sb-attn { color: var(--alert); }
-.sb-done { color: #7FD4A0; }
-.sb-failed { color: #F2B866; }
+.sb-done { color: var(--ok); }
+.sb-failed { color: var(--warn); }
 #sb-zoom { padding: 2px 8px; border: 1px solid var(--line2); border-radius: 6px; font-size: 12px; color: var(--txt); }
 #sb-zoom:hover { border-color: var(--mute); }
 
@@ -544,7 +481,7 @@ body.dragging #workspace * { pointer-events: none; }
 .ctx-thumb[data-kind="page"] { background: #fff; }
 .ctx-thumb[data-kind="page"] img { object-position: top; }
 .ctx-thumb[data-kind="icon"] img { width: 32px; height: 32px; object-fit: contain; }
-.ctx-thumb[data-kind="dir"] { color: #F2B866; }
+.ctx-thumb[data-kind="dir"] { color: var(--warn); }
 .ctx-thumb[data-kind="web"] { color: var(--focus); }
 .ctx-thumb[data-kind="missing"] { color: var(--attn); }
 .ctx-thumb[data-kind="text"] { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 3px; padding: 8px 6px; }
@@ -558,7 +495,7 @@ body.dragging #workspace * { pointer-events: none; }
 .ctx-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex: none; }
 .ctx-switch { position: relative; width: 30px; height: 17px; border-radius: 9px; background: var(--line2); }
 .ctx-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: left 0.12s; }
-.ctx-switch[aria-checked="true"] { background: #6AA5F8; }
+.ctx-switch[aria-checked="true"] { background: var(--accent); }
 .ctx-switch[aria-checked="true"]::after { left: 15px; }
 .ctx-remove { display: flex; padding: 2px; border-radius: 4px; color: var(--mute); }
 .ctx-remove:hover { color: var(--txt); }
@@ -706,7 +643,7 @@ dialog .btn-primary { background: var(--txt); }
 .log-table tr.external .c-dest { color: #F7CE8A; }
 .log-times { color: var(--txt); font-weight: 600; }
 .log-kind { display: inline-block; padding: 1px 8px; border: 1px solid var(--line2); border-radius: 10px; font-size: 11.5px; color: var(--dim); }
-.log-table tr[data-kind="web"] .log-kind { border-color: rgba(106, 165, 248, 0.6); color: #8DBBFA; }
+.log-table tr[data-kind="web"] .log-kind { border-color: rgba(106, 165, 248, 0.6); color: var(--focus); }
 .log-table tr[data-kind="busqueda"] .log-kind { border-color: rgba(232, 141, 186, 0.6); color: #F0A9CE; }
 .log-table tr[data-kind="mcp"] .log-kind { border-color: rgba(242, 184, 102, 0.6); color: #F7CE8A; }
 .log-table tr[data-kind="comando"] .log-kind { border-color: rgba(127, 212, 160, 0.6); color: #9BE3B8; }

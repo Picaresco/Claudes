@@ -31,7 +31,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { EDIT_TOOLS, CODE } = require('./growth');
+const { EDIT_TOOLS, isCode } = require('./growth');
+const { localStamp } = require('./applog');
 const { scanText, decodeText } = require('./secrets');
 
 // ¿Lleva algo con pinta de clave? Con todos los patrones (también los de configuración: un
@@ -61,10 +62,7 @@ const MAX_SUMMARY = 2000; // caracteres del resumen de Codex que se le pasan a C
 const MAX_FINDINGS = 12000; // y de los hallazgos
 const WRAPUP_START = 'Voy a cerrar esta sesión ahora.'; // principio de lo que se escribe al cerrar
 
-const two = (n) => String(n).padStart(2, '0');
-const stamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
 // Lo que cuenta como código para revisar: lo del aviso de crecimiento y las páginas HTML.
-const isCode = (file) => CODE.test(file) || /\.html?$/i.test(file);
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max)}\n[… recortado]` : text);
 
 // ¿Está la carpeta dentro de un repositorio git? Se mira en disco (una carpeta o archivo
@@ -191,7 +189,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (!detailedLogs()) return null;
     try {
       fs.mkdirSync(logsDir(), { recursive: true });
-      const file = path.join(logsDir(), `revision-codex-${stamp()}-${crypto.randomBytes(3).toString('hex')}.log`);
+      const file = path.join(logsDir(), `revision-codex-${localStamp()}-${crypto.randomBytes(3).toString('hex')}.log`);
       fs.writeFileSync(file, `Carpeta: ${cwd}\nModelo: ${MODEL} (${EFFORT})\nDuración: ${result.seconds} s · código ${result.code}${result.aborted ? ' · interrumpida' : ''}\n\n== Resultado ==\n${result.text}\n\n== Registro de Codex ==\n${result.log}\n`);
       return file;
     } catch { return null; } // sin registro, se sigue

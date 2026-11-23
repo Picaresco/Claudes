@@ -50,6 +50,10 @@ export const STATUS = {
   sleeping: { icon: 'off', label: 'Dormida para ahorrar memoria: se retoma al abrirla' },
 };
 
+// La petición que escribe el botón «Optimiza». La app le añade las instrucciones completas
+// (src/main/optimize.js, que reconoce su principio: OPTIMIZE_START).
+export const OPTIMIZE_PROMPT = 'Optimiza este proyecto con el método de ClaudHome: limpieza, orden y eficiencia, sin cambiar lo que hace.';
+
 // Lo que se le escribe a Claude cuando se cierra una sesión que está trabajando.
 export const WRAPUP_PROMPT = 'Voy a cerrar esta sesión ahora. No continúes con la tarea: deja lo que estabas haciendo en un estado coherente y escribe un resumen breve de qué has hecho, qué queda pendiente y cuál es el siguiente paso, para retomarlo cuando vuelva a abrir esta sesión.';
 

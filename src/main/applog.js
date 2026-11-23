@@ -11,7 +11,9 @@ const LOG_MAX_BYTES = 300 * 1024 * 1024;
 
 const two = (n) => String(n).padStart(2, '0');
 const dayStamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}`;
+// Fechas para nombres de archivo y líneas de registro: «20261123», «20261123-094512» y «09:45:12».
 const localStamp = (d = new Date()) => `${dayStamp(d)}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+const clock = (d = new Date()) => `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 
 // Un nombre de pestaña convertido en algo que vale como nombre de archivo.
 const safeFileName = (name) => (String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, '_').slice(0, 40) || 'sesion');
@@ -67,4 +69,4 @@ function createAppLog(logsDir) {
   };
 }
 
-module.exports = { createAppLog, dayStamp, localStamp, safeFileName };
+module.exports = { createAppLog, dayStamp, localStamp, clock, safeFileName };

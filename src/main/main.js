@@ -1,11 +1,11 @@
-// Proceso principal de Claudes: arranque, sesiones de las pestañas y comunicación
-// con la interfaz. Cada pieza vive en su módulo: la ventana (window.js), los procesos
-// de terminal (ptys.js), las consolas y su entorno (shells.js), el portapapeles
-// (clipboard.js), el estilo de las respuestas y los plugins (style.js), el registro de
-// depuración (applog.js) y lo que se sabe de cada pestaña (tabs.js).
+// Proceso principal de Claudes: arranque, sesiones de las pestañas y avisos de los hooks.
+// Cada pieza vive en su módulo: la ventana (window.js), los procesos de terminal (ptys.js),
+// las consolas y su entorno (shells.js), el portapapeles (clipboard.js), el estilo de las
+// respuestas y los plugins (style.js), el registro de depuración (applog.js), lo que se
+// sabe de cada pestaña (tabs.js), lo que se sabe de Codex (codex-state.js) y los canales
+// con la interfaz (ipc.js).
 const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen, net, nativeImage } = require('electron');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const pty = require('node-pty');
 const { Store } = require('./store');
@@ -22,6 +22,9 @@ const { Growth, EDIT_TOOLS } = require('./growth');
 const { createReview } = require('./review');
 const { Secrets } = require('./secrets');
 const { createTestReminder } = require('./testcheck');
+const { createCodexState } = require('./codex-state');
+const { registerIpc } = require('./ipc');
+const { createOptimizer } = require('./optimize');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -49,11 +52,11 @@ let growth = null; // aviso de archivos de código que crecen mucho (growth.js)
 let review = null; // Codex como segundo revisor del código (review.js)
 let secrets = null; // aviso de claves y contraseñas escritas en los archivos (secrets.js)
 let testcheck = null; // pruebas antes de terminar (testcheck.js)
+let optimizer = null; // botón «Optimiza» (optimize.js)
 // Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
 // pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
 const NOTICE_BUDGET = 1500;
 const NOTICE_LIMIT = 1700;
-const liveNotifications = new Set();
 
 const logsDir = () => path.join(app.getPath('userData'), 'logs');
 const logger = createAppLog(logsDir); // registro de depuración (applog.js)
@@ -82,114 +85,24 @@ const style = createStyle({
 // Servidor MCP de la app para Codex: las herramientas se ven como mcp__claudhome-codex__segunda_opinion
 // y mcp__claudhome-codex__generar_imagen.
 const CODEX_SERVER = OWN_MCP;
-// jobs: lo que Codex está haciendo ahora mismo, [{ kind: 'advise' | 'draw', tabId, what, icon, startedAt }]
-// (icon: con qué se pinta en la barra superior: 'review', 'plan', 'opinion', 'security' o 'draw').
-let codexState = { installed: false, loggedIn: false, mode: null, enabled: false, jobs: [], checkedAt: 0 };
-// Codex empieza (+1) o termina (-1) un trabajo para una pestaña: asesorar (una segunda
-// opinión, la crítica de un plan o una revisión) o dibujar una imagen.
-function codexJob(delta, kind, tabId, what, icon) {
-  if (delta > 0) { codexState.jobs.push({ kind, tabId, what, icon, startedAt: Date.now() }); return; }
-  const at = codexState.jobs.findIndex((job) => job.kind === kind && job.tabId === tabId && job.what === what);
-  if (at >= 0) codexState.jobs.splice(at, 1);
-}
-
-// Solo se usa con sesión de ChatGPT: es la suscripción lo que se quiere aprovechar.
-const codexUsable = () => codexState.installed && codexState.loggedIn && codexState.mode === 'chatgpt';
-// El asesor (segunda opinión, planes y revisión) necesita además una versión reciente de Codex.
-const advisorUsable = () => codexUsable() && codexState.advisor !== false;
-
-function codexInfo() {
-  const { installed, loggedIn, mode, enabled, advisor, limits } = codexState;
-  // Para la interfaz: qué hace, para qué proyecto y desde cuándo.
-  const jobs = codexState.jobs.map((job) => ({ kind: job.kind, what: job.what, icon: job.icon, tab: (tabs.get(job.tabId) || {}).name || null, startedAt: job.startedAt }));
-  return {
-    installed, loggedIn, mode, enabled, jobs, busy: jobs.length, advising: jobs.filter((job) => job.kind === 'advise').length, drawing: jobs.filter((job) => job.kind === 'draw').length,
-    advisor: advisor !== false, usable: codexUsable(), active: enabled && codexUsable(), limits: limits || null,
-  };
-}
-
-async function refreshCodex() {
-  const found = await codex.detect();
-  codexState = { ...codexState, ...found, checkedAt: Date.now() };
-  // El dato de uso es de una cuenta: sin sesión, o si la sesión ha cambiado, no vale.
-  if (!codexUsable() || (codexState.limits && codexState.limits.authStamp !== codex.authStamp())) codexState.limits = null;
-  send('codex:changed', codexInfo());
-  refreshCodexLimits();
-  return codexInfo();
-}
-
-// Uso del plan de ChatGPT en Codex (barra inferior): al detectarlo, cada 10 minutos y poco
-// después de cada trabajo de Codex. No gasta nada.
-let limitsBusy = false;
-let limitsAgain = false; // otra lectura pedida mientras había una en curso
-let limitsSoon = null;
-async function refreshCodexLimits() {
-  if (!codexUsable()) return;
-  if (limitsBusy) { limitsAgain = true; return; }
-  limitsBusy = true;
-  try {
-    const limits = await codex.readLimits();
-    if (limits) codexState.limits = { ...limits, checkedAt: Date.now(), stale: false, authStamp: codex.authStamp() };
-    else if (codexState.limits) codexState.limits = { ...codexState.limits, stale: true }; // se muestra con su hora
-    send('codex:changed', codexInfo());
-  } finally {
-    limitsBusy = false;
-    if (limitsAgain) { limitsAgain = false; refreshCodexLimits(); }
-  }
-}
-function codexLimitsSoon() {
-  clearTimeout(limitsSoon);
-  limitsSoon = setTimeout(refreshCodexLimits, 4000);
-}
-// Cada 10 minutos, también la sesión (por si se inicia o se cierra desde un terminal).
-setInterval(() => { refreshCodex().catch(() => { /* se intentará la próxima vez */ }); }, 10 * 60 * 1000);
-
-// Lo que ocurre cuando Claude llama a la herramienta «generar_imagen».
-async function codexTool(tabId, _name, args) {
-  const cwd = (tabs.get(tabId) || {}).folder;
-  if (!cwd) throw new Error('Esta sesión ya no está abierta en ClaudHome.');
-  if (!codexState.enabled) throw new Error('Las imágenes con Codex están desactivadas en ClaudHome (indicador «Codex» de la barra superior).');
-  codexJob(1, 'draw', tabId, 'imagen', 'draw');
-  send('codex:changed', codexInfo());
-  const startedAt = Date.now();
-  appLog(`Codex: ${tabLabel(tabId)} pide una imagen (${String(args.descripcion || '').length} caracteres de descripción)`);
-  if (netlog) netlog.record({ tabId, kind: 'imagen', target: 'Descripción de una imagen', detail: `${String(args.descripcion || '').length} caracteres`, dest: 'OpenAI (Codex)', external: true });
-  try {
-    const result = await codex.generateImage({
-      description: args.descripcion,
-      shape: ['cuadrada', 'horizontal', 'vertical'].includes(args.formato) ? args.formato : null,
-      transparent: args.fondo_transparente === true,
-      file: args.archivo,
-      cwd,
-      workDir: path.join(app.getPath('temp'), 'Claudes-codex'),
-    });
-    appLog(`Codex: imagen lista en ${Math.round((Date.now() - startedAt) / 1000)} s → ${result.path}`);
-    return `Imagen generada con Codex y guardada en: ${result.path}`;
-  } catch (err) {
-    appLog(`Codex: fallo tras ${Math.round((Date.now() - startedAt) / 1000)} s: ${err && err.message}`);
-    throw err;
-  } finally {
-    codexJob(-1, 'draw', tabId, 'imagen', 'draw');
-    codexLimitsSoon();
-    send('codex:changed', codexInfo());
-  }
-}
-
-// ── Dictado por voz ────────────────────────────────────────────────
-// Cada sesión arranca con el dictado de Claude Code activado en modo «mantener»:
-// Claude graba mientras se mantiene pulsada la barra espaciadora y para al soltarla.
-// Claude Code reconoce la tecla mantenida por sus repeticiones, así que el botón
-// del micrófono de la interfaz decide si esas repeticiones le llegan. Apagado, una
-// pulsación larga es un solo espacio y nunca se graba. Como no hace falta reiniciar
-// nada, el botón vale al momento para todas las pestañas.
-
-let voiceEnabled = false;
+// Lo que se sabe de Codex y lo que está haciendo ahora mismo (codex-state.js).
+const codexState = createCodexState({
+  codex,
+  tabs,
+  send,
+  log: appLog,
+  persist: (on) => store.set('codexImages', on),
+  workDir: () => path.join(app.getPath('temp'), 'Claudes-codex'),
+  netlog: () => netlog, // se crea más tarde
+});
+// ── Ajustes de cada sesión ─────────────────────────────────────────
 
 // Ajustes de Claude Code que Claudes añade a la sesión de una pestaña. `allow` son
 // las reglas para leer sin preguntar los documentos del contexto del proyecto.
 function sessionSettings(tabId, allow = []) {
   const mine = userSettings();
   // Dictado activado y los plugins integrados que toquen (style.js).
+  // (El dictado arranca en modo «mantener»: el botón del micrófono decide si le llega la tecla; ipc.js.)
   const settings = { voice: { enabled: true, mode: 'hold' }, ...style.sessionSettings(mine) };
   // Sin idioma, Claude Code dicta en inglés. Ese mismo ajuste fija el idioma de las
   // respuestas; si el usuario ya ha elegido uno, se respeta el suyo.
@@ -260,9 +173,9 @@ async function createPty(o) {
   // Con Codex instalado, la sesión arranca con las herramientas de la app: «segunda_opinion»
   // (que se niega si no hay sesión de ChatGPT o el asesor está apagado: así sirve aunque se
   // inicie sesión después) y «generar_imagen» si las imágenes están activadas.
-  if (!codexState.checkedAt) await refreshCodex();
-  const withMcp = Boolean(codexState.installed);
-  const withCodex = withMcp && codexState.enabled; // con la herramienta de imágenes
+  if (!codexState.state.checkedAt) await codexState.refresh();
+  const withMcp = Boolean(codexState.state.installed);
+  const withCodex = withMcp && codexState.state.enabled; // con la herramienta de imágenes
   tab.folder = o.cwd;
   tab.session = chosen.sessionId;
   if (withMcp) {
@@ -294,267 +207,6 @@ async function createPty(o) {
   return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex };
 }
 
-// ── Comunicación con la interfaz ───────────────────────────────────
-
-function registerIpc() {
-  ipcMain.handle('app:info', () => ({
-    version: app.getVersion(),
-    home: os.homedir(),
-    shells: shellList(),
-    claudeFound: Boolean(sessions.findClaude()),
-    windowsBuild: Number(os.release().split('.')[2]) || 0,
-    dev: DEV,
-    // Minutos sin actividad tras los que se duerme una sesión que no estás viendo.
-    sleepMinutes: Number(process.env.CLAUDES_SLEEP_MINUTES) > 0 ? Number(process.env.CLAUDES_SLEEP_MINUTES) : 45,
-    // Animación de arranque. Para pruebas: CLAUDES_NO_SPLASH la quita y, desde el código,
-    // CLAUDES_SPLASH_AT=<ms> la deja quieta en ese instante.
-    splash: !process.env.CLAUDES_NO_SPLASH,
-    splashAt: DEV && Number.isFinite(Number(process.env.CLAUDES_SPLASH_AT)) && process.env.CLAUDES_SPLASH_AT !== undefined
-      ? Number(process.env.CLAUDES_SPLASH_AT) : null,
-  }));
-
-  ipcMain.handle('state:load', () => store.get('ui', null));
-  ipcMain.on('state:save', (_e, state) => {
-    if (state && typeof state === 'object' && Array.isArray(state.tabs)) store.set('ui', state);
-  });
-
-  ipcMain.handle('pty:create', async (_e, options) => {
-    try {
-      return await createPty(options);
-    } catch (err) {
-      return { ok: false, error: `No se pudo iniciar: ${err && err.message ? err.message : err}` };
-    }
-  });
-  ipcMain.on('pty:write', (_e, id, data) => ptys.write(id, data));
-  ipcMain.on('pty:resize', (_e, id, cols, rows) => ptys.resize(id, cols, rows));
-  ipcMain.handle('pty:kill', async (_e, id) => {
-    await ptys.kill(id);
-    if (typeof id === 'string' && !id.includes(':')) {
-      hookServer.forget(id);
-      contexts.forget(id);
-      tabs.forget(id);
-    }
-  });
-
-  // Registro de depuración: estado, interruptor y acceso a los archivos.
-  const debugInfo = () => ({ enabled: logger.enabled, dir: logsDir() });
-  ipcMain.handle('debug:get', debugInfo);
-  ipcMain.handle('debug:set', (_e, on) => {
-    if (logger.enabled && !on) appLog('registro de depuración desactivado');
-    logger.enabled = Boolean(on);
-    store.set('debugLogs', logger.enabled);
-    if (logger.enabled) appLog('registro de depuración activado');
-    return debugInfo();
-  });
-  // Abre el registro de Claude de una pestaña; sin pestaña (o sin registro), la carpeta.
-  ipcMain.on('debug:open', (_e, tabId) => {
-    const file = typeof tabId === 'string' ? (tabs.get(tabId) || {}).log : null;
-    if (file && fs.existsSync(file)) { shell.openPath(file); return; }
-    fs.mkdirSync(logsDir(), { recursive: true });
-    shell.openPath(logsDir());
-  });
-  ipcMain.on('log', (_e, text) => appLog(`interfaz: ${String(text).slice(0, 600)}`));
-
-  ipcMain.handle('codex:status', async (_e, refresh) => {
-    // Como mucho una comprobación por minuto, salvo que se pida expresamente.
-    if (refresh || Date.now() - codexState.checkedAt > 60000) return refreshCodex();
-    return codexInfo();
-  });
-  ipcMain.handle('codex:setEnabled', async (_e, on) => {
-    await refreshCodex();
-    codexState.enabled = Boolean(on) && codexUsable();
-    store.set('codexImages', codexState.enabled);
-    send('codex:changed', codexInfo());
-    return codexInfo();
-  });
-
-  // Micrófono para dictar: la interfaz lo aplica a las teclas; aquí solo se recuerda.
-  ipcMain.handle('voice:get', () => ({ enabled: voiceEnabled }));
-  ipcMain.handle('voice:set', (_e, on) => {
-    voiceEnabled = Boolean(on);
-    store.set('voiceDictation', voiceEnabled);
-    appLog(`micrófono para dictar ${voiceEnabled ? 'activado' : 'desactivado'}`);
-    return { enabled: voiceEnabled };
-  });
-
-  // Actualización desde GitHub.
-  ipcMain.handle('update:get', () => updater.info());
-  ipcMain.handle('update:changes', () => updater.changes());
-  ipcMain.handle('update:start', () => {
-    updater.start(); // tarda minutos: el avance llega por update:changed
-    return updater.info();
-  });
-  ipcMain.on('update:restart', restartToUpdate);
-
-  // Botón «Resumido»: vale para todas las pestañas desde su siguiente mensaje.
-  // Interruptor «Codex asesora»: apagarlo vale al momento; encenderlo, desde el siguiente turno.
-  const reviewInfo = () => ({ enabled: review.enabled, usable: advisorUsable(), model: review.MODEL, effort: review.EFFORT, sandbox: codexState.sandbox !== false, codexConfig: codex.configPath() });
-  ipcMain.handle('review:get', () => reviewInfo());
-  ipcMain.handle('review:set', (_e, on) => {
-    review.enabled = Boolean(on) && advisorUsable();
-    appLog(`revisión de Codex ${review.enabled ? 'activada' : 'desactivada'}`);
-    return reviewInfo();
-  });
-
-  ipcMain.handle('brief:get', () => ({ enabled: style.brief }));
-  ipcMain.handle('brief:set', (_e, on) => {
-    style.brief = Boolean(on);
-    store.set('briefMode', style.brief);
-    appLog(`respuestas ${style.brief ? 'resumidas' : 'con explicaciones'} (botón «Resumido»)`);
-    return { enabled: style.brief };
-  });
-
-  // Límites de uso del plan (5 horas y semanal) y tokens gastados en cada periodo.
-  ipcMain.handle('limits:get', () => (limits ? limits.snapshot() : null));
-
-  ipcMain.on('status:summary', (_e, value) => {
-    wm.setBusy(value && value.working);
-  });
-
-  ipcMain.on('notify', (_e, o) => {
-    if (!o || !Notification.isSupported()) return;
-    const notification = new Notification({ title: String(o.title || 'ClaudHome'), body: String(o.body || ''), silent: true });
-    liveNotifications.add(notification); // sin esta referencia, el clic se pierde
-    notification.on('click', () => { wm.show(); send('notify:click', o.tabId); });
-    notification.on('close', () => liveNotifications.delete(notification));
-    notification.on('failed', (_event, error) => {
-      liveNotifications.delete(notification);
-      console.error('La notificación no se pudo mostrar:', error);
-      appLog(`notificación «${o.title}»: Windows no la ha mostrado (${error})`);
-    });
-    notification.on('show', () => {
-      if (DEV) console.log('[notificación mostrada]', o.title);
-      appLog(`notificación mostrada: «${o.title}»`);
-    });
-    notification.show();
-    if (wm.win && !wm.win.isFocused()) wm.win.flashFrame(true);
-  });
-
-  // Vista previa de los archivos sobre los que se pasa el ratón en la terminal.
-  ipcMain.handle('preview:file', (_e, target) => previewer.preview(target));
-  ipcMain.handle('preview:existing', (_e, list) => previewer.existing(list));
-
-  // Contexto del proyecto: datos de cada elemento para el panel, cambios, lo que
-  // recibe Claude y los diálogos para añadir archivos o carpetas.
-  ipcMain.handle('context:describe', (_e, items) => contexts.describe(items));
-  ipcMain.handle('context:prompt', async (_e, tabId, name, context) => (await contexts.build(String(tabId), name, context)).text);
-  ipcMain.handle('context:update', async (_e, tabId, name, context) => {
-    if (typeof tabId !== 'string') return false;
-    const result = await contexts.update(tabId, name, context);
-    // Con la sesión abierta se reescriben sus ajustes con los permisos nuevos (por si
-    // Claude Code los recarga); el resumen se lo da el hook con el siguiente mensaje.
-    if (ptys.has(tabId)) hookServer.settingsFile(tabId, sessionSettings(tabId, result.allow));
-    return true;
-  });
-  ipcMain.handle('context:link', (_e, url) => contexts.linkInfo(url));
-
-  // «Log»: lo que ha visto Claude y lo que sale hacia internet.
-  ipcMain.handle('netlog:get', () => (netlog ? netlog.entries() : []));
-  ipcMain.on('netlog:openFile', () => {
-    const file = netlog && netlog.todayFile();
-    if (file && fs.existsSync(file)) shell.openPath(file);
-    else { fs.mkdirSync(logsDir(), { recursive: true }); shell.openPath(logsDir()); }
-  });
-  ipcMain.handle('context:pick', async (_e, kind) => {
-    const folder = kind === 'folder';
-    const result = await dialog.showOpenDialog(wm.win, {
-      title: folder ? 'Añadir una carpeta al contexto del proyecto' : 'Añadir archivos al contexto del proyecto',
-      properties: folder ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
-    });
-    return result.canceled ? [] : result.filePaths;
-  });
-
-  ipcMain.handle('fs:isDir', (_e, target) => {
-    try { return typeof target === 'string' && fs.statSync(target).isDirectory(); } catch { return false; }
-  });
-
-  ipcMain.handle('dialog:pickFolder', async (_e, startAt) => {
-    const result = await dialog.showOpenDialog(wm.win, {
-      title: 'Elige la carpeta de la sesión',
-      defaultPath: typeof startAt === 'string' && fs.existsSync(startAt) ? startAt : os.homedir(),
-      properties: ['openDirectory'],
-    });
-    return result.canceled ? null : result.filePaths[0];
-  });
-
-  ipcMain.handle('dialog:confirm', async (_e, o) => {
-    if (DEV && process.env.CLAUDES_AUTO_CONFIRM) return true; // solo para pruebas automáticas
-    const result = await dialog.showMessageBox(wm.win, {
-      type: 'question',
-      message: String(o.message || ''),
-      detail: String(o.detail || ''),
-      buttons: [String(o.confirmLabel || 'Aceptar'), 'Cancelar'],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    });
-    return result.response === 0;
-  });
-
-  ipcMain.handle('menu:tab', (_e, o) => new Promise((resolve) => {
-    let settled = false;
-    const pick = (value) => () => { settled = true; resolve(value); };
-    const menu = Menu.buildFromTemplate([
-      { label: 'Cambiar nombre', accelerator: 'F2', registerAccelerator: false, click: pick('rename') },
-      {
-        label: 'Color',
-        submenu: (o.colors || []).map((c) => ({
-          label: c.name, type: 'radio', checked: c.key === o.color, click: pick(`color:${c.key}`),
-        })),
-      },
-      { type: 'separator' },
-      { label: 'Nueva conversación', click: pick('newconv') },
-      { label: 'Abrir carpeta en el Explorador', click: pick('folder') },
-      { type: 'separator' },
-      {
-        label: 'Ver el registro de depuración de esta sesión',
-        enabled: Boolean((tabs.get(o.id) || {}).log && fs.existsSync(tabs.get(o.id).log)),
-        click: pick('log'),
-      },
-      { label: 'Abrir la carpeta de registros', click: pick('logs') },
-      { type: 'separator' },
-      { label: 'Cerrar pestaña', accelerator: 'Ctrl+Shift+W', registerAccelerator: false, click: pick('close') },
-    ]);
-    // El aviso de cierre del menú puede llegar antes que el de la opción elegida.
-    menu.popup({ window: wm.win, callback: () => setTimeout(() => { if (!settled) resolve(null); }, 150) });
-  }));
-
-  ipcMain.handle('dialog:choose', async (_e, o) => {
-    if (DEV && process.env.CLAUDES_AUTO_CONFIRM) return 0; // solo para pruebas automáticas
-    const buttons = Array.isArray(o.buttons) ? o.buttons.map(String) : ['Aceptar', 'Cancelar'];
-    const result = await dialog.showMessageBox(wm.win, {
-      type: 'question',
-      message: String(o.message || ''),
-      detail: String(o.detail || ''),
-      buttons,
-      defaultId: 0,
-      cancelId: buttons.length - 1,
-      noLink: true,
-    });
-    return result.response;
-  });
-
-  ipcMain.on('app:closeNow', () => {
-    wm.closeNow();
-  });
-
-  ipcMain.handle('clipboard:read', () => pasteboard.read());
-  ipcMain.on('clipboard:write', (_e, text) => {
-    if (typeof text === 'string') clipboard.writeText(text).catch(() => { /* portapapeles ocupado */ });
-  });
-
-  if (DEV) {
-    ipcMain.on('dev:input', (_e, event) => {
-      if (wm.win && event && typeof event === 'object') wm.win.webContents.sendInputEvent(event);
-    });
-  }
-  ipcMain.on('shell:openPath', (_e, target) => {
-    if (typeof target !== 'string') return;
-    if (/^https?:\/\//i.test(target)) shell.openExternal(target);
-    else if (fs.existsSync(target)) shell.openPath(target);
-  });
-}
-
 // ── Arranque ───────────────────────────────────────────────────────
 
 if (!app.requestSingleInstanceLock()) {
@@ -584,20 +236,17 @@ if (!app.requestSingleInstanceLock()) {
     });
     // Codex como segundo revisor (review.js): se crea antes que el servidor de hooks.
     review = createReview({
-      tabs, store, usable: advisorUsable, codex, send, log: appLog, logsDir,
+      tabs, store, usable: codexState.advisorUsable, codex, send, log: appLog, logsDir,
       detailedLogs: () => logger.enabled, // la salida completa, solo con la depuración activada
       // Lo que lleve claves no se envía a Codex.
       checkSecrets: (cwd, signal) => (secrets ? secrets.reviewInput(cwd, signal) : { ok: false, files: [] }),
       checkLogin: () => codex.chatgptLogin(), // justo antes de cada revisión
       netlog: () => netlog, // se crea más tarde
-      sandboxMissing: () => codexState.sandbox === false,
-      onBusy: (delta, tabId, what, icon) => {
-        codexJob(delta, 'advise', tabId, what, icon);
-        send('codex:changed', codexInfo());
-        if (delta < 0) codexLimitsSoon(); // lo gastado se ve al momento en la barra inferior
-      },
+      sandboxMissing: () => codexState.state.sandbox === false,
+      onBusy: codexState.adviseBusy, // el indicador de la barra superior y, al terminar, el uso
     });
     testcheck = createTestReminder({ tabs, log: appLog });
+    optimizer = createOptimizer({ tabs, log: appLog });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
@@ -688,14 +337,17 @@ if (!app.requestSingleInstanceLock()) {
       if (styleText) parts.push(styleText);
       const ctx = contexts.pendingUpdate(tabId);
       if (ctx) parts.push(ctx.hookSpecificOutput.additionalContext);
+      // Botón «Optimiza»: las instrucciones completas, si se acaba de confirmar.
+      const optimize = optimizer.consume(tabId, event && event.prompt);
+      if (optimize) parts.push(optimize);
       return parts.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: parts.join('\n\n') } } : null;
     };
     hookServer.mcp = createMcp({
       name: 'claudes-codex',
       version: app.getVersion(),
       // La segunda opinión siempre; las imágenes, si están activadas.
-      tools: () => [...(codexState.installed && codexState.advisor !== false ? [codex.OPINION_TOOL] : []), ...(codexState.enabled && codexUsable() ? [codex.IMAGE_TOOL] : [])],
-      callTool: (tabId, name, args, signal) => (name === codex.OPINION_TOOL.name ? review.secondOpinion(tabId, args, signal) : codexTool(tabId, name, args)),
+      tools: codexState.tools,
+      callTool: (tabId, name, args, signal) => (name === codex.OPINION_TOOL.name ? review.secondOpinion(tabId, args, signal) : codexState.drawImage(tabId, args)),
     });
     const innerMcp = hookServer.mcp;
     hookServer.mcp = (tabId, body, signal) => {
@@ -708,10 +360,10 @@ if (!app.requestSingleInstanceLock()) {
     pasteboard.cleanOld();
     previewer = createPreview({ app, nativeImage });
     previewer.cleanTemp();
-    codexState.enabled = store.get('codexImages', false) === true;
-    voiceEnabled = store.get('voiceDictation', false) === true;
+    codexState.restore({ enabled: store.get('codexImages', false) });
     style.brief = store.get('briefMode', false) === true;
-    refreshCodex().catch(() => { /* se reintentará al consultar el estado */ });
+    codexState.refresh().catch(() => { /* se reintentará al consultar el estado */ });
+    codexState.start();
     updater = new Updater({
       app, net, shell, log: appLog, logsDir,
       onChange: (info) => {
@@ -733,7 +385,12 @@ if (!app.requestSingleInstanceLock()) {
     });
     const pluginNames = style.prepare();
     appLog(gitBash ? `plugins para las sesiones: ${pluginNames.join(', ') || 'ninguno'}` : 'sin Git Bash: las sesiones arrancan sin plugins');
-    registerIpc();
+    registerIpc({
+      electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
+      DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
+      sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
+      previewer, netlog, updater, restartToUpdate, optimizer, gitBash,
+    });
     wm.create();
     limits.start();
   });
@@ -741,6 +398,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     ptys.killAll();
     codex.stopReviews(); // una revisión de Codex en marcha no sigue tras cerrar
+    codexState.stop();
     if (hookServer) hookServer.stop();
     if (limits) limits.stop();
     // Con una versión nueva lista, se instala ahora que Claudes se cierra.

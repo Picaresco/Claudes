@@ -32,6 +32,7 @@ function nextStep(reviewed = 0) {
 
 const needsReview = (lines, reviewed = 0) => lines >= nextStep(reviewed);
 const countLines = (text) => (text ? text.replace(/\n$/, '').split('\n').length : 0);
+// La misma ruta escrita de dos formas da la misma clave (barras y mayúsculas aparte).
 const norm = (p) => path.resolve(p).split(path.sep).join('/').toLowerCase();
 
 // Líneas de código de un cuaderno de Jupyter: las de sus celdas de código, no el JSON
@@ -108,4 +109,8 @@ class Growth {
   }
 }
 
-module.exports = { Growth, nextStep, needsReview, countLines, codeLines, FIRST, GROWTH, EDIT_TOOLS, CODE };
+// ¿Es un archivo de código? (También las páginas web: para revisar y para pedir pruebas sí
+// cuentan, aunque su crecimiento no se avise.)
+const isCode = (file) => CODE.test(file) || /\.html?$/i.test(file);
+
+module.exports = { Growth, nextStep, needsReview, countLines, codeLines, FIRST, GROWTH, EDIT_TOOLS, CODE, isCode, norm };

@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const { norm } = require('./growth');
 
 const MAX_BYTES = 2 * 1024 * 1024; // un archivo mayor no se escribe a mano
 const DEFAULT_BUDGET = 1500; // ms: el hook espera 2 s a la respuesta
@@ -146,7 +147,6 @@ function isIgnored(full) {
   });
 }
 
-const norm = (p) => path.resolve(p).split(path.sep).join('/').toLowerCase();
 
 // Texto de un archivo: UTF-8 o UTF-16 (lo que escribe PowerShell 5 con «>»), según su
 // marca o por sus ceros alternos. null si es binario.
@@ -358,4 +358,4 @@ async function reviewInput(cwd, signal = null) {
   return { ok: true, files: [...risky] };
 }
 
-module.exports = { Secrets, scanText, isEnvFile, isIgnored, findGit, plausible, splitDiff, reviewInput, decodeText };
+module.exports = { Secrets, scanText, isEnvFile, findGit, splitDiff, reviewInput, decodeText };

@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const { localStamp, clock } = require('./applog');
 
 const REPO = 'Picaresco/Claudes';
 const BRANCH = 'main';
@@ -76,9 +77,6 @@ function parseChangelog(text) {
   return versions;
 }
 
-const two = (n) => String(n).padStart(2, '0');
-const stamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
-const clock = (d = new Date()) => `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 
 function tarExe() {
   const builtIn = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
@@ -284,7 +282,7 @@ class Updater {
     let logFile = null;
     try {
       fs.mkdirSync(this.logsDir(), { recursive: true });
-      logFile = path.join(this.logsDir(), `actualizacion-${stamp()}.log`);
+      logFile = path.join(this.logsDir(), `actualizacion-${localStamp()}.log`);
       out = fs.createWriteStream(logFile, { flags: 'a' });
       out.on('error', () => { /* sin registro, se sigue */ });
     } catch {

@@ -4,6 +4,16 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.21.0 — 2026-11-23
+- Nuevo botón «Optimiza» en la cabecera de cada sesión: Claude revisa todo el proyecto y lo mejora sin cambiar lo que hace (limpieza, orden, eficiencia y coherencia visual), solo y sin preguntarte nada hasta el final.
+- Trabaja con red de seguridad: en una rama aparte de git (tu rama no se toca y no se sube nada), mide antes y después, pasa las pruebas tras cada cambio y deshace lo que falle, y al final pide una revisión independiente (a Codex, si lo tienes). Te deja un informe con las cifras de antes y después y la rama para que decidas si la unes.
+- Antes de empezar te dice qué va a pasar y te pide confirmación. Si el proyecto no usa git, Claude lo activa primero; si tienes cambios sin confirmar, se guardan tal cual como punto de partida.
+
+## 0.20.0 — 2026-11-23
+- ClaudHome ocupa menos: la descarga de cada versión baja de 165 a 152 MB y el programa instalado, de 369 a 322 MB. Se han quitado los textos de Chromium en 53 idiomas que la app no usa; quedan el español y el inglés.
+- Colores más coherentes: el verde de «activo o detectado», el ámbar de «ojo» y el azul de la app son el mismo en todos los sitios.
+- Por dentro, el código está más ordenado para que sea más fácil de mantener y probar: el proceso principal se ha repartido en piezas más pequeñas, sobran menos líneas de estilos que ya no se usaban y hay pruebas nuevas para el indicador de Codex. Lo que hace la app no cambia.
+
 ## 0.19.1 — 2026-11-22
 - El indicador de Codex ya no usa un reloj: cada cosa que hace tiene su propio icono animado, con el tiempo que lleva. El símbolo de código cuando revisa lo que ha cambiado Claude, una lista que se va marcando cuando critica un plan, un bocadillo cuando da una segunda opinión (un escudo si es de seguridad) y un pincel cuando genera una imagen.
 

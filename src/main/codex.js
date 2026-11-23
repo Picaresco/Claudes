@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile, execFileSync, spawn } = require('child_process');
+const { localStamp } = require('./applog');
 
 const IMAGE_FILE = /\.(png|jpe?g|webp)$/i;
 const GENERATE_TIMEOUT = 5 * 60 * 1000;
@@ -163,10 +164,7 @@ function freePath(wanted) {
 }
 
 function resolveOutput(cwd, file) {
-  const now = new Date();
-  const two = (n) => String(n).padStart(2, '0');
-  const stamp = `${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
-  let target = typeof file === 'string' && file.trim() ? file.trim() : `imagen-codex-${stamp}.png`;
+  let target = typeof file === 'string' && file.trim() ? file.trim() : `imagen-codex-${localStamp()}.png`;
   if (!path.isAbsolute(target)) target = path.join(cwd, target);
   if (!/\.png$/i.test(target)) target += '.png';
   target = path.normalize(target);

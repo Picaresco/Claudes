@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('api', {
   // Codex: detección de la suscripción e interruptor de «imágenes con Codex».
   codexStatus: (refresh) => ipcRenderer.invoke('codex:status', Boolean(refresh)),
   codexSetEnabled: (on) => ipcRenderer.invoke('codex:setEnabled', Boolean(on)),
+  optimizeCheck: (tabId) => ipcRenderer.invoke('optimize:check', String(tabId)),
+  optimizeArm: (tabId) => ipcRenderer.invoke('optimize:arm', String(tabId)),
   onCodexChanged: on('codex:changed'),
 
   // Actualización desde GitHub: estado, generar la versión nueva y reiniciar para instalarla.

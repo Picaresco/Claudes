@@ -14,6 +14,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { dayStamp, clock } = require('./applog');
 // Servidor MCP propio de ClaudHome (Codex: imágenes y segunda opinión).
 const OWN_MCP = 'claudhome-codex';
 
@@ -79,8 +80,6 @@ function externalTargets(command) {
   const outside = [...new Set(hosts.filter(isPublicHost))];
   return outside.length ? outside : ['internet'];
 }
-
-const isExternalCommand = (command) => externalTargets(command) !== null;
 
 // ── Secretos ─────────────────────────────────────────────────────────
 
@@ -173,17 +172,15 @@ class NetLog {
   }
 
   todayFile(date = new Date()) {
-    const two = (n) => String(n).padStart(2, '0');
-    return path.join(this.logsDir(), `salidas-${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}.log`);
+    return path.join(this.logsDir(), `salidas-${dayStamp(date)}.log`);
   }
 
   writeFile(entry) {
     try {
       const d = new Date(entry.time);
-      const two = (n) => String(n).padStart(2, '0');
       fs.mkdirSync(this.logsDir(), { recursive: true });
       const size = !entry.size ? '' : entry.size < 1024 ? ' · < 1 KB' : ` · ≈ ${Math.round(entry.size / 1024)} KB`;
-      fs.appendFileSync(this.todayFile(d), `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())} ${entry.tabName} · ${entry.what} · ${entry.target} → ${entry.dest}${size}${entry.detail ? ` · ${entry.detail}` : ''}\n`);
+      fs.appendFileSync(this.todayFile(d), `${clock(d)} ${entry.tabName} · ${entry.what} · ${entry.target} → ${entry.dest}${size}${entry.detail ? ` · ${entry.detail}` : ''}\n`);
     } catch { /* sin archivo, se sigue */ }
   }
 
@@ -247,4 +244,4 @@ class NetLog {
   }
 }
 
-module.exports = { OWN_MCP, NetLog, redact, isPublic, isPublicHost, isExternalCommand, externalTargets };
+module.exports = { OWN_MCP, NetLog, redact, isPublic, isPublicHost, externalTargets };
