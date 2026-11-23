@@ -103,6 +103,21 @@ function scanText(input, file = '', { allPatterns = false } = {}) {
   return out.sort((a, b) => a.line - b.line);
 }
 
+// El texto con lo que parece una clave tapado («****»), con los mismos patrones que scanText.
+// Para lo que se le pasa a otro modelo (el panel «Actividad», narrator.js).
+function maskSecrets(input) {
+  if (typeof input !== 'string' || !input) return '';
+  let text = input;
+  for (const { re, group, generic, check, raw } of PATTERNS) {
+    text = text.replace(re, (...m) => {
+      const value = group ? m[group] : m[0];
+      if (typeof value !== 'string' || (!raw && !plausible(value, generic)) || (check && !check(value))) return m[0];
+      return m[0].replace(value, '****');
+    });
+  }
+  return text;
+}
+
 // .env, .env.local, .env.production… (no las plantillas: .env.example, .env.sample…).
 const isEnvFile = (file) => /^\.env(\..+)?$/i.test(path.basename(file)) && !/\.(example|sample|template|dist|defaults?)$/i.test(file);
 
@@ -358,4 +373,4 @@ async function reviewInput(cwd, signal = null) {
   return { ok: true, files: [...risky] };
 }
 
-module.exports = { Secrets, scanText, isEnvFile, findGit, splitDiff, reviewInput, decodeText };
+module.exports = { Secrets, scanText, maskSecrets, isEnvFile, findGit, splitDiff, reviewInput, decodeText };

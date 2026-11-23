@@ -55,6 +55,8 @@ test('un aviso de hook llega con lo que interesa y sin token no se atiende', asy
     toolName: 'Bash', toolInput: { command: 'npm test' }, background: true, size: null, prompt: null, request: null, plan: null, planTooBig: false, cwd: null, stopHookActive: false,
     // Para «pruebas antes de terminar»: qué llamada es y, de una orden, cómo ha ido.
     toolUseId: 'tu1', shell: { command: 'npm test', output: 'ok\naviso', interrupted: false, partial: false },
+    // Para el panel «Actividad».
+    narr: { input: { command: 'npm test', description: '' }, agentId: null, agentType: null, transcript: null, last: null, error: null, interrupted: false },
   });
   assert.ok(events[0].size > 0);
   const bad = await post(`http://127.0.0.1:${server.port}/hook/${'0'.repeat(32)}/t1/Stop`, {});

@@ -1,4 +1,5 @@
 // ── Pintado ──────────────────────────────────────────────────────
+import { renderActivity } from './activity.js';
 import { codexInfo } from './codex.js';
 import { colorHex, SIDES, SVG, STATUS } from './constants.js';
 import { contextCount } from './context.js';
@@ -239,6 +240,7 @@ export function renderAll() {
   renderToolbar();
   renderHeads();
   renderStatusbar();
+  renderActivity();
 }
 
 // Coloca cada vista en su lado y actualiza todo lo demás.

@@ -1,4 +1,5 @@
 // ── Acciones sobre pestañas ──────────────────────────────────────
+import { forgetActivity } from './activity.js';
 import { COLORS, MAX_RECENTS, MAX_TABS } from './constants.js';
 import { cleanContext } from './context.js';
 import { api, $, el } from './dom.js';
@@ -111,6 +112,7 @@ function removeTab(id) {
   if (!tab || !view) return;
 
   views.delete(id);
+  forgetActivity(id);
   terms.delete(id);
   terms.delete(`${id}:sh`);
   api.ptyKill(id);

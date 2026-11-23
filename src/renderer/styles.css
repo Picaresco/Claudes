@@ -318,7 +318,8 @@ h1, p { margin: 0; }
 .btn[aria-pressed="true"], .btn-primary { background: var(--txt); border-color: var(--txt); color: var(--bg0); font-weight: 600; }
 
 /* ── Zona de trabajo ───────────────────────────────────────────── */
-#workspace { position: relative; display: flex; flex: 1 1 0; min-height: 0; background: var(--bg1); }
+#work-row { display: flex; flex: 1 1 0; min-height: 0; }
+#workspace { position: relative; display: flex; flex: 1 1 0; min-width: 0; min-height: 0; background: var(--bg1); }
 .pane { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; }
 #workspace.split .pane[data-side="left"] { flex: 0 0 calc(var(--ratio, 0.5) * 100% - 3px); }
 .pane-head { display: none; }
@@ -380,6 +381,44 @@ body.dragging #workspace * { pointer-events: none; }
 #empty h1 { font-size: 18px; font-weight: 600; color: var(--txt); }
 #empty p { max-width: 380px; font-size: 13px; }
 #empty .btn { margin-top: 8px; height: 44px; padding: 0 18px; }
+
+/* ── Panel «Actividad» ─────────────────────────────────────────── */
+#activity { display: flex; flex-direction: column; flex: none; width: clamp(300px, 27vw, 420px); min-height: 0; background: var(--bg0); border-left: 1px solid var(--line); }
+.act-head { display: flex; align-items: center; gap: 8px; flex: none; padding: 4px 4px 4px 14px; border-bottom: 1px solid var(--line); }
+#act-title { margin: 0; font-size: 13px; font-weight: 600; }
+.act-tab { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dim); }
+.act-head .icon-btn { width: 32px; height: 32px; }
+.act-list { flex: 1 1 0; min-height: 0; overflow-y: auto; margin: 0; padding: 10px 12px 12px; list-style: none; user-select: text; }
+.act-empty { flex: 1 1 0; padding: 14px; font-size: 13px; color: var(--mute); }
+#act-list:not(:empty) + .act-empty { display: none; }
+.act-item { display: grid; grid-template-columns: 18px 1fr auto; column-gap: 8px; align-items: start; padding: 5px 0; color: var(--txt); }
+.act-ico { display: flex; padding-top: 2px; color: var(--dim); }
+.act-text { margin: 0; font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.act-time { font-size: 11px; color: var(--mute); padding-top: 2px; font-variant-numeric: tabular-nums; }
+/* Los pasos que Haiku aún no ha contado, al momento y en gris. */
+.act-item[data-pending="true"] { color: var(--mute); padding: 2px 0; }
+.act-item[data-pending="true"] .act-text { font-size: 12px; -webkit-line-clamp: 1; }
+.act-item[data-pending="true"] .act-ico { color: var(--line2); }
+.act-item[data-src="local"]:not([data-pending]) { color: var(--dim); }
+/* Lo que ha pedido el usuario: separa una tarea de otra. */
+.act-item[data-src="user"] { grid-template-columns: 18px auto 1fr auto; margin: 10px 0 4px; padding: 7px 8px; background: var(--bg2); border-radius: 8px; color: var(--dim); }
+.act-item[data-src="user"]:first-child { margin-top: 0; }
+.act-who { font-size: 12px; font-weight: 600; color: var(--txt); padding-top: 1px; }
+.act-item[data-kind="fail"] .act-ico, .act-item[data-kind="error"] .act-ico { color: var(--alert); }
+.act-item[data-kind="done"] .act-ico { color: var(--ok); }
+.act-item[data-kind="done"][data-src="haiku"] .act-text { font-weight: 500; }
+.act-item[data-kind="tests"] .act-ico, .act-item[data-kind="wait"] .act-ico, .act-item[data-kind="ask"] .act-ico { color: var(--warn); }
+.act-item[data-kind="codex"] .act-ico, .act-item[data-kind="agent"] .act-ico { color: var(--accent); }
+.act-item.fresh { animation: act-in 0.35s ease-out; }
+@keyframes act-in { from { opacity: 0; transform: translateY(4px); } }
+.act-now { display: flex; align-items: center; gap: 8px; flex: none; padding: 9px 14px; border-top: 1px solid var(--line); background: var(--bg1); font-size: 12px; color: var(--dim); }
+.act-now-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-now-time { flex: none; color: var(--mute); font-variant-numeric: tabular-nums; }
+.act-pulse { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: act-pulse 1.4s ease-in-out infinite; }
+.act-now[data-kind="wait"] .act-pulse, .act-now[data-kind="ask"] .act-pulse { background: var(--warn); }
+.act-now[data-kind="codex"] .act-pulse, .act-now[data-kind="agent"] .act-pulse { background: var(--accent); }
+@keyframes act-pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .act-item.fresh, .act-pulse { animation: none; } }
 
 /* ── Barra inferior ────────────────────────────────────────────── */
 #statusbar {

@@ -8,8 +8,8 @@
 // poco del plan del usuario y solo de vez en cuando (optimize-hint.js decide cuándo).
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
 const { scanText } = require('./secrets');
+const { haikuArgs, command, resultText, jsonIn, createRunner } = require('./haiku');
 
 const MAX_FILES = 8; // archivos que se le enseñan
 const MAX_FILE_CHARS = 12000; // de cada uno, como mucho (el principio)
@@ -60,15 +60,7 @@ function prompt({ signals, text }) {
 
 // Lo que contesta Claude Code (--output-format json): { recommend, reason } o null si no se entiende.
 function verdict(stdout) {
-  let result;
-  try { result = JSON.parse(String(stdout || '').trim()); } catch { return null; }
-  if (!result || result.is_error || typeof result.result !== 'string') return null;
-  const text = result.result;
-  const a = text.indexOf('{');
-  const b = text.lastIndexOf('}');
-  if (a < 0 || b <= a) return null;
-  let answer;
-  try { answer = JSON.parse(text.slice(a, b + 1)); } catch { return null; }
+  const answer = jsonIn(resultText(stdout));
   if (!answer || typeof answer.recomendar !== 'boolean') return null;
   return { recommend: answer.recomendar, reason: shortReason(answer.motivo) };
 }
@@ -83,38 +75,14 @@ function shortReason(text) {
   return reason;
 }
 
-// Cómo lanzar Claude Code: un .cmd (instalación con npm) va a través de cmd.exe.
-function command(exe, args) {
-  if (!/\.(cmd|bat)$/i.test(exe)) return { file: exe, args, verbatim: false };
-  const q = (arg) => (arg === '' ? '""' : /[\s"&|<>^]/.test(arg) ? `"${arg.replace(/"/g, '""')}"` : arg);
-  return { file: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${[exe, ...args].map(q).join(' ')}"`], verbatim: true };
-}
-const ARGS = ['-p', '--model', 'haiku', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--disable-slash-commands',
-  '--setting-sources', '', '--system-prompt', SYSTEM, '--output-format', 'json'];
+const ARGS = haikuArgs(SYSTEM);
 
 // findClaude(): ruta de claude · env: entorno sin las marcas de la sesión · workDir(): carpeta
 // vacía donde se lanza · args: los de Claude Code (las pruebas usan otros).
 function createChecker({ findClaude, env = () => process.env, workDir, log = () => {}, timeout = TIMEOUT, run = null, args = ARGS }) {
-  const running = new Set();
-  // Lanza la orden con `input` por la entrada estándar: { code, stdout } (code null si se cortó).
-  const spawnRun = ({ file, args, verbatim }, input) => new Promise((resolve) => {
-    let child;
-    try {
-      const cwd = workDir();
-      fs.mkdirSync(cwd, { recursive: true });
-      child = spawn(file, args, { cwd, env: env(), windowsHide: true, windowsVerbatimArguments: verbatim });
-    } catch { resolve({ code: null, stdout: '' }); return; }
-    running.add(child);
-    let stdout = '';
-    const timer = setTimeout(() => { try { child.kill(); } catch { /* ya ha terminado */ } }, timeout);
-    child.stdout.on('data', (d) => { if (stdout.length < 200000) stdout += d; });
-    child.stderr.on('data', () => { /* sin uso */ });
-    child.on('error', () => { clearTimeout(timer); running.delete(child); resolve({ code: null, stdout: '' }); });
-    child.on('close', (code) => { clearTimeout(timer); running.delete(child); resolve({ code, stdout }); });
-    child.stdin.on('error', () => { /* se cerró antes de tiempo */ });
-    child.stdin.end(input);
-  });
-  const exec = run || spawnRun;
+  // Lanza la orden con la pregunta por la entrada estándar: { code, stdout } (code null si se cortó).
+  const runner = createRunner({ env, workDir, timeout });
+  const exec = run || runner.run;
 
   // { recommend, reason, files } o { error } si no ha podido decidir.
   async function check({ folder, files, signals }) {
@@ -133,9 +101,7 @@ function createChecker({ findClaude, env = () => process.env, workDir, log = () 
     log(`Optimiza: Haiku ${answer.recommend ? 'lo recomienda' : 'no lo ve necesario'} (${shown.used.length} archivos, ${seconds} s)${answer.reason ? `: ${answer.reason}` : ''}`);
     return { ...answer, files: shown.used, size: shown.size };
   }
-  // Al cerrar la app, lo que esté en marcha se corta.
-  const stop = () => { for (const child of running) { try { child.kill(); } catch { /* ya ha terminado */ } } running.clear(); };
-  return { check, stop };
+  return { check, stop: runner.stop }; // al cerrar la app, lo que esté en marcha se corta
 }
 
 module.exports = { createChecker, material, prompt, verdict, shortReason, command, ARGS };

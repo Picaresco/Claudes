@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.0 — 2026-11-23
+- Nuevo panel «Actividad», a la derecha: te va contando, como lo haría un compañero y en palabras sencillas, lo que hace Claude en la pestaña. Qué archivos mira, qué cambia o crea, qué busca en internet, a qué agentes llama y qué le dicen, cuándo pasa las pruebas, qué le ha fallado y qué prueba en su lugar, y al final cómo ha quedado («Listo: …»). Cada línea ocupa como mucho dos renglones.
+- Cada paso aparece al momento en gris y, a los pocos segundos, Haiku lo cuenta con sus palabras. Abajo ves lo que está haciendo ahora mismo y cuánto lleva («Pasando las pruebas · 12 s», «Esperando tu permiso», «Esperando al agente…»). Lo que pides queda como separador entre una tarea y otra.
+- Se abre y se cierra con el botón «Actividad» de la cabecera (o con la X del panel). Mientras está abierto, Haiku gasta muy poco de tu plan; cerrado, no gasta nada y la app solo apunta los pasos con sus palabras fijas. Haiku siempre va con tu cuenta de Claude, nunca con una clave de API (que se cobraría aparte), y lo que parezca una clave o contraseña no se le pasa.
+
 ## 0.23.0 — 2026-11-23
 - El botón «Optimiza» ya no está siempre a la vista: solo aparece cuando ClaudHome recomienda optimizar el proyecto, con el motivo al pasar el ratón.
 - Recomendaciones más afinadas: cuando las señales de siempre (muchos cambios, archivos grandes, un mes sin optimizar) lo sugieren, Haiku lee los archivos que más han cambiado y dice si de verdad hace falta y por qué («calc.js repite el cálculo del IVA en tres sitios»). Si el código está limpio, no te molesta.

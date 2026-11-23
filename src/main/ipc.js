@@ -9,7 +9,7 @@ function registerIpc({
   electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
   DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
   sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash,
+  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator,
 }) {
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
@@ -118,6 +118,16 @@ function registerIpc({
     review.enabled = Boolean(on) && codexState.advisorUsable();
     appLog(`revisión de Codex ${review.enabled ? 'activada' : 'desactivada'}`);
     return reviewInfo();
+  });
+
+  // Panel «Actividad»: abierto o cerrado (cerrado, Haiku no cuenta nada) y lo de cada pestaña.
+  ipcMain.handle('activity:get', (_e, tabId) => (typeof tabId === 'string' ? narrator.get(tabId) : { open: narrator.isOpen() }));
+  // Al cerrar la pestaña (no al dormirla: dormida conserva lo contado).
+  ipcMain.on('activity:forget', (_e, tabId) => { if (typeof tabId === 'string') narrator.forget(tabId); });
+  ipcMain.handle('activity:setOpen', (_e, on) => {
+    const open = narrator.setOpen(on);
+    store.set('activityOpen', open);
+    return { open };
   });
 
   ipcMain.handle('brief:get', () => ({ enabled: style.brief }));

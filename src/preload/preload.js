@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('api', {
   onOptimizeHint: on('optimize:hint'), // (tabId, { recommended, reasons, snoozed, first })
   onCodexChanged: on('codex:changed'),
 
+  // Panel «Actividad»: lo que va haciendo Claude en cada pestaña, contado por Haiku.
+  activityGet: (tabId) => ipcRenderer.invoke('activity:get', tabId === undefined ? undefined : String(tabId)),
+  activitySetOpen: (on) => ipcRenderer.invoke('activity:setOpen', Boolean(on)),
+  activityForget: (tabId) => ipcRenderer.send('activity:forget', String(tabId)),
+  onActivity: on('activity:update'), // (tabId, { entries, now, open })
+
   // Actualización desde GitHub: estado, generar la versión nueva y reiniciar para instalarla.
   updateGet: () => ipcRenderer.invoke('update:get'),
   updateChanges: () => ipcRenderer.invoke('update:changes'),

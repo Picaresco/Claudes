@@ -17,6 +17,9 @@ const EVENTS = [
   'Notification',
   'Stop',
   'StopFailure',
+  // Cuándo empieza y acaba cada agente (panel «Actividad», narrator.js).
+  'SubagentStart',
+  'SubagentStop',
 ];
 
 const HEAD_LIMIT = 64 * 1024; // de cada aviso solo interesa el principio
@@ -53,6 +56,54 @@ function toolInputSummary(tool, input) {
     return { summary: summary.slice(0, 200) };
   }
   return null;
+}
+
+// Lo que necesita el panel «Actividad» (narrator.js) de la entrada de una herramienta: el
+// archivo, el patrón, la dirección, el comando y la descripción que le pone Claude, el agente
+// y su tarea, la lista de tareas… Recortado.
+function narrInput(tool, input) {
+  if (typeof tool !== 'string' || !input || typeof input !== 'object') return {};
+  const s = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  switch (tool) {
+    case 'Read': return { file: s(input.file_path, 2000) };
+    // De un cambio, el principio de lo que había y de lo que queda (para decir qué cambia).
+    case 'Edit': return { file: s(input.file_path, 2000), old: s(input.old_string, 300), new: s(input.new_string, 300) };
+    case 'MultiEdit': return { file: s(input.file_path, 2000), edits: Array.isArray(input.edits) ? input.edits.length : 0 };
+    case 'Write': return { file: s(input.file_path, 2000), lines: typeof input.content === 'string' ? input.content.split('\n').length : 0 };
+    case 'NotebookEdit': return { file: s(input.notebook_path, 2000) };
+    case 'Glob': return { pattern: s(input.pattern, 200), path: s(input.path, 2000) };
+    case 'Grep': return { pattern: s(input.pattern, 200), path: s(input.path, 2000) };
+    case 'WebFetch': return { url: s(input.url, 500) };
+    case 'WebSearch': return { query: s(input.query, 200) };
+    case 'Bash': case 'PowerShell': return { command: s(input.command, 600), description: s(input.description, 200) };
+    case 'Agent': case 'Task': return { agent: s(input.subagent_type, 80), task: s(input.description, 200), background: input.run_in_background === true };
+    case 'TodoWrite': return { todos: Array.isArray(input.todos) ? input.todos.slice(0, 12).map((t) => ({ content: s(t && (t.content || t.activeForm), 120), status: s(t && t.status, 20) })) : [] };
+    case 'TaskCreate': return { subject: s(input.subject || input.description, 150) };
+    case 'TaskUpdate': return { status: s(input.status, 20), subject: s(input.subject, 150) };
+    case 'Skill': return { skill: s(input.skill || input.command || input.name, 80) };
+    case 'AskUserQuestion': return { question: s(Array.isArray(input.questions) && input.questions[0] ? input.questions[0].question : input.question, 200) };
+    default: break;
+  }
+  if (!tool.startsWith('mcp__')) return {};
+  let summary = '';
+  try { summary = JSON.stringify(input).slice(0, 200); } catch { /* sin resumen */ }
+  return { summary };
+}
+
+// Del aviso entero, lo del panel «Actividad»: el paso, de qué agente es (si no es Claude), el
+// registro de la conversación, la última respuesta (al pararse) y el error (si ha fallado).
+// No sale del proceso principal: main.js lo quita antes de pasar el aviso a la interfaz.
+function narration(eventName, payload) {
+  const s = (v, max) => (typeof v === 'string' && v ? v.slice(0, max) : null);
+  return {
+    input: narrInput(payload.tool_name, payload.tool_input),
+    agentId: s(payload.agent_id, 100),
+    agentType: s(payload.agent_type, 100),
+    transcript: s(payload.transcript_path, 4000),
+    last: s(payload.last_assistant_message, 2000),
+    error: eventName === 'PostToolUseFailure' ? s(payload.error, 400) : null,
+    interrupted: payload.is_interrupt === true,
+  };
 }
 
 // De una orden de Bash o PowerShell ya ejecutada, lo que necesita «pruebas antes de
@@ -276,7 +327,7 @@ class HookServer {
         partial = keepAll === true; // una orden con una salida descomunal: no se tiene
         // Aviso grande (p. ej. la respuesta de leer un archivo): lo que interesa está al
         // principio. Claude Code manda primero los campos comunes (session_id, cwd…).
-        for (const key of ['session_id', 'tool_name', 'tool_input', 'notification_type', 'cwd']) {
+        for (const key of ['session_id', 'transcript_path', 'cwd', 'agent_id', 'agent_type', 'tool_name', 'tool_input', 'notification_type', 'tool_use_id']) {
           const value = jsonField(head, key);
           if (value !== undefined) payload[key] = value;
         }
@@ -302,6 +353,8 @@ class HookServer {
         toolUseId: typeof payload.tool_use_id === 'string' ? payload.tool_use_id.slice(0, 200) : null,
         // De una orden ya ejecutada: entera, con su salida (solo para el proceso principal).
         shell: shellResult(eventName, payload, partial),
+        // Para el panel «Actividad» (solo para el proceso principal).
+        narr: narration(eventName, payload),
         // Tras ejecutar una herramienta, el tamaño del aviso ≈ lo que recibió Claude.
         size: eventName === 'PostToolUse' ? total : null,
         prompt: typeof payload.prompt === 'string' ? payload.prompt.slice(0, 80) : null,
@@ -406,4 +459,4 @@ class HookServer {
   }
 }
 
-module.exports = { HookServer, jsonField, toolInputSummary, shellResult };
+module.exports = { HookServer, jsonField, toolInputSummary, shellResult, narrInput, narration };

@@ -27,6 +27,7 @@ const { registerIpc } = require('./ipc');
 const { createOptimizer } = require('./optimize');
 const { createOptimizeHints } = require('./optimize-hint');
 const { createChecker } = require('./optimize-check');
+const { createNarrator } = require('./narrator');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -57,6 +58,7 @@ let testcheck = null; // pruebas antes de terminar (testcheck.js)
 let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
 let optimizeChecker = null; // la segunda mirada de Haiku (optimize-check.js)
+let narrator = null; // panel «Actividad»: lo que hace Claude, contado por Haiku (narrator.js)
 // Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
 // pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
 const NOTICE_BUDGET = 1500;
@@ -71,7 +73,25 @@ const tabLabel = (id) => tabs.label(id);
 // Avisa a la interfaz por un canal (cuando ya hay ventana).
 const send = (channel, ...args) => { if (wm) wm.send(channel, ...args); };
 
-const ptys = createPtys({ pty, send, log: appLog, label: tabLabel });
+// Si el proceso de Claude de una pestaña termina sin avisar de que paraba, el panel
+// «Actividad» deja de decir que está trabajando.
+const ptys = createPtys({
+  pty,
+  send: (channel, ...args) => {
+    if (channel === 'pty:exit' && narrator && typeof args[0] === 'string' && !args[0].includes(':')) narrator.exited(args[0]);
+    send(channel, ...args);
+  },
+  log: appLog,
+  label: tabLabel,
+});
+// Las preguntas a Haiku («Optimiza» y el panel «Actividad») van siempre con la cuenta de
+// Claude del usuario (su plan), nunca con una clave de API ni a través de Bedrock o Vertex,
+// que se cobran aparte: sin la cuenta, no se pregunta y la app sigue sin Haiku.
+const haikuEnv = () => {
+  const env = childEnv({});
+  for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY']) delete env[name];
+  return env;
+};
 const pasteboard = createClipboard({ clipboard, dir: () => path.join(app.getPath('temp'), 'Claudes-pegado'), stamp: localStamp });
 // Plugins de las sesiones e interruptor «Resumido» (style.js).
 const style = createStyle({
@@ -241,7 +261,13 @@ if (!app.requestSingleInstanceLock()) {
     });
     // Codex como segundo revisor (review.js): se crea antes que el servidor de hooks.
     review = createReview({
-      tabs, store, usable: codexState.advisorUsable, codex, send, log: appLog, logsDir,
+      tabs, store, usable: codexState.advisorUsable, codex, log: appLog, logsDir,
+      // El resultado también le llega al panel «Actividad» (si no hay nada, la tarea termina ahí),
+      // en orden con los avisos de los hooks, que el panel también procesa con setImmediate.
+      send: (channel, ...args) => {
+        if (channel === 'review:result' && narrator) setImmediate(() => narrator.review(args[0], args[1]));
+        send(channel, ...args);
+      },
       detailedLogs: () => logger.enabled, // la salida completa, solo con la depuración activada
       // Lo que lleve claves no se envía a Codex.
       checkSecrets: (cwd, signal) => (secrets ? secrets.reviewInput(cwd, signal) : { ok: false, files: [] }),
@@ -256,7 +282,7 @@ if (!app.requestSingleInstanceLock()) {
     // (optimize-check.js). Lo que se le envía queda en el «Log».
     optimizeChecker = createChecker({
       findClaude: sessions.findClaude,
-      env: () => childEnv({}),
+      env: haikuEnv,
       workDir: () => path.join(app.getPath('temp'), 'Claudes-haiku'),
       log: appLog,
     });
@@ -267,6 +293,14 @@ if (!app.requestSingleInstanceLock()) {
         for (const file of answer.files || []) if (netlog) netlog.record({ tabId, kind: 'archivo', target: path.join(folder, file), detail: 'Haiku: ¿conviene optimizar?', dest: 'Anthropic' });
         return answer;
       },
+    });
+    // Panel «Actividad»: con el panel abierto, Haiku cuenta lo que va haciendo Claude.
+    narrator = createNarrator({
+      tabs, send, log: appLog,
+      findClaude: sessions.findClaude,
+      env: haikuEnv,
+      workDir: () => path.join(app.getPath('temp'), 'Claudes-haiku'),
+      open: store.get('activityOpen', true) !== false,
     });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
@@ -307,6 +341,11 @@ if (!app.requestSingleInstanceLock()) {
       // La carpeta del agente que va a pedir una segunda opinión (puede ser un subagente en otra copia).
       if (event.event === 'PreToolUse' && event.toolName === `mcp__${CODEX_SERVER}__${codex.OPINION_TOOL.name}` && tab) tab.opinionCwd = event.cwd;
       if (limits && (event.event === 'Stop' || event.event === 'StopFailure')) limits.refreshSoon();
+      // El panel «Actividad», después de contestar al hook (lee el registro de la conversación) y
+      // en el orden de llegada, con lo que ya se sabe de Stop (pruebas, revisión).
+      const forActivity = { ...event };
+      setImmediate(() => narrator.event(tabId, forActivity));
+      delete event.narr; // solo para el panel «Actividad»
       send('hook', tabId, event);
     });
     // Solo para pruebas: los mensajes se bloquean antes de llegar al modelo (no gastan tokens).
@@ -416,7 +455,7 @@ if (!app.requestSingleInstanceLock()) {
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
       sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash,
+      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator,
     });
     wm.create();
     limits.start();
@@ -427,6 +466,7 @@ if (!app.requestSingleInstanceLock()) {
     codex.stopReviews(); // una revisión de Codex en marcha no sigue tras cerrar
     codexState.stop();
     if (optimizeChecker) optimizeChecker.stop(); // una pregunta a Haiku en marcha no sigue tras cerrar
+    if (narrator) narrator.stop();
     if (hookServer) hookServer.stop();
     if (limits) limits.stop();
     // Con una versión nueva lista, se instala ahora que Claudes se cierra.
