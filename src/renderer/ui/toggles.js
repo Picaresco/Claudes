@@ -68,7 +68,7 @@ export function renderReview(state) {
     : 'Segunda opinión, crítica de planes y revisión del código';
   button.classList.toggle('opt-warn', sandboxMissing);
   button.title = reviewOn
-    ? `Codex asesora: activado. Codex (${state.model}, razonamiento ${state.effort}) ayuda a Claude a decidir mejor, siempre en solo lectura: Claude le pide una segunda opinión ante decisiones importantes, planes para tareas grandes o problemas que no salen (o cuando tú se la pidas); en modo planificación (Mayús+Tab), Codex critica el plan antes de que lo veas; y revisa el código que cambie Claude al terminar cada turno (también tus cambios sin confirmar, en proyectos con git). Lo consultado se envía a OpenAI (si lleva claves, no se envía) y gasta de tu plan de ChatGPT. Pulsa para apagarlo: Claude dejará de consultar a Codex.`
+    ? `Codex asesora: activado. Codex (${state.model}, razonando lo que haga falta: más a fondo en seguridad, cambios grandes y problemas difíciles) ayuda a Claude a decidir mejor, siempre en solo lectura: Claude le pide una segunda opinión ante decisiones importantes, planes para tareas grandes o problemas que no salen (o cuando tú se la pidas); en modo planificación (Mayús+Tab), Codex critica el plan antes de que lo veas; y revisa el código que cambie Claude al terminar cada turno (también tus cambios sin confirmar, en proyectos con git). Lo consultado se envía a OpenAI (si lleva claves, no se envía) y gasta de tu plan de ChatGPT. Pulsa para apagarlo: Claude dejará de consultar a Codex.`
     : 'Codex asesora: apagado. Claude no consulta nada a Codex ni se gasta de tu plan de ChatGPT. Pulsa para que Codex le dé segundas opiniones, critique sus planes y revise su código, siempre en solo lectura.';
 }
 

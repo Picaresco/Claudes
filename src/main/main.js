@@ -188,6 +188,7 @@ async function createPty(o) {
   // Solo al ejecutar desde el código: arrancar en un modo de permisos (p. ej. «plan»), para las pruebas.
   if (DEV && process.env.CLAUDES_TEST_PERMISSION_MODE) args.push('--permission-mode', process.env.CLAUDES_TEST_PERMISSION_MODE);
   tab.usage = null;
+  if (review) review.sessionStarted(o.id); // con su primer mensaje sabrá cuándo pedir la segunda opinión
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
   const plugins = style.sessionPlugins();
   for (const plugin of plugins) args.push('--plugin-dir', plugin.dir);
@@ -405,6 +406,9 @@ if (!app.requestSingleInstanceLock()) {
       const ctx = contexts.pendingUpdate(tabId);
       if (ctx) parts.push(ctx.hookSpecificOutput.additionalContext);
       // Botón «Optimiza»: las instrucciones completas, si se acaba de confirmar.
+      // «Codex asesora»: cuándo pedir la segunda opinión (o que se ha apagado), si la sesión no lo sabe.
+      const advisor = review.advisorNote(tabId, event && event.prompt);
+      if (advisor) parts.push(advisor);
       const optimize = optimizer.consume(tabId, event && event.prompt);
       if (optimize) { parts.push(optimize); optimizeHints.optimized(tabId); }
       return parts.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: parts.join('\n\n') } } : null;

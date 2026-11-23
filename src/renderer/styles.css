@@ -246,6 +246,12 @@ h1, p { margin: 0; }
 .codex-status[data-state="partial"] { color: var(--warn); }
 .cx-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .codex-status[data-state="missing"] .cx-dot { background: none; box-shadow: inset 0 0 0 1.5px currentColor; }
+/* Mientras Codex trabaja (asesora, revisa o dibuja), el punto y su nombre laten: que se note. */
+.codex-status[data-working="true"] .cx-dot { animation: cx-beat 1s ease-in-out infinite; }
+.codex-status[data-working="true"] .cx-name { animation: cx-glow 1s ease-in-out infinite; }
+@keyframes cx-beat { 0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 currentColor; } 50% { opacity: 0.35; transform: scale(1.35); box-shadow: 0 0 6px 2px currentColor; } }
+@keyframes cx-glow { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .codex-status[data-working="true"] .cx-dot, .codex-status[data-working="true"] .cx-name { animation: none; } }
 /* Cerca del límite de uso de Codex (o agotado), el nombre lo avisa con su porcentaje. */
 .codex-status[data-state="ready"][data-limit="high"] { color: var(--warn); }
 .codex-status[data-state="ready"][data-limit="reached"] { color: var(--alert); }

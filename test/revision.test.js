@@ -190,10 +190,10 @@ test('con hallazgos, devuelve a Claude lo encontrado y deja constancia', async (
   assert.equal(review.willReview('t1', { event: 'Stop' }), true);
   const answer = await review.onStop('t1', { event: 'Stop', cwd: dir }, new AbortController().signal);
   assert.equal(answer.decision, 'block');
-  assert.match(answer.reason, /Codex \(gpt-6\.2-astra, razonamiento xhigh\)/);
+  assert.match(answer.reason, /Codex \(gpt-6\.2-astra, razonamiento medium\)/); // un cambio pequeño: razonamiento medio
   assert.equal(calls[0].cwd, dir);
   assert.equal(calls[0].model, 'gpt-6.2-astra');
-  assert.equal(calls[0].effort, 'xhigh');
+  assert.equal(calls[0].effort, 'medium'); // el que se dice es el que se usa
   assert.deepEqual(sent.map(([, , r]) => r.state), ['running', 'found']);
   assert.deepEqual(sent[1][2].priorities, [1, 2]);
   assert.equal(records[0].external, true); // lo revisado sale hacia OpenAI: queda en el «Log»
@@ -497,7 +497,7 @@ test('la crítica del plan no se hace sin «Codex asesora», con claves en el pl
 test('la segunda opinión responde con el análisis de Codex y le pide a Claude que lo contraste', async (t) => {
   const { review, calls, sent, records, busy, dir } = started(t);
   const text = await review.secondOpinion('t1', { pregunta: '¿Separo esto en dos servicios?', ambito: 'codigo', archivos: ['src/app.js'] });
-  assert.match(text, /Segunda opinión de Codex \(gpt-6\.2-astra, razonamiento xhigh, 12 s\)/);
+  assert.match(text, /Segunda opinión de Codex \(gpt-6\.2-astra, razonamiento high, 12 s\)/); // de código, sin profundidad pedida: alto
   assert.match(text, /falta el paso de las pruebas/);
   assert.match(text, /no la sigas a ciegas/);
   assert.equal(calls[0].ask.cwd, dir);

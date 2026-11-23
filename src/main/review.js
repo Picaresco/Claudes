@@ -57,10 +57,43 @@ async function checkFiles(cwd, files) {
 }
 
 const MODEL = 'gpt-6.2-astra'; // el más capaz de los que ofrece Codex con ChatGPT (noviembre de 2026)
-const EFFORT = 'xhigh';
+const EFFORT = 'xhigh'; // el máximo; cada consulta usa el que necesita (abajo)
+
+// Cuánto razona Codex en cada consulta: lo que haga falta. Más razonamiento es más fino, pero
+// tarda más y gasta más del plan de ChatGPT del usuario.
+// - Revisión del código: por lo que cambia. Seguridad, despliegue o datos → a fondo; mucho
+//   código → a fondo; un cambio pequeño → medio; lo demás → alto.
+// - Crítica de un plan: alto; un plan largo → a fondo.
+// - Segunda opinión: la profundidad que pida Claude («rapida», «normal» o «a_fondo»); si no la
+//   pide, a fondo para seguridad, planes y problemas atascados, y alto para lo demás.
+const SENSITIVE = /(auth|login|passw|contrase|secur|segur|crypt|cifr|token|secret|session|sesion|permis|oauth|jwt|(^|[\\/])\.env|docker|deploy|despliegue|infra|nginx|firewall|migrat|\.sql$)/i;
+function reviewEffort({ lines = 0, paths = [] } = {}) {
+  if (paths.some((p) => SENSITIVE.test(p))) return 'xhigh';
+  if (lines > 300) return 'xhigh';
+  if (lines <= 20) return 'medium';
+  return 'high';
+}
+const planEffort = (plan) => (String(plan || '').length > 2500 ? 'xhigh' : 'high');
+const DEPTHS = { rapida: 'medium', normal: 'high', a_fondo: 'xhigh' };
+const opinionEffort = (scope, depth) => DEPTHS[depth] || (['seguridad', 'plan', 'problema'].includes(scope) ? 'xhigh' : 'high');
 const MAX_SUMMARY = 2000; // caracteres del resumen de Codex que se le pasan a Claude
 const MAX_FINDINGS = 12000; // y de los hallazgos
 const WRAPUP_START = 'Voy a cerrar esta sesión ahora.'; // principio de lo que se escribe al cerrar
+
+// Cuándo pedir la segunda opinión, dicho a cada sesión con su primer mensaje (y otra vez al
+// cambiar el interruptor). La descripción de la herramienta ya lo dice, pero con muchos
+// servidores MCP Claude Code difiere las herramientas y Claude solo ve su nombre hasta que la
+// busca: en la prueba real (0.24.4) no la pedía por su cuenta ante una decisión de arquitectura
+// y seguridad.
+const ADVISOR_ON = 'ClaudHome · Codex asesora (activado por el usuario): tienes a Codex como asesor con la herramienta mcp__claudhome-codex__segunda_opinion (si no la tienes cargada, búscala con ToolSearch: «segunda_opinion»). Pídele su opinión por tu cuenta, sin esperar a que te lo pidan, en estos casos: '
+  + 'decisiones importantes de arquitectura o del enfoque de una tarea grande (ámbito «codigo» o «flujo»); '
+  + 'cambios de seguridad, como contraseñas, autenticación, permisos, datos personales o claves (ámbito «seguridad»); '
+  + 'cambios de infraestructura, como despliegues, bases de datos o redes; '
+  + 'antes de ejecutar el plan de una tarea grande fuera del modo planificación (ámbito «plan»; en modo planificación no hace falta, ClaudHome ya se lo envía al presentarlo); '
+  + 'y cuando lleves dos o tres intentos sin resolver un problema (ámbito «problema»). '
+  + 'Elige la profundidad (campo «profundidad»): «rapida» para una duda concreta, «normal» para una decisión de código corriente y «a_fondo» para seguridad, arquitectura de algo grande o un problema que se resiste (si no la indicas, ClaudHome la elige por el ámbito). '
+  + 'No la uses para cosas sencillas. Tarda entre medio minuto y unos minutos (más cuanto más a fondo): dile al usuario que la pides. Con su respuesta, compárala con tu análisis y dale una sola recomendación, diciendo en qué coincidís y en qué no.';
+const ADVISOR_OFF = 'ClaudHome · Codex asesora desactivado por el usuario: ya no pidas segundas opiniones a Codex (la herramienta mcp__claudhome-codex__segunda_opinion se negará). Si el usuario te la pide, dile que lo active en la rueda de opciones, «Codex asesora».';
 
 // Lo que cuenta como código para revisar: lo del aviso de crecimiento y las páginas HTML.
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max)}\n[… recortado]` : text);
@@ -101,14 +134,14 @@ function verdict(parsed, text) {
 }
 
 // Lo que se le dice a Claude cuando Codex encuentra algo.
-function reasonFor(parsed, text) {
+function reasonFor(parsed, text, effort = EFFORT) {
   const findings = parsed.findings.length
     ? parsed.findings.map((f) => `- [P${f.priority}] ${f.title}${f.location ? ` — ${f.location}` : ''}${f.body ? `\n  ${f.body}` : ''}`).join('\n\n')
     : String(text).trim();
   const { count, priorities } = verdict(parsed, text);
   const detail = [0, 1, 2, 3].map((p) => priorities.filter((x) => x === p).length).map((n, p) => (n ? `${n} P${p}` : '')).filter(Boolean).join(', ');
   return [
-    `ClaudHome · segundo revisor: Codex (${MODEL}, razonamiento ${EFFORT}) ha revisado los cambios sin confirmar del proyecto y ha encontrado ${count} posibles problemas (${detail}; P0 es el más grave, P3 el más leve).`,
+    `ClaudHome · segundo revisor: Codex (${MODEL}, razonamiento ${effort}) ha revisado los cambios sin confirmar del proyecto y ha encontrado ${count} posibles problemas (${detail}; P0 es el más grave, P3 el más leve).`,
     parsed.findings.length && parsed.summary ? `Su resumen: ${clip(parsed.summary, MAX_SUMMARY)}` : '',
     'Hallazgos:',
     clip(findings, MAX_FINDINGS),
@@ -190,7 +223,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     try {
       fs.mkdirSync(logsDir(), { recursive: true });
       const file = path.join(logsDir(), `revision-codex-${localStamp()}-${crypto.randomBytes(3).toString('hex')}.log`);
-      fs.writeFileSync(file, `Carpeta: ${cwd}\nModelo: ${MODEL} (${EFFORT})\nDuración: ${result.seconds} s · código ${result.code}${result.aborted ? ' · interrumpida' : ''}\n\n== Resultado ==\n${result.text}\n\n== Registro de Codex ==\n${result.log}\n`);
+      fs.writeFileSync(file, `Carpeta: ${cwd}\nModelo: ${MODEL} (${result.effort || EFFORT})\nDuración: ${result.seconds} s · código ${result.code}${result.aborted ? ' · interrumpida' : ''}\n\n== Resultado ==\n${result.text}\n\n== Registro de Codex ==\n${result.log}\n`);
       return file;
     } catch { return null; } // sin registro, se sigue
   }
@@ -261,17 +294,19 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     }
     if (tab.turn !== turn || !enabled) return null;
     post({ state: 'running' });
-    log(`revisión de Codex: empieza en ${cwd} (${MODEL}, ${EFFORT})`);
+    const effort = reviewEffort(input);
+    log(`revisión de Codex: empieza en ${cwd} (${MODEL}, razonamiento ${effort}: ${input.lines || 0} líneas en ${(input.paths || []).length} archivos)`);
     // Se anota antes de enviar nada: si la app se cierra a mitad, la salida ya consta.
     const record = netlog();
     if (record) {
-      record.record({ tabId, kind: 'revision', target: `Cambios sin confirmar de ${cwd}`, detail: `${MODEL} · ${EFFORT}`, dest: 'OpenAI (Codex)', external: true });
+      record.record({ tabId, kind: 'revision', target: `Cambios sin confirmar de ${cwd}`, detail: `${MODEL} · ${effort}`, dest: 'OpenAI (Codex)', external: true });
     }
     onBusy(1, tabId, 'revisión del código', 'review');
     let result;
     try {
-      result = await codex.reviewChanges({ cwd, model: MODEL, effort: EFFORT, signal });
+      result = await codex.reviewChanges({ cwd, model: MODEL, effort, signal });
     } finally { onBusy(-1, tabId, 'revisión del código', 'review'); }
+    result.effort = effort;
     const file = saveDetails(cwd, result);
     if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras revisaba
     if (tab.turn !== turn) { // el usuario ya ha seguido: lo encontrado no se le devuelve a Claude
@@ -302,7 +337,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     log(`revisión de Codex: ${v.count} hallazgos en ${result.seconds} s`);
     post({ state: v.state, count: v.count, priorities: v.priorities, seconds: result.seconds, file, partial });
     if (v.state !== 'found') return null;
-    const reason = reasonFor(parsed, result.text);
+    const reason = reasonFor(parsed, result.text, result.effort);
     return { decision: 'block', reason: partial ? `Aviso: Codex no ha podido leer parte del proyecto (${readWhy()}), así que su revisión puede estar incompleta.\n\n${reason}` : reason };
   }
 
@@ -310,9 +345,9 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   const readWhy = () => (sandboxMissing() ? 'su zona protegida de Windows no está configurada' : 'se le ha denegado el acceso a los archivos');
 
   // Anota una salida hacia OpenAI antes de hacerla.
-  function recordOut(tabId, kind, target, cwd) {
+  function recordOut(tabId, kind, target, cwd, effort) {
     const record = netlog();
-    if (record) record.record({ tabId, kind, target, detail: `${MODEL} · ${EFFORT} · ${cwd}`, dest: 'OpenAI (Codex)', external: true });
+    if (record) record.record({ tabId, kind, target, detail: `${MODEL} · ${effort} · ${cwd}`, dest: 'OpenAI (Codex)', external: true });
   }
 
   // Claude presenta un plan (PreToolUse de ExitPlanMode). Con «Codex asesora», Codex lo
@@ -343,13 +378,14 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     }
     if (!(await checkLogin()) || (signal && signal.aborted) || tab.turn !== turn || !enabled) return null;
     post({ state: 'plan-running' });
-    log(`crítica del plan: empieza en ${cwd} (${MODEL}, ${EFFORT})`);
-    recordOut(tabId, 'plan', 'Plan de Claude y la petición del usuario', cwd);
+    const effort = planEffort(plan);
+    log(`crítica del plan: empieza en ${cwd} (${MODEL}, razonamiento ${effort})`);
+    recordOut(tabId, 'plan', 'Plan de Claude y la petición del usuario', cwd, effort);
     onBusy(1, tabId, 'crítica de un plan', 'plan');
     const link = linked(signal);
     let result;
     try {
-      result = await codex.askCodex({ cwd, prompt: codex.planPrompt({ request: tab.request, plan }), model: MODEL, effort: EFFORT, signal: link.signal });
+      result = await codex.askCodex({ cwd, prompt: codex.planPrompt({ request: tab.request, plan }), model: MODEL, effort, signal: link.signal });
     } finally { onBusy(-1, tabId, 'crítica de un plan', 'plan'); link.done(); }
     if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras criticaba
     if (tab.turn !== turn) return null;
@@ -367,7 +403,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     log(`crítica del plan: lista en ${result.seconds} s`);
     post({ state: 'plan-done', seconds: result.seconds });
     const reason = [
-      `ClaudHome · segundo revisor: Codex (${MODEL}, razonamiento ${EFFORT}) ha criticado tu plan antes de que el usuario lo vea. Todavía no se lo has presentado.`,
+      `ClaudHome · segundo revisor: Codex (${MODEL}, razonamiento ${effort}) ha criticado tu plan antes de que el usuario lo vea. Todavía no se lo has presentado.`,
       `Su crítica:\n${result.text}`,
       'Revísalo con criterio propio: incorpora lo que lo mejore y descarta lo que no aplique a este proyecto.',
       'Después vuelve a presentarlo con ExitPlanMode, añadiendo al final una sección breve «Segunda opinión (Codex)» con en qué coincidís, qué has cambiado por su crítica y en qué discrepas y por qué.',
@@ -404,8 +440,9 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
         : `No se ha podido comprobar si ${blocked.file} lleva claves (${blocked.why === 'big' ? 'es demasiado grande' : 'no se puede leer'}). Quítalo de «archivos» y vuelve a pedirla.`);
     }
     const scope = codex.SCOPES[args.ambito] ? args.ambito : 'otro';
-    log(`segunda opinión: ${tabs.label ? tabs.label(tabId) : tabId} pregunta a Codex (${scope}, ${question.length} caracteres)`);
-    recordOut(tabId, 'opinion', `Segunda opinión (${codex.SCOPES[scope]})`, cwd);
+    const effort = opinionEffort(scope, args.profundidad);
+    log(`segunda opinión: ${tabs.label ? tabs.label(tabId) : tabId} pregunta a Codex (${scope}, razonamiento ${effort}, ${question.length} caracteres)`);
+    recordOut(tabId, 'opinion', `Segunda opinión (${codex.SCOPES[scope]})`, cwd, effort);
     send('review:result', tabId, { state: 'opinion-running' });
     // Una consulta de seguridad se distingue en el indicador (un escudo en vez del bocadillo).
     const job = scope === 'seguridad' ? ['segunda opinión de seguridad', 'security'] : ['segunda opinión', 'opinion'];
@@ -413,7 +450,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     const link = linked(signal);
     let result;
     try {
-      result = await codex.askCodex({ cwd, prompt: codex.opinionPrompt({ question, scope, files }), model: MODEL, effort: EFFORT, signal: link.signal });
+      result = await codex.askCodex({ cwd, prompt: codex.opinionPrompt({ question, scope, files }), model: MODEL, effort, signal: link.signal });
     } finally { onBusy(-1, tabId, ...job); link.done(); }
     send('review:result', tabId, { state: 'opinion-done', ok: result.ok, seconds: result.seconds });
     if (!enabled) throw new Error('El usuario ha apagado el asesoramiento de Codex mientras respondía: no se usa su respuesta.');
@@ -427,13 +464,35 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     log(`segunda opinión: lista en ${result.seconds} s${result.blocked ? ' (sin poder leer el proyecto)' : ''}`);
     return [
       result.blocked ? `Aviso: Codex no ha podido leer los archivos del proyecto (${readWhy()}), así que su opinión se basa solo en lo que le has contado. Tenlo en cuenta y díselo al usuario.` : '',
-      `Segunda opinión de Codex (${MODEL}, razonamiento ${EFFORT}, ${result.seconds} s):`,
+      `Segunda opinión de Codex (${MODEL}, razonamiento ${effort}, ${result.seconds} s):`,
       result.text,
       'Compárala con tu propio análisis y no la sigas a ciegas. Dale al usuario una sola recomendación y cuéntale en una o dos frases en qué coincidís y en qué no.',
     ].filter(Boolean).join('\n\n');
   }
 
+  // Lo que la sesión tiene que saber de «Codex asesora» con este mensaje: cuándo pedir la
+  // segunda opinión (una vez por sesión) o que se ha apagado; null si ya lo sabe.
+  function advisorNote(tabId, prompt) {
+    const tab = tabs.ensure(tabId);
+    if (typeof prompt === 'string' && prompt.startsWith(WRAPUP_START.slice(0, 30))) return null; // al cerrar, no
+    const on = enabled && usable();
+    if (on && tab.advisorTold !== true) {
+      tab.advisorTold = true;
+      log(`«Codex asesora»: se le dice a la sesión ${tabId} cuándo pedir la segunda opinión`);
+      return ADVISOR_ON;
+    }
+    if (!on && tab.advisorTold === true) {
+      tab.advisorTold = false;
+      return ADVISOR_OFF;
+    }
+    return null;
+  }
+  // Una sesión que arranca (nueva o retomada) no sabe nada todavía.
+  const sessionStarted = (tabId) => { tabs.ensure(tabId).advisorTold = undefined; };
+
   return {
+    advisorNote,
+    sessionStarted,
     turnStarted,
     toolUsed,
     willReview,
@@ -451,4 +510,4 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   };
 }
 
-module.exports = { createReview, isGitRepo, repoRoot, reasonFor, verdict, MODEL, EFFORT, WRAPUP_START };
+module.exports = { createReview, isGitRepo, repoRoot, reasonFor, verdict, reviewEffort, planEffort, opinionEffort, MODEL, EFFORT, WRAPUP_START, ADVISOR_ON, ADVISOR_OFF };

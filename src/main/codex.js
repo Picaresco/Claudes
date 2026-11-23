@@ -594,6 +594,11 @@ const OPINION_TOOL = {
         items: { type: 'string' },
         description: 'Rutas de los archivos más relevantes, para que Codex empiece por ellos.',
       },
+      profundidad: {
+        type: 'string',
+        enum: ['rapida', 'normal', 'a_fondo'],
+        description: 'Cuánto debe razonar Codex: «rapida» para una duda concreta, «normal» para una decisión de código corriente, «a_fondo» para seguridad, arquitectura de algo grande o un problema que se resiste. Más a fondo tarda más y gasta más. Si no se indica, se elige por el ámbito.',
+      },
     },
     required: ['pregunta'],
   },

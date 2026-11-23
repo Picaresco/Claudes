@@ -330,11 +330,16 @@ async function reviewInput(cwd, signal = null) {
     execFile(git, ['cat-file', 'blob', spec], { cwd: root, windowsHide: true, timeout: 30000, maxBuffer: MAX_BYTES + 1, encoding: 'buffer', ...(signal ? { signal } : {}) }, (err, stdout) => resolve(err ? null : stdout));
   });
   let tracked = 0;
+  let lines = 0; // líneas cambiadas (y las de los archivos nuevos)
+  const paths = new Set(); // archivos que cambian
   for (const [which, diff] of [['cached', diffs[0]], ['work', diffs[1]]]) {
     const parts = splitDiff(diff);
     if (diff.trim() && !parts.length) return { ok: false, files: [] }; // un formato que no se entiende: sin comprobar
     tracked += parts.length;
+    // Las líneas añadidas o quitadas (sin las cabeceras «--- a/…» y «+++ b/…»).
+    lines += (diff.match(/^[+-](?!\+\+ |-- )/gm) || []).length;
     for (const [rel, text, binary] of parts) {
+      paths.add(rel);
       if (!binary) { if (scanText(text, rel).length) risky.add(rel); continue; }
       let buf;
       if (which === 'cached') buf = await readBlob(`:${rel}`);
@@ -366,11 +371,13 @@ async function reviewInput(cwd, signal = null) {
       return { ok: false, files: [...risky] };
     }
     if (text === null) continue;
+    paths.add(rel);
+    lines += text.split('\n').length;
     if (scanText(text, rel).length) risky.add(rel);
   }
   // Sin nada que revisar (Claude ya lo ha confirmado o deshecho): no se lanza Codex.
   if (!tracked && !untracked.length) return { ok: true, files: [], empty: true };
-  return { ok: true, files: [...risky] };
+  return { ok: true, files: [...risky], lines, paths: [...paths] };
 }
 
 module.exports = { Secrets, scanText, maskSecrets, isEnvFile, findGit, splitDiff, reviewInput, decodeText };

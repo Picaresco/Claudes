@@ -167,7 +167,7 @@ test('antes de enviar a Codex se comprueba exactamente lo que vería', { skip: !
   assert.deepEqual(await reviewInput(cwd), { ok: true, files: [], empty: true }); // sin cambios: nada que revisar
   write('.env', `API_KEY=${KEYS.openai}\n`); // git lo deja fuera: no se envía
   write('src/app.js', 'const x = 2;\n');
-  assert.deepEqual(await reviewInput(path.join(cwd, 'src')), { ok: true, files: [] }); // también desde una subcarpeta
+  assert.deepEqual(await reviewInput(path.join(cwd, 'src')), { ok: true, files: [], lines: 2, paths: ['src/app.js'] }); // también desde una subcarpeta (y cuánto cambia, para elegir cuánto razona Codex)
   write('notas/config.yml', `db:\n  password: ${rnd(10)}\n`); // nuevo, de alguien que no es Claude
   write('src/old.js', 'const k = process.env.GH;\n'); // la clave se quita, pero el diff la lleva (línea borrada)
   const r = await reviewInput(cwd);

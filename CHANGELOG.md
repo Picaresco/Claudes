@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.5 — 2026-11-23
+- «Codex asesora» ahora entra cuando hace falta: con el interruptor encendido, ClaudHome le dice a cada sesión, con su primer mensaje, cuándo pedirle a Codex una segunda opinión por su cuenta (decisiones de arquitectura, seguridad, infraestructura, planes grandes y problemas que se resisten), y si lo apagas, que ya no lo haga. Antes Claude no lo veía si tenías muchos servidores MCP (sus herramientas se cargan bajo demanda): en una prueba real, ante una decisión de contraseñas y arquitectura, no consultaba a Codex; ahora sí.
+- Codex razona lo que haga falta en vez de siempre al máximo: la revisión del código va a fondo en cambios de seguridad, despliegue o datos y en cambios grandes, y más ligera en cambios pequeños; la crítica de un plan, a fondo si el plan es largo; y en la segunda opinión, Claude elige la profundidad («rápida», «normal» o «a fondo») según la pregunta. Así las consultas sencillas tardan menos y gastan menos de tu plan de ChatGPT.
+- Mientras Codex trabaja (asesora, critica un plan, revisa el código o dibuja), el punto verde y el nombre «Codex» de la barra superior laten, para que se note de un vistazo.
+
 ## 0.24.4 — 2026-11-23
 - Las pestañas siempre caben en la barra superior: si al salir «Actualizar» (o con muchas pestañas o la ventana estrecha) no hay sitio, la barra se compacta poco a poco hasta que quepan: «Actualizar a vX» pasa a «Actualizar», desaparece el número de versión, las pestañas se estrechan más y, si hace falta, «Actualizar» y «Codex» se quedan solo con su icono y el nombre de la app se quita. Todo sigue diciendo lo suyo al pasar el ratón.
 - La vista previa al pasar el ratón por una imagen o un archivo enseña solo lo que hay dentro, más grande y entero: la imagen completa (hasta 960 × 720, sin recortar), la primera página de un PDF o las primeras líneas de un texto, sin el nombre, el tamaño ni las medidas. Los archivos que no tienen nada que ver (solo el icono de su tipo) ya no sacan tarjeta. Ctrl+clic sigue abriéndolos.

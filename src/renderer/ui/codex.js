@@ -84,6 +84,7 @@ function renderCodexStatus() {
   badge.hidden = false;
   badge.dataset.state = !codexInfo.installed ? 'missing' : usable ? 'ready' : 'partial';
   badge.dataset.limit = level;
+  badge.dataset.working = String(jobs.length > 0); // mientras trabaja, el punto y el nombre laten
   badge.title = text;
   badge.setAttribute('aria-label', text);
   const note = $('#codex-limit');
