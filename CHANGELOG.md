@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.22.0 — 2026-11-23
+- ClaudHome te avisa cuando conviene optimizar un proyecto: el botón «Optimiza» se pone en verde con la etiqueta «recomendado» y, la primera vez, te lo dice con un mensaje. Al pasar el ratón ves por qué. Nunca se lanza solo: lo pulsas tú cuando quieras, o en cualquier momento por tu cuenta.
+- Lo recomienda tras muchos cambios de código (150) desde la última optimización, cuando un archivo de código pasa de 800 líneas o cuando hace un mes de la última y ha habido cambios. Lo calcula la app sola, sin gastar nada de tu plan.
+- Si no te viene bien, «Ahora no» deja de recomendarlo durante 7 días. Al optimizar, la cuenta vuelve a cero, y lo que cambia la propia optimización no cuenta.
+
 ## 0.21.0 — 2026-11-23
 - Nuevo botón «Optimiza» en la cabecera de cada sesión: Claude revisa todo el proyecto y lo mejora sin cambiar lo que hace (limpieza, orden, eficiencia y coherencia visual), solo y sin preguntarte nada hasta el final.
 - Trabaja con red de seguridad: en una rama aparte de git (tu rama no se toca y no se sube nada), mide antes y después, pasa las pruebas tras cada cambio y deshace lo que falle, y al final pide una revisión independiente (a Codex, si lo tienes). Te deja un informe con las cifras de antes y después y la rama para que decidas si la unes.

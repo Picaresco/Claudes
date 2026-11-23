@@ -10,7 +10,7 @@ import { acknowledge } from './session-events.js';
 import { sleepAfterMs } from './sleep.js';
 import {
   S, views, renamingId, draggingId, lastBusy, setLastBusy, panes, byId, clamp, visibleIds,
-  applySwatch, swatch,
+  applySwatch, swatch, optimizeHints,
 } from './state.js';
 import { showView, focusTerminal } from './views.js';
 
@@ -94,6 +94,13 @@ export function renderToolbar() {
   if (ctxView && ctxView.ctxSub) ctxView.ctxSub.textContent = `Claude lo tiene presente en cada sesión de «${tab.name}»`;
   const activeView = views.get(tab.id);
   $('#tb-codex').hidden = !(activeView && activeView.codex && activeView.started && codexInfo && codexInfo.active);
+  // «Optimiza»: recomendado si la app ve que conviene (optimize-hint.js).
+  const hint = optimizeHints.get(tab.id);
+  const recommended = Boolean(hint && hint.recommended);
+  $('#btn-optimize').dataset.recommended = String(recommended);
+  $('#opt-badge').hidden = !recommended;
+  $('#btn-optimize').title = (recommended ? `Recomendado: ${hint.reasons.join('; ')}.\n\n` : '')
+    + 'Optimiza: Claude revisa todo el proyecto y lo mejora sin cambiar lo que hace (limpieza, orden, eficiencia), solo y en una rama aparte de git. Te pide confirmación antes de empezar.';
   $('#btn-swap').hidden = !S.split;
   $('#btn-split-label').textContent = S.split ? 'Cerrar división' : 'Dividir';
   $('#split-line').style.display = S.split ? 'none' : '';

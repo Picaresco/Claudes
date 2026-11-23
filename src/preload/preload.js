@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('api', {
   codexSetEnabled: (on) => ipcRenderer.invoke('codex:setEnabled', Boolean(on)),
   optimizeCheck: (tabId) => ipcRenderer.invoke('optimize:check', String(tabId)),
   optimizeArm: (tabId) => ipcRenderer.invoke('optimize:arm', String(tabId)),
+  optimizeHint: (tabId) => ipcRenderer.invoke('optimize:hint', String(tabId)),
+  optimizeSnooze: (tabId) => ipcRenderer.invoke('optimize:snooze', String(tabId)),
+  onOptimizeHint: on('optimize:hint'), // (tabId, { recommended, reasons, snoozed, first })
   onCodexChanged: on('codex:changed'),
 
   // Actualización desde GitHub: estado, generar la versión nueva y reiniciar para instalarla.

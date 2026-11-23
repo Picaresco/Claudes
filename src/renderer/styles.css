@@ -434,6 +434,10 @@ body.dragging #workspace * { pointer-events: none; }
 }
 
 /* ── Contexto del proyecto: botón, panel lateral y elección al soltar archivos ── */
+/* «Optimiza» recomendado: el botón en verde, con la etiqueta. */
+#btn-optimize[data-recommended="true"] { border-color: var(--ok); color: var(--txt); }
+#btn-optimize[data-recommended="true"] svg { color: var(--ok); }
+.opt-badge { padding: 1px 6px; border-radius: 8px; background: rgba(127, 212, 160, 0.16); color: var(--ok); font-size: 11px; font-weight: 600; }
 .btn .count {
   display: inline-flex;
   align-items: center;

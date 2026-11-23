@@ -1,6 +1,7 @@
 // Interfaz de Claudes: pestañas, vista dividida, terminal extra, recientes y avisos.
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
 import { renderCodex, codexInfo } from './ui/codex.js';
+import { setOptimizeHint } from './ui/optimize.js';
 import { COLORS, BASE_FONT, MAX_RECENTS } from './ui/constants.js';
 import { cleanContext, addToContext, addLinks } from './ui/context.js';
 import { renderDebug } from './ui/debug.js';
@@ -164,6 +165,7 @@ async function init() {
   // «hoy a las 21:00» pasa a ser «ayer…» con el cambio de día.
   setInterval(renderPlanLimits, 60 * 1000);
   api.onNotifyClick((tabId) => { if (byId(tabId)) activate(tabId); });
+  api.onOptimizeHint(setOptimizeHint);
   api.onCodexChanged((codexState) => {
     renderCodex(codexState);
     api.reviewGet().then(renderReview).catch(() => { /* sin botón «Codex asesora» */ });

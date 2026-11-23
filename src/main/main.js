@@ -25,6 +25,7 @@ const { createTestReminder } = require('./testcheck');
 const { createCodexState } = require('./codex-state');
 const { registerIpc } = require('./ipc');
 const { createOptimizer } = require('./optimize');
+const { createOptimizeHints } = require('./optimize-hint');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -53,6 +54,7 @@ let review = null; // Codex como segundo revisor del código (review.js)
 let secrets = null; // aviso de claves y contraseñas escritas en los archivos (secrets.js)
 let testcheck = null; // pruebas antes de terminar (testcheck.js)
 let optimizer = null; // botón «Optimiza» (optimize.js)
+let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
 // Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
 // pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
 const NOTICE_BUDGET = 1500;
@@ -204,6 +206,7 @@ async function createPty(o) {
   } else {
     ptys.spawn(o.id, exe, args, { ...base, env });
   }
+  if (optimizeHints) optimizeHints.refresh(o.id); // si conviene optimizar este proyecto
   return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex };
 }
 
@@ -247,6 +250,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     testcheck = createTestReminder({ tabs, log: appLog });
     optimizer = createOptimizer({ tabs, log: appLog });
+    optimizeHints = createOptimizeHints({ store, tabs, send, log: appLog });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
@@ -257,6 +261,12 @@ if (!app.requestSingleInstanceLock()) {
       // si se va a revisar (la interfaz no lo da por terminado mientras tanto).
       if (event.event === 'UserPromptSubmit') { review.turnStarted(tabId, event.prompt, event.request); testcheck.turnStarted(tabId, event.prompt); }
       if (event.event === 'PostToolUse') review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
+      // ¿Conviene optimizar? Cada cambio de código cuenta (se cuenta después de contestar).
+      if (event.event === 'UserPromptSubmit') optimizeHints.turnStarted(tabId);
+      if (event.event === 'PostToolUse' && EDIT_TOOLS.has(event.toolName) && event.toolInput && event.toolInput.file) {
+        const file = event.toolInput.file;
+        setImmediate(() => { optimizeHints.edited(tabId, file, event.cwd).catch(() => { /* se contará con el siguiente */ }); });
+      }
       // Pruebas antes de terminar: qué se cambia, qué pruebas se pasan y cómo acaban.
       if (event.event === 'PreToolUse') testcheck.toolStarting(tabId, event.toolName, event.toolUseId);
       if (event.event === 'PostToolUse' || event.event === 'PostToolUseFailure') {
@@ -339,7 +349,7 @@ if (!app.requestSingleInstanceLock()) {
       if (ctx) parts.push(ctx.hookSpecificOutput.additionalContext);
       // Botón «Optimiza»: las instrucciones completas, si se acaba de confirmar.
       const optimize = optimizer.consume(tabId, event && event.prompt);
-      if (optimize) parts.push(optimize);
+      if (optimize) { parts.push(optimize); optimizeHints.optimized(tabId); }
       return parts.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: parts.join('\n\n') } } : null;
     };
     hookServer.mcp = createMcp({
@@ -389,7 +399,7 @@ if (!app.requestSingleInstanceLock()) {
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
       sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-      previewer, netlog, updater, restartToUpdate, optimizer, gitBash,
+      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash,
     });
     wm.create();
     limits.start();

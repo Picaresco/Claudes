@@ -27,6 +27,8 @@ let toastTimer = null;
 export let voiceOn = false; // micrófono para dictar (botón de la barra superior)
 export const setVoiceOn = (value) => { voiceOn = value; };
 
+// Si conviene optimizar el proyecto de cada pestaña: id → { recommended, reasons, snoozed }.
+export const optimizeHints = new Map();
 export const panes = {};
 export const byId = (id) => S.tabs.find((t) => t.id === id) || null;
 export const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
