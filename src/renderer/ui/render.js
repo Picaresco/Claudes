@@ -70,9 +70,32 @@ export function renderTabs() {
   const shown = new Set(visibleIds());
   const strip = $('#tabs');
   strip.replaceChildren(...S.tabs.map((tab) => tabElement(tab, shown.has(tab.id))));
+  fitStrip();
   const active = S.activeId && strip.querySelector(`.tab[data-id="${S.activeId}"]`);
   if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
+
+// La barra superior: las pestañas se estrechan hasta un mínimo; si aun así no caben (por
+// ejemplo, al salir «Actualizar»), se compacta lo demás, paso a paso, hasta que quepan:
+// 1) «Actualizar a vX» pasa a «Actualizar»; 2) sin el número de versión de la app; 3) pestañas
+// más estrechas; 4) «Actualizar» y «Codex», solo con su icono o punto; 5) sin el nombre de la app. Si ni así, la fila de pestañas se desplaza.
+const MAX_STRIP = 5;
+let lastStrip = '';
+export function fitStrip() {
+  const strip = $('#strip');
+  const tabs = $('#tabs');
+  const signature = [strip.clientWidth, tabs.children.length, $('#update-btn').hidden, $('#update-btn').textContent, $('#codex-status').hidden, $('#codex-status').textContent].join('|');
+  if (signature === lastStrip) return;
+  lastStrip = signature;
+  for (let level = 0; level <= MAX_STRIP; level += 1) {
+    strip.dataset.compact = String(level);
+    if (tabs.scrollWidth <= tabs.clientWidth + 1) break;
+  }
+}
+window.addEventListener('resize', () => fitStrip());
+// Lo que cambia de ancho sin que cambien las pestañas: el botón de actualizar y el indicador de Codex.
+new ResizeObserver(() => fitStrip()).observe($('#update-btn'));
+new ResizeObserver(() => fitStrip()).observe($('#codex-status'));
 
 export function renderToolbar() {
   const tab = byId(S.activeId);

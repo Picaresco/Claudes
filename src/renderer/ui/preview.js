@@ -1,9 +1,8 @@
 // ── Vista previa de archivos ─────────────────────────────────────
 // Al pasar el ratón sobre la ruta de un archivo que existe, o sobre el
-// [Image #n] en que Claude Code convierte una imagen pegada, aparece una tarjeta
-// con su miniatura, la primera página o las primeras líneas. Ctrl+clic lo abre.
+// [Image #n] en que Claude Code convierte una imagen pegada, aparece la imagen entera, la
+// primera página o las primeras líneas, sin más datos. Ctrl+clic lo abre.
 import { api, $, el } from './dom.js';
-import { baseName } from './newtab.js';
 import { sleep } from './state.js';
 import { IMAGE_FILE } from './terminals.js';
 
@@ -190,11 +189,11 @@ function showPreview(file, event) {
   const token = ++previewToken;
   const at = { x: event.clientX, y: event.clientY };
   previewTimer = setTimeout(async () => {
-    renderPreview({ name: baseName(file), loading: true }, at);
     let data = null;
     try { data = await api.preview(file); } catch { /* sin vista previa */ }
     if (token !== previewToken) return;
-    if (data) renderPreview(data, at);
+    // Solo si hay algo que ver: un archivo sin vista previa (solo su icono) no enseña nada.
+    if (data && (data.kind === 'text' || (data.image && data.kind !== 'icon'))) renderPreview(data, at);
     else hidePreview();
   }, 150);
 }
@@ -214,28 +213,20 @@ export function formatSize(bytes) {
   return `${value.toLocaleString('es-ES', { maximumFractionDigits: value < 10 ? 1 : 0 })} ${units[i]}`;
 }
 
+// Solo lo que se ve del archivo (la imagen, la página o el texto), sin nombre ni datos.
 function renderPreview(data, at) {
   const card = $('#preview');
   const body = el('div', 'pv-body');
-  if (data.loading) body.append(el('div', 'pv-loading', 'Preparando la vista previa…'));
-  else if (data.kind === 'text') body.append(el('pre', 'pv-text', data.text));
-  else if (data.image) {
+  if (data.kind === 'text') body.append(el('pre', 'pv-text', data.text));
+  else {
     const img = el('img', 'pv-img');
-    img.alt = '';
+    img.alt = data.name || '';
     img.addEventListener('load', () => placePreview(card, at));
     img.src = data.image;
     body.append(img);
   }
-  const meta = el('div', 'pv-meta');
-  meta.append(el('strong', 'pv-name', data.name));
-  if (!data.loading) {
-    const facts = [data.ext || 'Archivo', formatSize(data.size)];
-    if (data.width && data.height) facts.push(`${data.width} × ${data.height}`);
-    if (data.pages) facts.push(data.pages === 1 ? '1 página' : `${data.pages} páginas`);
-    meta.append(el('span', 'pv-info', facts.join(' · ')), el('span', 'pv-hint', 'Ctrl+clic para abrir'));
-  }
-  card.replaceChildren(body, meta);
-  card.dataset.kind = data.loading ? 'loading' : data.kind;
+  card.replaceChildren(body);
+  card.dataset.kind = data.kind;
   card.hidden = false;
   placePreview(card, at);
 }

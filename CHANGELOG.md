@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.4 — 2026-11-23
+- Las pestañas siempre caben en la barra superior: si al salir «Actualizar» (o con muchas pestañas o la ventana estrecha) no hay sitio, la barra se compacta poco a poco hasta que quepan: «Actualizar a vX» pasa a «Actualizar», desaparece el número de versión, las pestañas se estrechan más y, si hace falta, «Actualizar» y «Codex» se quedan solo con su icono y el nombre de la app se quita. Todo sigue diciendo lo suyo al pasar el ratón.
+- La vista previa al pasar el ratón por una imagen o un archivo enseña solo lo que hay dentro, más grande y entero: la imagen completa (hasta 960 × 720, sin recortar), la primera página de un PDF o las primeras líneas de un texto, sin el nombre, el tamaño ni las medidas. Los archivos que no tienen nada que ver (solo el icono de su tipo) ya no sacan tarjeta. Ctrl+clic sigue abriéndolos.
+
 ## 0.24.3 — 2026-11-23
 - El «100 %» de la barra inferior (tamaño del texto de la pestaña) ahora se cambia al pulsarlo: se abre un panel pequeño con «−» y «+» que lo bajan o suben de 10 en 10 % (de 60 a 240 %) y «Volver al 100 %». También vale la rueda del ratón sobre el número, además de Ctrl + y Ctrl −.
 

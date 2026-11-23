@@ -23,6 +23,7 @@ export function renderUpdate(info) {
   button.setAttribute('aria-disabled', String(u.status === 'working'));
   const icon = $('#update-icon');
   const label = $('#update-label');
+  $('#update-ver').textContent = ''; // « a vX.Y.Z», que se quita si falta sitio para las pestañas
   if (u.status === 'working') {
     icon.innerHTML = SVG.working;
     label.textContent = `${u.step}…`;
@@ -33,7 +34,8 @@ export function renderUpdate(info) {
     button.title = `ClaudHome ${u.latest} está lista. Pulsa para cerrar y volver a abrir ClaudHome con la versión nueva: tus pestañas se restauran.`;
   } else {
     icon.innerHTML = SVG.update;
-    label.textContent = `Actualizar a v${u.latest}`;
+    label.textContent = 'Actualizar';
+    $('#update-ver').textContent = ` a v${u.latest}`;
     button.title = u.status === 'error'
       ? `El último intento ha fallado: ${u.error} Pulsa para reintentar.`
       : `Hay una versión nueva de ClaudHome en GitHub (tienes la ${u.current}). Pulsa para ver qué cambia y decidir si actualizar.`;

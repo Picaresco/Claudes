@@ -1,7 +1,7 @@
 // Vista previa de archivos para la tarjeta que aparece al pasar el ratón sobre
-// una ruta o una imagen pegada: miniatura de las imágenes, primera página de los
-// PDF, primeras líneas de los archivos de texto y, para lo demás, la miniatura
-// que tenga Windows o el icono de su tipo.
+// una ruta o una imagen pegada: la imagen entera (reducida a un tamaño que se vea bien),
+// la primera página de los PDF, las primeras líneas de los archivos de texto y, para lo
+// demás, la miniatura que tenga Windows (si no la hay, la interfaz no enseña nada).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -10,10 +10,18 @@ const { execFile } = require('child_process');
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|tiff?|heic|avif)$/i;
 const PDF = /\.pdf$/i;
 const TEXT = /\.(txt|md|markdown|csv|tsv|log|json|jsonl|xml|ya?ml|ini|cfg|conf|toml|env|js|mjs|cjs|ts|tsx|jsx|py|ps1|psm1|sh|bat|cmd|sql|html?|css|scss|less|c|h|cpp|hpp|cs|java|kt|go|rs|rb|php|vue|svelte|gitignore|gitattributes)$/i;
-const THUMB = { width: 360, height: 360 };
-const TEXT_BYTES = 2400;
-const TEXT_LINES = 14;
-const CACHE_SIZE = 200;
+const THUMB = { width: 480, height: 480 };
+const VIEW = { width: 960, height: 720 }; // como mucho, lo que se enseña de una imagen
+const TEXT_BYTES = 6000;
+const TEXT_LINES = 30;
+const CACHE_SIZE = 60; // las imágenes ya ocupan: las últimas 60
+
+// Una imagen reducida (sin recortar ni deformar) para que quepa en VIEW.
+function fit(image) {
+  const { width, height } = image.getSize();
+  const scale = Math.min(1, VIEW.width / width, VIEW.height / height);
+  return scale < 1 ? image.resize({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), quality: 'good' }) : image;
+}
 
 function createPreview({ app, nativeImage }) {
   const cache = new Map(); // «ruta|fecha|tamaño» → vista previa
@@ -37,7 +45,7 @@ function createPreview({ app, nativeImage }) {
         return;
       }
       execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', pdfCommand], {
-        env: { ...process.env, CLAUDES_PDF: file, CLAUDES_PNG: png, CLAUDES_PDF_WIDTH: '480' },
+        env: { ...process.env, CLAUDES_PDF: file, CLAUDES_PNG: png, CLAUDES_PDF_WIDTH: '720' },
         windowsHide: true,
         timeout: 20000,
       }, (err, stdout) => {
@@ -85,16 +93,17 @@ function createPreview({ app, nativeImage }) {
     };
     try {
       if (IMAGE.test(file)) {
-        let image = await thumbnail(file);
-        if (!image) {
-          const full = nativeImage.createFromPath(file);
-          if (!full.isEmpty()) image = full.resize({ width: Math.min(THUMB.width, full.getSize().width) });
-        }
-        if (image) { result.kind = 'image'; result.image = image.toDataURL(); }
+        // La imagen entera, reducida; si no se puede abrir (o es enorme), la miniatura de Windows.
+        let image = null;
         if (st.size < 40 * 1024 * 1024) {
           const full = nativeImage.createFromPath(file);
-          if (!full.isEmpty()) ({ width: result.width, height: result.height } = full.getSize());
+          if (!full.isEmpty()) {
+            ({ width: result.width, height: result.height } = full.getSize());
+            image = fit(full);
+          }
         }
+        if (!image) image = await thumbnail(file);
+        if (image) { result.kind = 'image'; result.image = image.toDataURL(); }
       } else if (PDF.test(file)) {
         const page = await renderPdf(file);
         if (page) { result.kind = 'page'; result.image = page.image; result.pages = page.pages; }

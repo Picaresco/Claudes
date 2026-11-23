@@ -156,6 +156,7 @@ h1, p { margin: 0; }
 .tab-close { display: flex; align-items: center; justify-content: center; flex: none; width: 28px; color: var(--dim); visibility: hidden; border-radius: 0 8px 0 0; }
 .tab-close:hover { color: var(--txt); background: rgba(255, 255, 255, 0.08); }
 .tab.shown .tab-close, .tab:hover .tab-close, .tab-close:focus-visible { visibility: visible; }
+.tab:not(.shown) .tab-close { position: absolute; top: 0; right: 0; bottom: 0; background: linear-gradient(to right, transparent, var(--bg0) 40%); }
 .tab-edit { width: 150px; height: 26px; padding: 0 6px; background: var(--bg0); border: 1px solid var(--focus); border-radius: 4px; color: var(--txt); font: inherit; }
 .tab.dragged { opacity: 0.45; }
 .tab.drop-before::before, .tab.drop-after::after { content: ''; position: absolute; top: 6px; bottom: 6px; width: 2px; background: var(--txt); }
@@ -219,6 +220,12 @@ h1, p { margin: 0; }
   -webkit-app-region: no-drag;
 }
 .update-btn:hover { background: rgba(106, 165, 248, 0.12); }
+/* Si las pestañas no caben, la barra superior se compacta paso a paso (render.js, fitStrip). */
+#strip[data-compact="1"] .update-ver, #strip[data-compact="2"] .update-ver, #strip[data-compact="3"] .update-ver, #strip[data-compact="4"] .update-ver, #strip[data-compact="5"] .update-ver { display: none; }
+#strip[data-compact="2"] .brand-version, #strip[data-compact="3"] .brand-version, #strip[data-compact="4"] .brand-version, #strip[data-compact="5"] .brand-version { display: none; }
+#strip[data-compact="3"] .tab, #strip[data-compact="4"] .tab, #strip[data-compact="5"] .tab { min-width: 64px; }
+#strip[data-compact="4"] .update-text, #strip[data-compact="5"] .update-text, #strip[data-compact="4"] .cx-name, #strip[data-compact="5"] .cx-name { display: none; }
+#strip[data-compact="5"] .brand-name { display: none; }
 .update-icon { display: flex; }
 .update-btn[data-state="working"] { border-color: var(--line2); color: var(--dim); font-weight: 500; cursor: default; }
 .update-btn[data-state="working"]:hover { background: none; }
@@ -597,9 +604,8 @@ body.dragging #workspace * { pointer-events: none; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 180px;
-  max-width: 340px;
-  padding: 10px;
+  max-width: min(74vw, 980px);
+  padding: 6px;
   background: var(--bg2);
   border: 1px solid var(--line2);
   border-radius: 10px;
@@ -607,13 +613,12 @@ body.dragging #workspace * { pointer-events: none; }
   pointer-events: none; /* que no le quite el ratón a la terminal */
 }
 .pv-body { display: flex; justify-content: center; }
-.pv-img { display: block; max-width: 320px; max-height: 240px; border-radius: 6px; background: var(--bg0); }
-.preview[data-kind="page"] .pv-img { max-height: 300px; background: #fff; border: 1px solid var(--line2); border-radius: 3px; }
-.preview[data-kind="icon"] .pv-body { justify-content: flex-start; }
-.preview[data-kind="icon"] .pv-img { width: 32px; height: 32px; background: none; border-radius: 0; }
+/* La imagen entera, sin recortar: tan grande como quepa (hasta 960 × 720 y el 70 % de la ventana). */
+.pv-img { display: block; max-width: min(72vw, 960px); max-height: 70vh; object-fit: contain; border-radius: 6px; background: var(--bg0); }
+.preview[data-kind="page"] .pv-img { background: #fff; border: 1px solid var(--line2); border-radius: 3px; }
 .pv-text {
-  max-width: 320px;
-  max-height: 240px;
+  max-width: min(60vw, 720px);
+  max-height: 50vh;
   margin: 0;
   padding: 8px 10px;
   overflow: hidden;
@@ -624,11 +629,6 @@ body.dragging #workspace * { pointer-events: none; }
   color: var(--dim);
   white-space: pre;
 }
-.pv-loading { padding: 14px 4px; font-size: 12px; color: var(--dim); }
-.pv-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pv-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pv-info { font-size: 12px; color: var(--dim); }
-.pv-hint { font-size: 11px; color: var(--mute); }
 
 /* ── Diálogo «Nueva sesión» ────────────────────────────────────── */
 dialog {
