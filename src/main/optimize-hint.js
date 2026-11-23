@@ -1,14 +1,20 @@
-// ¿Conviene optimizar este proyecto? La app lo calcula sola, sin gastar nada, con lo que ve
-// en los hooks: cada vez que Claude cambia un archivo de código del proyecto (Edit, Write…)
-// se apunta el cambio y cuántas líneas tiene el archivo. Cuando pasa un umbral, el botón
-// «Optimiza» se marca como recomendado y lo dice una vez; nunca se lanza solo: lo pulsa el
-// usuario, cuando quiere. Umbrales, desde la última optimización (o desde que la app sigue
-// el proyecto):
-//   - muchos cambios: EDITS cambios de código;
-//   - un archivo grande: BIG líneas o más, si no lo era o ha crecido un 15 % desde entonces;
-//   - hace tiempo: OLD_DAYS días con al menos OLD_EDITS cambios.
-// Al empezar una optimización se pone a cero (y lo que cambie Claude mientras optimiza no
-// cuenta). «Ahora no» deja de recomendarlo SNOOZE_DAYS días.
+// ¿Conviene optimizar este proyecto? Un sistema mixto, para avisar solo cuando de verdad toca:
+//
+// 1. Señales gratuitas. Con lo que la app ve en los hooks: cada vez que Claude cambia un
+//    archivo de código del proyecto (Edit, Write…) se apunta el cambio y cuántas líneas tiene.
+//    Umbrales, desde la última optimización (o desde que la app sigue el proyecto):
+//      - muchos cambios: EDITS cambios de código;
+//      - un archivo grande: BIG líneas o más, si no lo era o ha crecido un 15 % desde entonces;
+//      - hace tiempo: OLD_DAYS días con al menos OLD_EDITS cambios.
+// 2. La segunda mirada de Haiku (optimize-check.js), solo cuando alguna señal pasa su umbral:
+//    lee los archivos que más han cambiado y dice si de verdad conviene, y por qué. Una vez por
+//    ronda (entre optimizaciones); si dice que no, no se le vuelve a preguntar hasta pasados
+//    RECHECK_DAYS días y RECHECK_EDITS cambios más. Si no se le puede preguntar, valen las
+//    señales y se vuelve a intentar al día siguiente.
+//
+// Solo con su visto bueno se recomienda: el botón «Optimiza» aparece y se avisa una vez. Nunca
+// se lanza solo: lo pulsa el usuario. Al empezar una optimización se pone todo a cero (y lo
+// que cambie Claude mientras optimiza no cuenta). «Ahora no» lo calla SNOOZE_DAYS días.
 const fs = require('fs');
 const path = require('path');
 const { isCode, codeLines, norm } = require('./growth');
@@ -19,39 +25,59 @@ const BIG_GROWTH = 1.15;
 const OLD_DAYS = 30;
 const OLD_EDITS = 40;
 const SNOOZE_DAYS = 7;
+const RECHECK_DAYS = 7;
+const RECHECK_EDITS = 30;
 const DAY = 24 * 60 * 60 * 1000;
 const MAX_BYTES = 2 * 1024 * 1024; // archivos más grandes no se cuentan
 const MAX_FILES = 300; // archivos que se recuerdan por proyecto
 const MAX_PROJECTS = 60;
 const STORE_KEY = 'optimizeHints';
 
-const fresh = (now) => ({ since: now, last: null, edits: 0, files: {}, baseline: {}, snoozed: 0, told: false, touched: now });
+const fresh = (now) => ({ since: now, last: null, edits: 0, files: {}, baseline: {}, changed: {}, ai: null, snoozed: 0, told: false, touched: now });
 const nf = (n) => n.toLocaleString('es-ES');
+const isBig = (rec, file, lines) => lines >= BIG && !(rec.baseline && rec.baseline[file] && lines < rec.baseline[file] * BIG_GROWTH);
 
-// Si conviene optimizar y por qué: { recommended, reasons, snoozed }.
-function evaluate(rec, now = Date.now()) {
-  if (!rec) return { recommended: false, reasons: [], snoozed: false };
-  const reasons = [];
+// Las señales gratuitas que pasan su umbral, explicadas.
+function signals(rec, now = Date.now()) {
+  if (!rec) return [];
+  const out = [];
   const from = rec.last ? 'desde la última optimización' : 'desde que ClaudHome sigue este proyecto';
-  if (rec.edits >= EDITS) reasons.push(`${nf(rec.edits)} cambios de código ${from}`);
-  const big = Object.entries(rec.files || {})
-    .filter(([file, lines]) => lines >= BIG && !(rec.baseline && rec.baseline[file] && lines < rec.baseline[file] * BIG_GROWTH))
-    .sort((a, b) => b[1] - a[1]);
+  if (rec.edits >= EDITS) out.push(`${nf(rec.edits)} cambios de código ${from}`);
+  const big = Object.entries(rec.files || {}).filter(([file, lines]) => isBig(rec, file, lines)).sort((a, b) => b[1] - a[1]);
   if (big.length) {
     const named = big.slice(0, 2).map(([file, lines]) => `${path.basename(file)} tiene ${nf(lines)} líneas`);
     const more = big.length - 2;
-    reasons.push(more > 0 ? `${named.join(', ')} y ${more === 1 ? 'otro más es muy grande' : `${more} más son muy grandes`}` : named.join(' y '));
+    out.push(more > 0 ? `${named.join(', ')} y ${more === 1 ? 'otro más es muy grande' : `${more} más son muy grandes`}` : named.join(' y '));
   }
   const days = Math.floor((now - (rec.last || rec.since)) / DAY);
-  if (days >= OLD_DAYS && rec.edits >= OLD_EDITS && rec.edits < EDITS) reasons.push(`hace ${days} días ${rec.last ? 'de la última optimización' : 'que ClaudHome lo sigue'} y lleva ${nf(rec.edits)} cambios de código`);
-  const snoozed = Boolean(rec.snoozed && now < rec.snoozed);
-  return { recommended: reasons.length > 0 && !snoozed, reasons, snoozed };
+  if (days >= OLD_DAYS && rec.edits >= OLD_EDITS && rec.edits < EDITS) out.push(`hace ${days} días ${rec.last ? 'de la última optimización' : 'que ClaudHome lo sigue'} y lleva ${nf(rec.edits)} cambios de código`);
+  return out;
 }
 
-// store: store.js · tabs: tabs.js · send(canal, …): a la interfaz.
-function createOptimizeHints({ store, tabs, send = () => {}, log = () => {}, now = () => Date.now() }) {
+// Si conviene optimizar y por qué: { recommended, reasons, snoozed, signals, needsCheck }.
+// reasons: lo que se le enseña al usuario (primero lo que dice Haiku).
+function evaluate(rec, now = Date.now()) {
+  const sig = signals(rec, now);
+  const snoozed = Boolean(rec && rec.snoozed && now < rec.snoozed);
+  const base = { recommended: false, reasons: [], snoozed, signals: sig, needsCheck: false };
+  if (!sig.length) return base;
+  const ai = rec.ai && rec.ai.at >= (rec.last || 0) ? rec.ai : null; // la de esta ronda
+  if (!ai) return { ...base, needsCheck: !snoozed }; // aún no ha mirado Haiku
+  if (ai.verdict === true) return { ...base, recommended: !snoozed, reasons: [ai.reason, ...sig].filter(Boolean) };
+  if (ai.verdict === false) {
+    const again = now - ai.at >= RECHECK_DAYS * DAY && rec.edits >= (ai.edits || 0) + RECHECK_EDITS;
+    return { ...base, needsCheck: again && !snoozed };
+  }
+  // No se le pudo preguntar: valen las señales, y se vuelve a intentar al día siguiente.
+  return { ...base, recommended: !snoozed, reasons: sig, needsCheck: !snoozed && now - ai.at >= DAY };
+}
+
+// store: store.js · tabs: tabs.js · send(canal, …): a la interfaz · check({ folder, files,
+// signals, tabId }): la segunda mirada (optimize-check.js) → { recommend, reason } o { error }.
+function createOptimizeHints({ store, tabs, send = () => {}, log = () => {}, now = () => Date.now(), check = null }) {
   const all = () => store.get(STORE_KEY, {}) || {};
   const keyOf = (tabId) => { const folder = (tabs.get(tabId) || {}).folder; return folder ? norm(folder) : null; };
+  const label = (tabId) => (tabs.label ? tabs.label(tabId) : tabId);
   function save(key, rec) {
     const data = { ...all(), [key]: { ...rec, touched: now() } };
     const keys = Object.keys(data);
@@ -60,34 +86,73 @@ function createOptimizeHints({ store, tabs, send = () => {}, log = () => {}, now
     }
     store.set(STORE_KEY, data);
   }
-  const record = (key) => all()[key] || fresh(now());
+  const record = (key) => ({ ...fresh(now()), ...(all()[key] || {}) });
+  const forUi = ({ recommended, reasons, snoozed }) => ({ recommended, reasons, snoozed });
 
   // Lo que se le dice a la interfaz de un proyecto: a todas sus pestañas.
   function push(key, extra = {}) {
-    const hint = { ...evaluate(all()[key], now()), ...extra };
+    const hint = { ...forUi(evaluate(all()[key], now())), ...extra };
     for (const [id, tab] of tabs.map) if (tab.folder && norm(tab.folder) === key) send('optimize:hint', id, hint);
     return hint;
   }
   // Para la interfaz, al arrancar una sesión o al pedirlo.
   function hint(tabId) {
     const key = keyOf(tabId);
-    return key ? evaluate(all()[key], now()) : { recommended: false, reasons: [], snoozed: false };
-  }
-  // Al abrir una sesión (o al pedirlo): si ya conviene y aún no se ha dicho (por ejemplo, porque
-  // ha pasado un mes desde la última optimización), se avisa ahora.
-  function refresh(tabId) {
-    const key = keyOf(tabId);
-    if (!key) return;
-    const rec = all()[key];
-    const now_ = evaluate(rec, now());
-    if (now_.recommended && rec && !rec.told) { tell(key, rec, now_, tabId); return; }
-    push(key);
+    return forUi(key ? evaluate(all()[key], now()) : evaluate(null));
   }
   // Pasa a recomendado y se dice (una vez desde la última optimización).
   function tell(key, rec, result, tabId) {
     save(key, { ...rec, told: true });
-    log(`Optimiza: se recomienda para ${tabs.label ? tabs.label(tabId) : tabId} (${result.reasons.join('; ')})`);
+    log(`Optimiza: se recomienda para ${label(tabId)} (${result.reasons.join('; ')})`);
     push(key, { first: true });
+  }
+  // Tras un cambio de estado: se avisa la primera vez; si no, se pone al día la interfaz.
+  function settle(key, rec, before, tabId) {
+    const after = evaluate(rec, now());
+    if (after.recommended && !rec.told) tell(key, rec, after, tabId);
+    else if (!before || after.recommended !== before.recommended || (after.recommended && after.reasons.join('|') !== before.reasons.join('|'))) push(key);
+    maybeCheck(key, tabId, after);
+  }
+
+  // La segunda mirada de Haiku, si toca (una a la vez por proyecto, en segundo plano).
+  const checking = new Map(); // proyecto → promesa
+  function maybeCheck(key, tabId, result) {
+    if (!check || !result.needsCheck || checking.has(key)) return;
+    const folder = (tabs.get(tabId) || {}).folder;
+    if (!folder) return;
+    const rec = record(key);
+    const round = rec.last;
+    // Los archivos que más han cambiado en esta ronda; después, los grandes.
+    const changed = Object.entries(rec.changed || {}).map(([name, edits]) => ({ name, edits, lines: (rec.files || {})[name] }));
+    const big = Object.entries(rec.files || {}).filter(([name, lines]) => isBig(rec, name, lines) && !(name in (rec.changed || {}))).map(([name, lines]) => ({ name, edits: 0, lines }));
+    const files = [...changed.sort((a, b) => b.edits - a.edits || (b.lines || 0) - (a.lines || 0)), ...big.sort((a, b) => b.lines - a.lines)];
+    log(`Optimiza: las señales de ${label(tabId)} pasan el umbral (${result.signals.join('; ')}); se lo pregunta a Haiku`);
+    const work = Promise.resolve()
+      .then(() => check({ folder, files, signals: result.signals, tabId }))
+      .catch((err) => ({ error: (err && err.message) || 'falló' }))
+      .then((answer) => {
+        const current = record(key);
+        if (current.last !== round) return; // ha empezado otra optimización mientras tanto
+        const ai = answer && !answer.error && typeof answer.recommend === 'boolean'
+          ? { at: now(), verdict: answer.recommend, reason: answer.reason || '', edits: current.edits }
+          : { at: now(), verdict: null, reason: '', edits: current.edits };
+        const before = evaluate(current, now());
+        const next = { ...current, ai };
+        save(key, next);
+        settle(key, next, before, tabId);
+      })
+      .finally(() => { checking.delete(key); });
+    checking.set(key, work);
+  }
+
+  // Al abrir una sesión (o al pedirlo): si ya conviene y aún no se ha dicho, se avisa ahora; si
+  // las señales pasan el umbral (por ejemplo, porque ha pasado un mes), se pregunta a Haiku.
+  function refresh(tabId) {
+    const key = keyOf(tabId);
+    if (!key) return;
+    const rec = all()[key];
+    if (!rec) { push(key); return; }
+    settle(key, rec, null, tabId);
   }
 
   // Claude ha cambiado un archivo (con éxito). base: carpeta de trabajo para una ruta relativa.
@@ -116,13 +181,12 @@ function createOptimizeHints({ store, tabs, send = () => {}, log = () => {}, now
       if (Number.isFinite(lines)) rec.baseline = { ...rec.baseline, [name]: lines };
     } else {
       rec.edits += 1;
+      rec.changed = { ...rec.changed, [name]: ((rec.changed || {})[name] || 0) + 1 };
+      const names = Object.keys(rec.changed);
+      if (names.length > MAX_FILES) delete rec.changed[names[0]];
     }
     save(key, rec);
-    const after = evaluate(rec, now());
-    // La primera vez que pasa a recomendado (desde la última optimización), se avisa; si ya lo
-    // era, solo se pone al día el motivo.
-    if (after.recommended && !rec.told) tell(key, rec, after, tabId);
-    else if (after.recommended !== before.recommended || (after.recommended && after.reasons.join('|') !== before.reasons.join('|'))) push(key);
+    settle(key, rec, before, tabId);
   }
 
   // Empieza un turno: lo que se cambie ya no es de una optimización (hasta que se confirme otra).
@@ -139,7 +203,7 @@ function createOptimizeHints({ store, tabs, send = () => {}, log = () => {}, now
     if (!tab || !key) return;
     tab.optimizing = true;
     const rec = record(key);
-    save(key, { ...rec, last: now(), edits: 0, baseline: { ...rec.files }, snoozed: 0, told: false });
+    save(key, { ...rec, last: now(), edits: 0, baseline: { ...rec.files }, changed: {}, ai: null, snoozed: 0, told: false });
     push(key);
   }
 
@@ -148,11 +212,14 @@ function createOptimizeHints({ store, tabs, send = () => {}, log = () => {}, now
     const key = keyOf(tabId);
     if (!key) return hint(tabId);
     save(key, { ...record(key), snoozed: now() + SNOOZE_DAYS * DAY });
-    log(`Optimiza: ${tabs.label ? tabs.label(tabId) : tabId} lo deja para más adelante (${SNOOZE_DAYS} días)`);
+    log(`Optimiza: ${label(tabId)} lo deja para más adelante (${SNOOZE_DAYS} días)`);
     return push(key);
   }
 
-  return { edited, turnStarted, optimized, snooze, hint, refresh };
+  // Para las pruebas: espera a que terminen las preguntas a Haiku en marcha.
+  const settled = () => Promise.all([...checking.values()]);
+
+  return { edited, turnStarted, optimized, snooze, hint, refresh, settled };
 }
 
-module.exports = { createOptimizeHints, evaluate, EDITS, BIG, OLD_DAYS, OLD_EDITS, SNOOZE_DAYS };
+module.exports = { createOptimizeHints, evaluate, signals, EDITS, BIG, OLD_DAYS, OLD_EDITS, SNOOZE_DAYS, RECHECK_DAYS, RECHECK_EDITS };

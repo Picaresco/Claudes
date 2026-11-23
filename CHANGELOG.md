@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.23.0 — 2026-11-23
+- El botón «Optimiza» ya no está siempre a la vista: solo aparece cuando ClaudHome recomienda optimizar el proyecto, con el motivo al pasar el ratón.
+- Recomendaciones más afinadas: cuando las señales de siempre (muchos cambios, archivos grandes, un mes sin optimizar) lo sugieren, Haiku lee los archivos que más han cambiado y dice si de verdad hace falta y por qué («calc.js repite el cálculo del IVA en tres sitios»). Si el código está limpio, no te molesta.
+- Haiku solo se consulta de vez en cuando (una vez entre optimizaciones y, si dice que no, como mucho una vez por semana), sin herramientas y sin tocar nada; gasta muy poco de tu plan. No se le envían los archivos que llevan claves, y lo que lee queda en el «Log». Si no se le puede preguntar, valen las señales de siempre.
+
 ## 0.22.0 — 2026-11-23
 - ClaudHome te avisa cuando conviene optimizar un proyecto: el botón «Optimiza» se pone en verde con la etiqueta «recomendado» y, la primera vez, te lo dice con un mensaje. Al pasar el ratón ves por qué. Nunca se lanza solo: lo pulsas tú cuando quieras, o en cualquier momento por tu cuenta.
 - Lo recomienda tras muchos cambios de código (150) desde la última optimización, cuando un archivo de código pasa de 800 líneas o cuando hace un mes de la última y ha habido cambios. Lo calcula la app sola, sin gastar nada de tu plan.

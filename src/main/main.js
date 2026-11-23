@@ -26,6 +26,7 @@ const { createCodexState } = require('./codex-state');
 const { registerIpc } = require('./ipc');
 const { createOptimizer } = require('./optimize');
 const { createOptimizeHints } = require('./optimize-hint');
+const { createChecker } = require('./optimize-check');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -55,6 +56,7 @@ let secrets = null; // aviso de claves y contraseñas escritas en los archivos (
 let testcheck = null; // pruebas antes de terminar (testcheck.js)
 let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
+let optimizeChecker = null; // la segunda mirada de Haiku (optimize-check.js)
 // Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
 // pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
 const NOTICE_BUDGET = 1500;
@@ -250,7 +252,22 @@ if (!app.requestSingleInstanceLock()) {
     });
     testcheck = createTestReminder({ tabs, log: appLog });
     optimizer = createOptimizer({ tabs, log: appLog });
-    optimizeHints = createOptimizeHints({ store, tabs, send, log: appLog });
+    // Antes de recomendar «Optimiza», Haiku lee lo que más ha cambiado y dice si conviene
+    // (optimize-check.js). Lo que se le envía queda en el «Log».
+    optimizeChecker = createChecker({
+      findClaude: sessions.findClaude,
+      env: () => childEnv({}),
+      workDir: () => path.join(app.getPath('temp'), 'Claudes-haiku'),
+      log: appLog,
+    });
+    optimizeHints = createOptimizeHints({
+      store, tabs, send, log: appLog,
+      check: async ({ folder, files, signals, tabId }) => {
+        const answer = await optimizeChecker.check({ folder, files, signals });
+        for (const file of answer.files || []) if (netlog) netlog.record({ tabId, kind: 'archivo', target: path.join(folder, file), detail: 'Haiku: ¿conviene optimizar?', dest: 'Anthropic' });
+        return answer;
+      },
+    });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
@@ -409,6 +426,7 @@ if (!app.requestSingleInstanceLock()) {
     ptys.killAll();
     codex.stopReviews(); // una revisión de Codex en marcha no sigue tras cerrar
     codexState.stop();
+    if (optimizeChecker) optimizeChecker.stop(); // una pregunta a Haiku en marcha no sigue tras cerrar
     if (hookServer) hookServer.stop();
     if (limits) limits.stop();
     // Con una versión nueva lista, se instala ahora que Claudes se cierra.

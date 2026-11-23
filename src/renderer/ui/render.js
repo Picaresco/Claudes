@@ -94,9 +94,10 @@ export function renderToolbar() {
   if (ctxView && ctxView.ctxSub) ctxView.ctxSub.textContent = `Claude lo tiene presente en cada sesión de «${tab.name}»`;
   const activeView = views.get(tab.id);
   $('#tb-codex').hidden = !(activeView && activeView.codex && activeView.started && codexInfo && codexInfo.active);
-  // «Optimiza»: recomendado si la app ve que conviene (optimize-hint.js).
+  // «Optimiza»: solo aparece cuando la app ve que conviene (optimize-hint.js).
   const hint = optimizeHints.get(tab.id);
   const recommended = Boolean(hint && hint.recommended);
+  $('#btn-optimize').hidden = !recommended;
   $('#btn-optimize').dataset.recommended = String(recommended);
   $('#opt-badge').hidden = !recommended;
   $('#btn-optimize').title = (recommended ? `Recomendado: ${hint.reasons.join('; ')}.\n\n` : '')
