@@ -1,6 +1,7 @@
 // Interfaz de Claudes: pestañas, vista dividida, terminal extra, recientes y avisos.
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
 import { wireActivity } from './ui/activity.js';
+import { wireZoom } from './ui/zoom.js';
 import { renderCodex, codexInfo } from './ui/codex.js';
 import { setOptimizeHint } from './ui/optimize.js';
 import { COLORS, BASE_FONT, MAX_RECENTS } from './ui/constants.js';
@@ -141,6 +142,7 @@ async function init() {
   wireRainbow();
   wireLog();
   wireActivity();
+  wireZoom();
   wireTabs();
   wireDialog();
   wireKeyboard();

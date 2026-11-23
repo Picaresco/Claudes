@@ -167,7 +167,6 @@ export function wireChrome() {
   $('#btn-swap').addEventListener('click', swapSides);
   $('#btn-folder').addEventListener('click', () => { const tab = byId(S.activeId); if (tab) api.openPath(tab.cwd); });
   $('#tb-name').addEventListener('dblclick', () => startRename(S.activeId));
-  $('#sb-zoom').addEventListener('click', () => { const view = views.get(S.activeId); if (view) setZoom(view, 1); focusTerminal(); });
 
   $('#divider').addEventListener('mousedown', (e) => {
     $('#divider').classList.add('dragging');

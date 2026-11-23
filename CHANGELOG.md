@@ -4,6 +4,12 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.24.3 — 2026-11-23
+- El «100 %» de la barra inferior (tamaño del texto de la pestaña) ahora se cambia al pulsarlo: se abre un panel pequeño con «−» y «+» que lo bajan o suben de 10 en 10 % (de 60 a 240 %) y «Volver al 100 %». También vale la rueda del ratón sobre el número, además de Ctrl + y Ctrl −.
+
+## 0.24.2 — 2026-11-23
+- Las pestañas ya no quedan tapadas cuando aparece el botón «Actualizar» (ni con muchas pestañas abiertas): se estrechan para caber en el hueco que queda, acortando el nombre con «…» (entero al pasar el ratón). Solo en una ventana muy estrecha la fila se desplaza, siempre con la pestaña activa a la vista.
+
 ## 0.24.1 — 2026-11-23
 - La actividad se activa o desactiva en la rueda de opciones («Actividad», activada de serie). Desactivada, Haiku no cuenta nada y no gasta.
 - Ya no hay botón en la cabecera: con la actividad activada, una pestaña vertical en el borde derecho muestra u oculta la columna. Oculta, Haiku sigue contando (así, al volver a mostrarla, está todo), y un punto verde en la pestaña te dice que Claude está trabajando.

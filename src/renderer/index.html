@@ -179,7 +179,16 @@
     <span id="sb-plan" class="sb-usage" hidden><span class="sb-meter" aria-hidden="true"><i id="sb-plan-fill"></i></span><span id="sb-plan-text"></span></span>
     <span id="sb-codex" class="sb-usage" hidden><span class="sb-meter" aria-hidden="true"><i id="sb-codex-fill"></i></span><span id="sb-codex-text"></span></span>
     <span id="sb-usage" class="sb-usage" hidden><span class="sb-meter" aria-hidden="true"><i id="sb-usage-fill"></i></span><span id="sb-usage-text"></span></span>
-    <button id="sb-zoom" title="Tamaño del texto de esta pestaña. Ctrl + y Ctrl − lo cambian; pulsa para volver al 100 %." hidden></button>
+    <!-- Tamaño del texto de la pestaña (ui/zoom.js): al pulsarlo, «−» y «+» de 10 en 10 %. -->
+    <div class="zoom-wrap">
+      <button id="sb-zoom" aria-haspopup="true" aria-expanded="false" aria-controls="zoom-menu" title="Tamaño del texto de esta pestaña: pulsa para agrandarlo o achicarlo de 10 en 10 %. También con Ctrl + y Ctrl −, o con la rueda del ratón sobre el número." hidden></button>
+      <div id="zoom-menu" class="popover zoom-menu" role="group" aria-label="Tamaño del texto" hidden>
+        <button id="zoom-out" type="button" class="zoom-step" aria-label="Más pequeño (−10 %)" title="Más pequeño (−10 %)">−</button>
+        <span id="zoom-value" class="zoom-value" aria-live="polite">100 %</span>
+        <button id="zoom-in" type="button" class="zoom-step" aria-label="Más grande (+10 %)" title="Más grande (+10 %)">+</button>
+        <button id="zoom-reset" type="button" class="zoom-reset">Volver al 100 %</button>
+      </div>
+    </div>
     <span id="sb-hint">Ctrl+Tab cambia de pestaña · Ctrl+1…9 va directa</span>
   </div>
 </footer>
