@@ -45,6 +45,23 @@ let open = false; // la columna, a la vista
 let shownTab = null;
 let painted = []; // lo pintado, una clave por línea (id, si es gris, tipo y texto)
 
+// Seguir lo último: la lista baja sola con cada línea nueva mientras se esté viendo el final.
+// Si el usuario sube a leer (rueda, teclado o barra), se queda donde está; al volver abajo del
+// todo, sigue otra vez. Lo que crece después de pintar (una miniatura que llega, una línea que
+// pasa a dos renglones, la de «ahora» que aparece y quita sitio, la columna que se vuelve a
+// mostrar) también la baja: antes, eso la dejaba a medias y dejaba de seguir.
+const NEAR = 24; // px: «abajo del todo», con un poco de margen
+let follow = true;
+let lastTop = 0;
+const nearEnd = (list) => list.scrollHeight - list.scrollTop - list.clientHeight <= NEAR;
+function toEnd() {
+  const list = $('#act-list');
+  if (!follow || !list.clientHeight) return; // oculta: ya bajará al mostrarse
+  list.scrollTop = list.scrollHeight;
+  lastTop = list.scrollTop;
+}
+const grows = new ResizeObserver(() => toEnd()); // la lista y cada una de sus líneas
+
 const hhmm = (ms) => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 function since(ms) {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
@@ -141,34 +158,41 @@ export function renderActivity() {
   const busy = Boolean(tab && (data.get(tab.id) || {}).now);
   $('#act-toggle-dot').hidden = open || !busy;
   panel.hidden = !enabled || !open || !tab;
-  if (panel.hidden) return;
+  if (panel.hidden) { lastTop = 0; return; } // oculta, la lista vuelve arriba (no es que haya subido el usuario)
   applySwatch($('#act-swatch'), tab.color);
   $('#act-tab').textContent = tab.name;
   const snap = data.get(tab.id) || { entries: [], now: null };
   renderNow(snap);
-  // La lista solo cambia por el final (líneas nuevas, grises que Haiku sustituye): se dejan
-  // tal cual las que no cambian (no se pierde lo seleccionado ni se vuelven a anunciar) y se
-  // rehacen desde la primera distinta. Al cambiar de pestaña, entera.
+  // La lista cambia por el final (líneas nuevas, grises que Haiku sustituye) y, pasadas las
+  // 150, por el principio (se van las más viejas): se quitan las que ya no están, se dejan tal
+  // cual las que no cambian (no se pierde lo seleccionado, no se vuelven a anunciar y sus
+  // miniaturas no se recargan) y se rehacen desde la primera distinta. Al cambiar de pestaña, entera.
   const list = $('#act-list');
   const keys = snap.entries.map((e) => `${e.id}|${e.pending ? 1 : 0}|${e.kind}|${e.text}`);
   const sameTab = shownTab === tab.id && list.children.length === painted.length;
-  let from = 0;
-  if (sameTab) while (from < keys.length && from < painted.length && keys[from] === painted[from]) from += 1;
-  if (sameTab && from === keys.length && from === painted.length) return; // nada nuevo
-  // Si estaba abajo del todo, sigue abajo; si se ha subido a leer, no se le mueve.
-  const atEnd = !sameTab || list.scrollTop + list.clientHeight >= list.scrollHeight - 24;
-  if (!sameTab) {
-    // Al cambiar de pestaña, lo que ya había no entra con animación.
+  const drop = (li) => { grows.unobserve(li); li.remove(); };
+  if (sameTab) {
+    const wanted = new Set(keys);
+    const kept = [];
+    [...list.children].forEach((li, i) => { if (wanted.has(painted[i])) kept.push(painted[i]); else drop(li); });
+    painted = kept;
+  } else {
+    // Al cambiar de pestaña, lo que ya había no entra con animación, y se ve lo último.
     if (seen.size > 5000) seen.clear();
     for (const entry of snap.entries) seen.add(entry.id);
-    from = 0;
+    painted = [];
+    follow = true;
   }
-  while (list.children.length > from) list.lastElementChild.remove();
-  list.append(...snap.entries.slice(from).map(item));
+  let from = 0;
+  while (from < keys.length && from < painted.length && keys[from] === painted[from]) from += 1;
+  while (list.children.length > from) drop(list.lastElementChild);
+  const fresh = snap.entries.slice(from).map(item);
+  list.append(...fresh);
+  for (const li of fresh) grows.observe(li);
   painted = keys;
   shownTab = tab.id;
   $('#act-empty').hidden = snap.entries.length > 0;
-  if (atEnd) list.scrollTop = list.scrollHeight;
+  toEnd();
 }
 
 export function setActivity(tabId, snap) {
@@ -210,6 +234,18 @@ export function wireActivity() {
   $('#act-toggle').addEventListener('click', () => { toggleActivity(); });
   $('#activity-btn').addEventListener('click', () => { switchActivity(); });
   api.onActivity(setActivity);
+  // Cuándo deja de seguir lo último y cuándo vuelve (ver `follow`).
+  const list = $('#act-list');
+  grows.observe(list); // su alto cambia con la línea de «ahora», la ventana o al mostrarse
+  list.addEventListener('scroll', () => {
+    const top = list.scrollTop;
+    if (nearEnd(list)) follow = true; // ha vuelto abajo del todo
+    else if (top < lastTop - 1) follow = false; // ha subido (barra, arrastrando, táctil)
+    lastTop = top;
+  }, { passive: true });
+  // La rueda y el teclado, al momento: si llega una línea mientras sube, no se le baja de golpe.
+  list.addEventListener('wheel', (e) => { if (e.deltaY < 0 && list.scrollTop > 0) follow = false; }, { passive: true });
+  list.addEventListener('keydown', (e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) follow = false; });
   api.activityGet().then((r) => { take(r); renderActivity(); }).catch(() => { /* sin actividad */ });
   // El «desde hace…» de la línea de ahora.
   setInterval(() => {

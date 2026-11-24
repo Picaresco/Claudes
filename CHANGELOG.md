@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.25.3 — 2026-11-24
+- El panel «Actividad» ya no se queda a medias: siempre ves lo último que llega, también cuando aparece la miniatura de una imagen, cuando sale abajo la línea de lo que está haciendo ahora o cuando la lista pasa de 150 líneas. Si subes a leer, no se te mueve; al volver abajo del todo, sigue otra vez solo.
+
 ## 0.25.2 — 2026-11-24
 - En el panel del modelo, la casilla «Usar también en las sesiones nuevas» se queda marcada si la aplicaste (la pestaña sigue ese predeterminado), y debajo se ve cuál es el predeterminado de ahora («Ahora, en las sesiones nuevas: Opus 5.5 · esfuerzo muy alto»). Así se sabe que se ha guardado.
 
