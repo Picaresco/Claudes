@@ -34,6 +34,22 @@ export const SVG = {
 // Proyectos abiertos a la vez como mucho, para no saturar la barra superior.
 export const MAX_TABS = 6;
 
+// Modelos que se pueden elegir para una pestaña (barra inferior, ui/model.js).
+export const MODELS = [
+  { id: 'claude-opus-5-5', name: 'Opus 5.5', desc: 'El más capaz: tareas difíciles y código complejo' },
+  { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', desc: 'Equilibrado: rápido y muy capaz para el día a día' },
+  { id: 'claude-haiku-5-5', name: 'Haiku 5.5', desc: 'El más rápido y el que menos gasta: tareas sencillas' },
+  { id: 'claude-fable-5-2', name: 'Fable 5.2', desc: 'Otro modelo disponible en tu plan' },
+];
+// Esfuerzos de razonamiento de Claude Code (--effort), en palabras de todos los días.
+export const EFFORT_LEVELS = [
+  { level: 'low', label: 'bajo', desc: 'responde rápido, pensando lo justo. Para tareas sencillas.' },
+  { level: 'medium', label: 'medio', desc: 'piensa lo necesario para el trabajo de cada día.' },
+  { level: 'high', label: 'alto', desc: 'piensa con calma antes de actuar.' },
+  { level: 'xhigh', label: 'muy alto', desc: 'piensa más a fondo antes de actuar. Tarda más y gasta más de tu plan.' },
+  { level: 'max', label: 'máximo', desc: 'todo lo que puede pensar, para lo más difícil. Es lo más lento y lo que más gasta.' },
+];
+
 export const STATUS = {
   asleep: { icon: 'off', label: 'Sin iniciar' },
   starting: { icon: 'starting', label: 'Iniciando' },

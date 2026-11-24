@@ -137,6 +137,7 @@ export async function startClaude(view) {
   const exclude = S.tabs.filter((t) => t.id !== tab.id && t.sessionId).map((t) => t.sessionId);
   const res = await api.ptyCreate({
     id: tab.id, kind: 'claude', name: tab.name, cwd: tab.cwd, sessionId: tab.sessionId, mode, exclude, context: tab.context,
+    model: tab.model || null, effort: tab.effort || null, // los elegidos para la pestaña (barra inferior)
     cols: view.term.cols, rows: view.term.rows,
   });
   if (!views.has(tab.id)) { api.ptyKill(tab.id); return; } // se cerró mientras arrancaba

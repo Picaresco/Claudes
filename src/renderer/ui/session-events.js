@@ -1,6 +1,7 @@
 // Lo que pasa en cada sesión: avisos de los hooks de Claude Code y salida del proceso.
 import { api } from './dom.js';
 import { views, winFocused, visibleIds, isWatched, save, toast } from './state.js';
+import { applyPendingModel } from './model.js';
 import { setStatus } from './status.js';
 import { isSandboxMissing, sandboxFix } from './toggles.js';
 
@@ -17,6 +18,8 @@ function needsYou(view, body) {
 // enseña quien llama, junto a lo suyo (un mensaje posterior lo taparía).
 function finished(view, failed, hold = false) {
   if (view.closing) return '';
+  // Un cambio de modelo o de esfuerzo que esperaba a que Claude terminase.
+  setTimeout(() => applyPendingModel(view), 0);
   const was = view.status;
   if (failed) {
     // Un error (fallo de la API, límite de uso…) queda en ámbar hasta tu siguiente

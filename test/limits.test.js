@@ -181,3 +181,39 @@ test('un recorrido completo pedido con otro en marcha se hace al terminar', asyn
   await limits.running;
   assert.equal(last().plan.five_hour.tokens.output, 110);
 });
+
+test('el modelo y el esfuerzo de la sesión salen de lo que Claude Code le pasa a su línea de estado', () => {
+  const { modelFrom } = require('../src/main/claude-config');
+  // Lo que llega de verdad (capturado con Claude Code 2.1.331).
+  assert.deepEqual(modelFrom({ model: { id: 'claude-haiku-5-5', display_name: 'Haiku 5.5' }, effort: { level: 'medium' }, fast_mode: false }),
+    { id: 'claude-haiku-5-5', name: 'Haiku 5.5', effort: 'medium', fast: false });
+  assert.deepEqual(modelFrom({ model: { id: 'claude-opus-5-5' } }), { id: 'claude-opus-5-5', name: 'claude-opus-5-5', effort: null, fast: false });
+  assert.equal(modelFrom({}), null);
+  assert.equal(modelFrom(null), null);
+});
+
+test('guardar el modelo y el esfuerzo como predeterminados de Claude Code, sin tocar lo demás', (t) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { saveDefaultModel } = require('../src/main/claude-config');
+  const { tempDir } = require('./helpers');
+  const dir = tempDir(t);
+  const before = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  t.after(() => { if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before; });
+  const file = path.join(dir, 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ model: 'opus', theme: 'dark', modelSettings: { 'claude-opus-5-5': { effortLevel: 'xhigh' } } }));
+  assert.deepEqual(saveDefaultModel({ model: 'claude-sonnet-5-5', effort: 'high' }), { ok: true });
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {
+    model: 'sonnet', theme: 'dark', modelSettings: { 'claude-opus-5-5': { effortLevel: 'xhigh' }, 'claude-sonnet-5-5': { effortLevel: 'high' } },
+  });
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).model, 'sonnet'); // el alias, como /model
+  assert.deepEqual(saveDefaultModel({ model: 'claude-fable-5-2', effort: 'max' }), { ok: true });
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).model, 'claude-fable-5-2'); // sin alias conocido, el id
+  // Lo que no se puede leer no se sobrescribe; lo que no es válido no se guarda.
+  fs.writeFileSync(file, '{ roto');
+  assert.equal(saveDefaultModel({ model: 'claude-opus-5-5', effort: 'low' }).ok, false);
+  assert.equal(fs.readFileSync(file, 'utf8'), '{ roto');
+  assert.equal(saveDefaultModel({ model: 'opus; rm -rf', effort: 'low' }).ok, false);
+  assert.equal(saveDefaultModel({ model: 'claude-opus-5-5', effort: 'turbo' }).ok, false);
+});

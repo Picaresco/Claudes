@@ -35,7 +35,7 @@ const { createPtys } = require('./ptys');
 const { createClipboard } = require('./clipboard');
 const { createWindowManager } = require('./window');
 const { createStyle } = require('./style');
-const { userSettings, usageFrom } = require('./claude-config');
+const { userSettings, usageFrom, modelFrom } = require('./claude-config');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -185,6 +185,9 @@ async function createPty(o) {
     appLog(`contexto de ${tabLabel(o.id)}: no se pudo preparar (${err.message})`);
   }
   const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, ctx.allow))];
+  // El modelo y el esfuerzo elegidos para esta pestaña (barra inferior): solo para esta sesión.
+  if (typeof o.model === 'string' && /^[\w.[\]-]{2,60}$/.test(o.model)) args.push('--model', o.model);
+  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(o.effort)) args.push('--effort', o.effort);
   // Solo al ejecutar desde el código: arrancar en un modo de permisos (p. ej. «plan»), para las pruebas.
   if (DEV && process.env.CLAUDES_TEST_PERMISSION_MODE) args.push('--permission-mode', process.env.CLAUDES_TEST_PERMISSION_MODE);
   tab.usage = null;
@@ -219,6 +222,7 @@ async function createPty(o) {
   }
   appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
     + `${withMcp ? ` · con Codex (segunda opinión${withCodex ? ' e imágenes' : ''})` : ''}${ctx.promptFile ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
+    + `${o.model || o.effort ? ` · modelo ${o.model || 'predeterminado'}${o.effort ? `, esfuerzo ${o.effort}` : ''}` : ''}`
     + `${plugins.length ? ` · plugins: ${plugins.map((p) => p.name).join(', ')}` : ''}`
     + `${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
   const env = childEnv(extraEnv);
@@ -363,9 +367,16 @@ if (!app.requestSingleInstanceLock()) {
     hookServer.onStatus = (tabId, data) => {
       limits.fromStatus(data);
       limits.refreshSoon();
+      const tab = tabs.get(tabId);
+      // El modelo y el esfuerzo de la sesión (barra inferior), cuando cambian.
+      const model = modelFrom(data);
+      const known = tab && tab.model;
+      if (model && tab && (!known || known.name !== model.name || known.effort !== model.effort || known.fast !== model.fast)) {
+        tab.model = model;
+        send('session:model', tabId, model);
+      }
       const usage = usageFrom(data);
       if (!usage) return;
-      const tab = tabs.get(tabId);
       const last = tab && tab.usage;
       if (last && last.pct === usage.pct && last.size === usage.size) return;
       if (tab) tab.usage = usage;

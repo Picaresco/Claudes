@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('api', {
 
   onHook: on('hook'),
   onUsage: on('session:usage'), // (tabId, { size, used, pct }) cuánto ocupa la conversación
+  onModel: on('session:model'), // (tabId, { id, name, effort, fast }) el modelo y el esfuerzo de la sesión
+  modelSaveDefault: (choice) => ipcRenderer.invoke('model:saveDefault', choice), // { model, effort } → configuración de Claude Code
   // Límites de uso del plan: { five_hour, seven_day }, cada uno { pct, resetsAt, expired, tokens }.
   limitsGet: () => ipcRenderer.invoke('limits:get'),
   onLimits: on('limits:update'),

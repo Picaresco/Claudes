@@ -1,10 +1,13 @@
 // ── Pintado ──────────────────────────────────────────────────────
 import { renderActivity } from './activity.js';
 import { codexInfo } from './codex.js';
-import { colorHex, SIDES, SVG, STATUS } from './constants.js';
+import { colorHex, SIDES, SVG, STATUS, EFFORT_LEVELS } from './constants.js';
 import { contextCount } from './context.js';
 import { api, $, el } from './dom.js';
-import { limitsSnap, tokensBreakdown, renderPlanLimits } from './limits.js';
+import { limitsSnap, tokensBreakdown, renderPlanLimits, setPieces } from './limits.js';
+
+// El esfuerzo de razonamiento, en palabras de todos los días.
+const EFFORTS = Object.fromEntries(EFFORT_LEVELS.map((e) => [e.level, e.label]));
 import { logEntriesOf } from './log.js';
 import { hidePreview } from './preview.js';
 import { acknowledge } from './session-events.js';
@@ -228,6 +231,16 @@ export function renderStatusbar() {
 
   renderPlanLimits();
 
+  // El modelo y el esfuerzo de la pestaña activa: «Opus 5.5 · esfuerzo muy alto». Si no cabe,
+  // el esfuerzo es lo primero que se quita (se ve al pasar el ratón).
+  const modelEl = $('#sb-model');
+  const model = tab && views.get(tab.id) && views.get(tab.id).model;
+  modelEl.hidden = !model;
+  if (model) {
+    const effort = model.effort ? EFFORTS[model.effort] || model.effort : null;
+    setPieces(modelEl, [{ text: model.name }, effort ? { kind: 'extra', text: ` · esfuerzo ${effort}` } : null, model.fast ? { kind: 'extra', text: ' · rápido' } : null]);
+    modelEl.title = `Modelo de esta pestaña: ${model.name}${model.id ? ` (${model.id})` : ''}.${effort ? `\nEsfuerzo de razonamiento: ${effort}${effort !== model.effort ? ` (${model.effort})` : ''}.` : ''}${model.fast ? '\nModo rápido activado.' : ''}\nPulsa para cambiarlos.`;
+  }
   // La conversación de cada pestaña ya se ve en su barrita (y sus tokens, al pasar el ratón):
   // la barra inferior solo lleva el uso semanal de Claude y de Codex.
   $('#sb-hint').textContent = S.split

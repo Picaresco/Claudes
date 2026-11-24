@@ -2,6 +2,8 @@
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
 import { wireActivity } from './ui/activity.js';
 import { wireZoom } from './ui/zoom.js';
+import { wireModel } from './ui/model.js';
+import { EFFORT_LEVELS } from './ui/constants.js';
 import { renderCodex, codexInfo } from './ui/codex.js';
 import { setOptimizeHint } from './ui/optimize.js';
 import { COLORS, BASE_FONT, MAX_RECENTS } from './ui/constants.js';
@@ -47,6 +49,9 @@ function restore(saved) {
       extraHeight: Number(raw.extraHeight) || 0,
       context: cleanContext(raw.context),
       contextOpen: Boolean(raw.contextOpen),
+      // El modelo y el esfuerzo elegidos para esta pestaña (null: los predeterminados).
+      model: typeof raw.model === 'string' && /^[\w.[\]-]{2,60}$/.test(raw.model) ? raw.model : null,
+      effort: EFFORT_LEVELS.some((e) => e.level === raw.effort) ? raw.effort : null,
     });
   }
   for (const raw of Array.isArray(saved.recents) ? saved.recents : []) {
@@ -143,6 +148,7 @@ async function init() {
   wireLog();
   wireActivity();
   wireZoom();
+  wireModel();
   wireTabs();
   wireDialog();
   wireKeyboard();
@@ -155,6 +161,12 @@ async function init() {
     if (!view) return;
     view.usage = usage;
     renderTabs();
+    renderStatusbar();
+  });
+  api.onModel((tabId, model) => {
+    const view = views.get(tabId);
+    if (!view) return;
+    view.model = model;
     renderStatusbar();
   });
   let limitsArrived = false;

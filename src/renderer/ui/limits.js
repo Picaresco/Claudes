@@ -51,7 +51,8 @@ export function setPieces(node, pieces) {
   }));
 }
 // Una fecha con sus dos formas: «{antes}el viernes 27 a las 21:00» y «{corto}vie 27 21:00».
-const whenPieces = (ms, long, short) => [{ kind: 'long', text: `${long}${whenText(ms)}` }, { kind: 'short', text: `${short}${whenShort(ms)}` }];
+// bare: sin el artículo («viernes 27 a las 21:00»), cuando va sola.
+const whenPieces = (ms, long, short, bare = false) => [{ kind: 'long', text: `${long}${bare ? whenText(ms).replace(/^el /, '') : whenText(ms)}` }, { kind: 'short', text: `${short}${whenShort(ms)}` }];
 
 function limitDetail(name, w) {
   const t = w.tokens;
@@ -101,7 +102,7 @@ function drawCodexLimits(info) {
   const high = l.reached || usageLevel(l.pct) === 'high';
   const pieces = l.reached
     ? [{ kind: 'pct', text: '⚠ límite alcanzado' }, ...(reached && reached.resetsAt ? whenPieces(reached.resetsAt, ' hasta ', ' hasta ') : []), { kind: 'extra', text: ` · ${label} ${l.pct} %` }]
-    : [{ kind: 'pct', text: `${high ? '⚠ ' : ''}${l.windowMins === 10080 ? '' : `${label} `}${l.pct} %` }, ...(l.resetsAt ? whenPieces(l.resetsAt, ' · se renueva ', ' ') : [])];
+    : [{ kind: 'pct', text: `${high ? '⚠ ' : ''}${l.windowMins === 10080 ? '' : `${label} `}${l.pct} %` }, ...(l.resetsAt ? whenPieces(l.resetsAt, ' · ', ' ', true) : [])];
   // Si la última lectura falló, el dato que se ve es el anterior: con su hora.
   if (l.stale && l.checkedAt) pieces.push({ text: ` · dato de las ${hm(l.checkedAt)}` });
   setPieces($('#sb-codex-text'), pieces);
@@ -131,7 +132,7 @@ function drawPlanLimits() {
   // «Claude [barra] 50 % vie 27 21:00» (cerca del límite, «⚠ 88 %» en rojo). Sin límite semanal, el de 5 horas.
   setPieces($('#sb-plan-text'), main.expired
     ? [{ kind: 'pct', text: 'renovada' }, ...whenPieces(main.resetsAt, ' ', ' ')]
-    : [{ kind: 'pct', text: `${level === 'high' ? '⚠ ' : ''}${plan.seven_day ? '' : '5 h '}${main.pct} %` }, five ? { text: ` · 5 h ${five.pct} %` } : null, ...whenPieces(main.resetsAt, ' · se renueva ', ' ')]);
+    : [{ kind: 'pct', text: `${level === 'high' ? '⚠ ' : ''}${plan.seven_day ? '' : '5 h '}${main.pct} %` }, five ? { text: ` · 5 h ${five.pct} %` } : null, ...whenPieces(main.resetsAt, ' · ', ' ', true)]);
   const parts = [];
   if (plan.seven_day) parts.push(limitDetail('Límite semanal', plan.seven_day));
   if (plan.five_hour) parts.push(limitDetail('Límite de 5 horas', plan.five_hour));

@@ -4,6 +4,7 @@
 const fs = require('fs');
 const os = require('os');
 const { checkProject } = require('./optimize');
+const { saveDefaultModel } = require('./claude-config');
 
 function registerIpc({
   electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
@@ -133,6 +134,13 @@ function registerIpc({
   ipcMain.handle('activity:setOpen', (_e, on) => {
     store.set('activityOpen', Boolean(on));
     return activityState();
+  });
+
+  // Modelo y esfuerzo como predeterminados de Claude Code (la casilla del panel de la barra inferior).
+  ipcMain.handle('model:saveDefault', (_e, choice) => {
+    const res = saveDefaultModel(choice || {});
+    appLog(res.ok ? `modelo predeterminado de Claude Code: ${choice.model}${choice.effort ? `, esfuerzo ${choice.effort}` : ''}` : `no se ha guardado el modelo predeterminado: ${res.error}`);
+    return res;
   });
 
   ipcMain.handle('brief:get', () => ({ enabled: style.brief }));

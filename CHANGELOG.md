@@ -4,6 +4,13 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.25.1 — 2026-11-24
+- Pulsando el modelo de la barra inferior se elige el modelo (Opus, Sonnet, Haiku o Fable) y el esfuerzo (de bajo a máximo) de la pestaña. Se aplica reiniciando su sesión, que sigue con la misma conversación, y la pestaña lo recuerda. Solo cambia esa pestaña, salvo que marques «Usar también en las sesiones nuevas», que lo guarda como predeterminado de Claude Code. Si Claude está trabajando, se aplica cuando termine.
+
+## 0.25.0 — 2026-11-24
+- La barra inferior dice el modelo y el esfuerzo de razonamiento de la pestaña que estás viendo («Opus 5.5 · esfuerzo muy alto»), tal como los tiene su sesión; al pasar el ratón, el detalle y cómo cambiarlos (/model).
+- Las fechas de los recuadros de Claude y Codex ya no llevan «se renueva»: con la fecha basta («Claude 50 % · viernes 27 a las 21:00»). Al pasar el ratón se sigue explicando.
+
 ## 0.24.9 — 2026-11-24
 - La vista previa al pasar el ratón por una ruta tiene siempre el mismo tamaño (400 × 260, menos si la ventana es pequeña), sea una imagen ancha o alta, la página de un PDF o un texto: ni grande ni pequeña, y la imagen se ve entera.
 - En el panel «Actividad», si ya se ve la miniatura, pasar el ratón por «aquí» o por ella no abre además la vista grande (sí la abre lo que no tiene miniatura, como una página). En la terminal, la vista previa al pasar el ratón sigue igual.
