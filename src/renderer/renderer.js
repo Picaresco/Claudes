@@ -52,6 +52,7 @@ function restore(saved) {
       // El modelo y el esfuerzo elegidos para esta pestaña (null: los predeterminados).
       model: typeof raw.model === 'string' && /^[\w.[\]-]{2,60}$/.test(raw.model) ? raw.model : null,
       effort: EFFORT_LEVELS.some((e) => e.level === raw.effort) ? raw.effort : null,
+      modelDefault: raw.modelDefault === true, // sigue el predeterminado que se guardó desde aquí
     });
   }
   for (const raw of Array.isArray(saved.recents) ? saved.recents : []) {

@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.25.2 — 2026-11-24
+- En el panel del modelo, la casilla «Usar también en las sesiones nuevas» se queda marcada si la aplicaste (la pestaña sigue ese predeterminado), y debajo se ve cuál es el predeterminado de ahora («Ahora, en las sesiones nuevas: Opus 5.5 · esfuerzo muy alto»). Así se sabe que se ha guardado.
+
 ## 0.25.1 — 2026-11-24
 - Pulsando el modelo de la barra inferior se elige el modelo (Opus, Sonnet, Haiku o Fable) y el esfuerzo (de bajo a máximo) de la pestaña. Se aplica reiniciando su sesión, que sigue con la misma conversación, y la pestaña lo recuerda. Solo cambia esa pestaña, salvo que marques «Usar también en las sesiones nuevas», que lo guarda como predeterminado de Claude Code. Si Claude está trabajando, se aplica cuando termine.
 

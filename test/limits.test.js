@@ -217,3 +217,19 @@ test('guardar el modelo y el esfuerzo como predeterminados de Claude Code, sin t
   assert.equal(saveDefaultModel({ model: 'opus; rm -rf', effort: 'low' }).ok, false);
   assert.equal(saveDefaultModel({ model: 'claude-opus-5-5', effort: 'turbo' }).ok, false);
 });
+
+test('el predeterminado de Claude Code se lee como id de modelo y su esfuerzo', (t) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { defaultModel } = require('../src/main/claude-config');
+  const { tempDir } = require('./helpers');
+  const dir = tempDir(t);
+  const before = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  t.after(() => { if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before; });
+  assert.deepEqual(defaultModel(), { model: null, effort: null }); // sin configuración
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ model: 'opus', modelSettings: { 'claude-opus-5-5': { effortLevel: 'xhigh' } } }));
+  assert.deepEqual(defaultModel(), { model: 'claude-opus-5-5', effort: 'xhigh' });
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ model: 'claude-fable-5-2' }));
+  assert.deepEqual(defaultModel(), { model: 'claude-fable-5-2', effort: null });
+});

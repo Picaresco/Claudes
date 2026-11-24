@@ -70,4 +70,14 @@ function saveDefaultModel({ model, effort } = {}) {
   return { ok: true };
 }
 
-module.exports = { userSettings, usageFrom, modelFrom, saveDefaultModel };
+// El modelo y el esfuerzo predeterminados de Claude Code (los de settings.json): { model, effort },
+// con el modelo como id si su alias es conocido; null en lo que no haya.
+function defaultModel() {
+  const settings = userSettings();
+  const raw = typeof settings.model === 'string' ? settings.model : null;
+  const id = raw ? Object.keys(ALIASES).find((key) => ALIASES[key] === raw) || raw : null;
+  const per = id && settings.modelSettings && settings.modelSettings[id];
+  return { model: id, effort: per && typeof per.effortLevel === 'string' ? per.effortLevel : null };
+}
+
+module.exports = { userSettings, usageFrom, modelFrom, saveDefaultModel, defaultModel };

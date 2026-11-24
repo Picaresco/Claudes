@@ -13,6 +13,12 @@ import { focusTerminal } from './views.js';
 
 const BUSY = ['working', 'reviewing', 'planreview', 'consulting', 'needs', 'starting'];
 let choice = null; // { model, effort } mientras el panel está abierto
+let defaults = { model: null, effort: null }; // el predeterminado de Claude Code (settings.json)
+
+const modelName = (id) => (MODELS.find((m) => m.id === id) || { name: id }).name;
+const effortName = (level) => (EFFORT_LEVELS.find((e) => e.level === level) || { label: level }).label;
+// ¿La pestaña sigue el predeterminado que se guardó desde este panel? (la casilla, marcada)
+const followsDefault = (tab) => Boolean(tab && tab.modelDefault && !tab.model && !tab.effort);
 
 const activeView = () => views.get(S.activeId);
 
@@ -47,7 +53,12 @@ function paint() {
   }));
   const effort = EFFORT_LEVELS.find((e) => e.level === choice.effort);
   $('#model-hint').textContent = effort ? `${effort.label[0].toUpperCase()}${effort.label.slice(1)}: ${effort.desc}` : '';
-  const same = choice.model === current.id && choice.effort === current.effort && !$('#model-default').checked;
+  // El predeterminado de Claude Code, para saber qué se usa en las sesiones nuevas.
+  $('#model-default-now').textContent = defaults.model
+    ? `Ahora, en las sesiones nuevas: ${modelName(defaults.model)}${defaults.effort ? ` · esfuerzo ${effortName(defaults.effort)}` : ''}.`
+    : 'Ahora, las sesiones nuevas usan el modelo de Claude Code por defecto.';
+  // Sin nada que cambiar, «Aplicar» no hace nada.
+  const same = choice.model === current.id && choice.effort === current.effort && $('#model-default').checked === followsDefault(view.tab);
   $('#model-apply').disabled = same;
 }
 
@@ -56,10 +67,12 @@ function openMenu() {
   if (!view) return;
   const current = view.model || {};
   choice = { model: current.id || MODELS[0].id, effort: current.effort || 'high' };
-  $('#model-default').checked = false;
+  // Marcada si la pestaña sigue el predeterminado que se guardó desde aquí.
+  $('#model-default').checked = followsDefault(view.tab);
   $('#model-menu').hidden = false;
   $('#sb-model').setAttribute('aria-expanded', 'true');
   paint();
+  api.modelGetDefault().then((d) => { defaults = d || defaults; if (choice) paint(); }).catch(() => { /* sin dato */ });
   const selected = $('#model-list [aria-checked="true"]');
   if (selected) selected.focus();
 }
@@ -95,12 +108,15 @@ async function apply() {
   if (saveDefault) {
     const res = await api.modelSaveDefault(picked);
     if (!res || !res.ok) { toast(`No se ha podido guardar como predeterminado: ${(res && res.error) || 'error desconocido'}.`); return; }
-    // La pestaña sigue el predeterminado (ya es lo elegido).
+    // La pestaña sigue el predeterminado (ya es lo elegido), y la casilla se queda marcada.
     tab.model = null;
     tab.effort = null;
+    tab.modelDefault = true;
+    defaults = { model: picked.model, effort: picked.effort };
   } else {
     tab.model = picked.model;
     tab.effort = picked.effort;
+    tab.modelDefault = false;
   }
   save();
   const what = `${name} con esfuerzo ${effort}`;
