@@ -8,6 +8,11 @@
 //   script de bash que Claude Code ejecuta con Git Bash: sin Git Bash no se carga,
 //   porque cada sesión empezaría con un error.
 //
+//   frontend-design, de Anthropic (Apache 2.0, copia sin cambios del marketplace oficial
+//   claude-plugins-official): una skill que Claude usa sola cuando hace una web, una app
+//   o una pantalla, para que el diseño tenga personalidad y no parezca una plantilla. No
+//   tiene hooks, así que se carga también sin Git Bash.
+//
 //   «You should know», integrado en Claude Code y apagado de serie: un agente aparte
 //   avisa con tarjetas («Heads up», «You should know») de lo que conviene saber.
 //   ClaudHome lo enciende en sus sesiones salvo que el usuario lo haya decidido en su
@@ -22,7 +27,9 @@ const fs = require('fs');
 const path = require('path');
 
 const EXPLAIN_PLUGIN = 'explanatory-output-style';
-const BUNDLED_PLUGINS = [EXPLAIN_PLUGIN];
+const DESIGN_PLUGIN = 'frontend-design';
+const BUNDLED_PLUGINS = [EXPLAIN_PLUGIN, DESIGN_PLUGIN];
+const NEEDS_BASH = new Set([EXPLAIN_PLUGIN]); // los que tienen hooks de bash
 const OFFICIAL_MARKETPLACE = 'claude-plugins-official';
 const YOU_SHOULD_KNOW = 'cc-plugin-you-should-know@builtin';
 
@@ -68,7 +75,10 @@ function createStyle({ srcDir, dstDir, userSettings, gitBash, tabs, log, label }
     }
   }
 
-  // Al arrancar la app: deja los plugins listos. Devuelve sus nombres.
+  // Sin Git Bash, los plugins con hooks de bash no se pueden cargar.
+  const usable = (p) => gitBash || !NEEDS_BASH.has(p.name);
+
+  // Al arrancar la app: deja los plugins listos. Devuelve los nombres de los que se pueden cargar.
   function prepare() {
     pluginDirs = [];
     for (const name of BUNDLED_PLUGINS) {
@@ -80,15 +90,19 @@ function createStyle({ srcDir, dstDir, userSettings, gitBash, tabs, log, label }
       }
     }
     explainText = readExplainText();
-    return pluginDirs.map((p) => p.name);
+    return pluginDirs.filter(usable).map((p) => p.name);
   }
 
   // Plugins de ClaudHome para una sesión, salvo los que el usuario ya tenga activados
-  // en su Claude Code (se cargarían dos veces). Con «Resumido», sin el explicativo.
+  // en su Claude Code (se cargarían dos veces). El de diseño, tampoco si lo ha apagado él;
+  // el explicativo lo decide el botón «Resumido» (con él, sin el explicativo).
   function sessionPlugins() {
-    if (!gitBash) return [];
     const enabled = userSettings().enabledPlugins || {};
-    return pluginDirs.filter((p) => enabled[`${p.name}@${OFFICIAL_MARKETPLACE}`] !== true && !(brief && p.name === EXPLAIN_PLUGIN));
+    const decided = (p) => {
+      const key = `${p.name}@${OFFICIAL_MARKETPLACE}`;
+      return p.name === EXPLAIN_PLUGIN ? enabled[key] === true : Object.prototype.hasOwnProperty.call(enabled, key);
+    };
+    return pluginDirs.filter((p) => usable(p) && !decided(p) && !(brief && p.name === EXPLAIN_PLUGIN));
   }
 
   // ¿Tiene el usuario el plugin explicativo instalado y activado en su Claude Code?
@@ -130,4 +144,4 @@ function createStyle({ srcDir, dstDir, userSettings, gitBash, tabs, log, label }
   };
 }
 
-module.exports = { createStyle, EXPLAIN_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT };
+module.exports = { createStyle, EXPLAIN_PLUGIN, DESIGN_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT };

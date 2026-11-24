@@ -468,7 +468,7 @@ if (!app.requestSingleInstanceLock()) {
       cwdOf: (id) => (tabs.get(id) || {}).folder || null,
     });
     const pluginNames = style.prepare();
-    appLog(gitBash ? `plugins para las sesiones: ${pluginNames.join(', ') || 'ninguno'}` : 'sin Git Bash: las sesiones arrancan sin plugins');
+    appLog(`plugins para las sesiones: ${pluginNames.join(', ') || 'ninguno'}${gitBash ? '' : ' (sin Git Bash, sin el explicativo)'}`);
     registerIpc({
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,

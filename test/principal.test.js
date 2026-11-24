@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { Tabs } = require('../src/main/tabs');
-const { createStyle, EXPLAIN_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT } = require('../src/main/style');
+const { createStyle, EXPLAIN_PLUGIN, DESIGN_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT } = require('../src/main/style');
 const { childEnv, quoteForCmd, shellList, shellCommand, SESSION_MARKERS } = require('../src/main/shells');
 const { createPtys } = require('../src/main/ptys');
 const { userSettings, usageFrom } = require('../src/main/claude-config');
@@ -46,22 +46,33 @@ function makeStyle(t, { gitBash = 'C:\\Git\\bin\\bash.exe', settings = {} } = {}
   return { style, tabs, logs, dstDir };
 }
 
-test('los plugins se copian y se pasan a las sesiones, salvo en modo resumido', (t) => {
+const plugin = (dstDir, name) => ({ name, dir: path.join(dstDir, name) });
+const names = (plugins) => plugins.map((p) => p.name);
+
+test('los plugins se copian y se pasan a las sesiones; en modo resumido, sin el explicativo', (t) => {
   const { style, dstDir } = makeStyle(t);
-  assert.deepEqual(style.prepare(), [EXPLAIN_PLUGIN]);
+  assert.deepEqual(style.prepare(), [EXPLAIN_PLUGIN, DESIGN_PLUGIN]);
   assert.ok(fs.existsSync(path.join(dstDir, EXPLAIN_PLUGIN, 'hooks-handlers', 'session-start.sh')));
-  assert.deepEqual(style.sessionPlugins(), [{ name: EXPLAIN_PLUGIN, dir: path.join(dstDir, EXPLAIN_PLUGIN) }]);
+  assert.ok(fs.existsSync(path.join(dstDir, DESIGN_PLUGIN, 'skills', DESIGN_PLUGIN, 'SKILL.md')));
+  assert.deepEqual(style.sessionPlugins(), [plugin(dstDir, EXPLAIN_PLUGIN), plugin(dstDir, DESIGN_PLUGIN)]);
   style.brief = true;
-  assert.deepEqual(style.sessionPlugins(), []);
+  assert.deepEqual(style.sessionPlugins(), [plugin(dstDir, DESIGN_PLUGIN)]);
 });
 
-test('sin Git Bash, o si el usuario ya tiene el plugin, no se pasa', (t) => {
+test('sin Git Bash solo va el de diseño; el que el usuario ya tiene activado no se pasa', (t) => {
   const none = makeStyle(t, { gitBash: null });
-  none.style.prepare();
-  assert.deepEqual(none.style.sessionPlugins(), []);
+  assert.deepEqual(none.style.prepare(), [DESIGN_PLUGIN]);
+  assert.deepEqual(names(none.style.sessionPlugins()), [DESIGN_PLUGIN]);
   const mine = makeStyle(t, { settings: { enabledPlugins: { [`${EXPLAIN_PLUGIN}@claude-plugins-official`]: true } } });
   mine.style.prepare();
-  assert.deepEqual(mine.style.sessionPlugins(), []);
+  assert.deepEqual(names(mine.style.sessionPlugins()), [DESIGN_PLUGIN]);
+  const both = makeStyle(t, { settings: { enabledPlugins: { [`${EXPLAIN_PLUGIN}@claude-plugins-official`]: true, [`${DESIGN_PLUGIN}@claude-plugins-official`]: true } } });
+  both.style.prepare();
+  assert.deepEqual(both.style.sessionPlugins(), []);
+  // Apagado por el usuario en su Claude Code: el de diseño se respeta; el explicativo lo decide «Resumido».
+  const off = makeStyle(t, { settings: { enabledPlugins: { [`${EXPLAIN_PLUGIN}@claude-plugins-official`]: false, [`${DESIGN_PLUGIN}@claude-plugins-official`]: false } } });
+  off.style.prepare();
+  assert.deepEqual(names(off.style.sessionPlugins()), [EXPLAIN_PLUGIN]);
 });
 
 test('«You should know» se enciende salvo que el usuario ya lo haya decidido', (t) => {

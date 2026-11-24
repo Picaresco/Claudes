@@ -122,3 +122,14 @@ test('el plugin explicativo incluido está completo y su texto se puede leer', (
   const json = /<<\s*'EOF'\s*\n([\s\S]*?)\nEOF/.exec(script);
   assert.match(JSON.parse(json[1]).hookSpecificOutput.additionalContext, /★ Insight/);
 });
+
+test('el plugin de diseño incluido está completo, con su skill y su licencia', () => {
+  const dir = path.join(__dirname, '..', 'src', 'plugins', 'frontend-design');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8')).name, 'frontend-design');
+  const skill = fs.readFileSync(path.join(dir, 'skills', 'frontend-design', 'SKILL.md'), 'utf8');
+  const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(skill);
+  assert.ok(head, 'la skill tiene que empezar con su cabecera');
+  assert.match(head[1], /^name: frontend-design$/m);
+  assert.match(head[1], /^description: .{20,}$/m); // con ella decide Claude cuándo usarla
+  assert.match(fs.readFileSync(path.join(dir, 'LICENSE'), 'utf8'), /Apache License/);
+});
