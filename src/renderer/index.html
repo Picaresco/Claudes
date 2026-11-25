@@ -135,7 +135,7 @@
   </section>
   <div id="drop-hint" hidden></div>
   <div id="empty" hidden>
-    <svg aria-hidden="true" width="40" height="40" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1" stroke-linejoin="round"><path d="M2 6h5l1.5-2.5H16V15H2z"/><path d="M2 9h14"/></svg>
+    <img class="empty-art" src="assets/vacio.jpg" alt="" aria-hidden="true" draggable="false">
     <h1>No hay sesiones abiertas</h1>
     <p>Abre una carpeta y ponle nombre a su pestaña. Claude arrancará dentro.</p>
     <button id="empty-new" class="btn btn-primary">Nueva sesión</button>
@@ -294,7 +294,7 @@
         <ul id="wf-stack-list"></ul>
       </div>
       <div id="wf-empty" class="wf-empty" hidden>
-        <div class="wf-spin" aria-hidden="true"></div>
+        <div class="wf-art" aria-hidden="true"><img src="assets/dibujando-mapa.jpg" alt="" draggable="false"><span class="wf-spin"></span></div>
         <p id="wf-empty-title">Dibujando el mapa del proyecto…</p>
         <p id="wf-empty-text" class="wf-empty-text"></p>
         <button id="wf-retry" type="button" class="btn" hidden>Volver a intentarlo</button>

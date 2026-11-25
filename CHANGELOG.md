@@ -4,6 +4,13 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.30.0 — 2026-11-26
+- Icono nuevo: una casa con el símbolo de la terminal dentro, en azul y violeta.
+- Con todas las pestañas cerradas, la pantalla de inicio muestra una ilustración: una casa hecha de ventanas, con la puerta abierta.
+- Mientras se dibuja el primer mapa del «Workflow», se ve una ilustración de bloques que se van uniendo, en vez de solo el círculo que gira.
+- El README de GitHub estrena cabecera.
+- Las ilustraciones y el icono se hicieron con la generación de imágenes de Codex.
+
 ## 0.29.2 — 2026-11-25
 - En el «Workflow», ningún texto se sale de su tarjeta o de su bloque: se mide ya dibujado y, si no cabe, se corta con «…». El texto entero se ve al pasar el ratón.
 

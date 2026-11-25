@@ -1,5 +1,7 @@
 # ClaudHome
 
+![ClaudHome: tus sesiones de Claude Code, en casa](docs/cabecera.jpg)
+
 Sesiones de Claude Code en pestañas: cada pestaña es un `claude` trabajando en su carpeta, con el nombre que tú le pongas.
 
 Proyecto personal para Windows. No está afiliado a Anthropic ni a OpenAI.
