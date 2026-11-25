@@ -1,7 +1,7 @@
 ---
 name: workflow-de-proyecto
 description: Cómo hace ClaudHome el mapa «Workflow» de un proyecto (bloques, piezas, flechas, bucles y reglas) y en qué formato lo devuelve. La recibe el modelo aparte que dibuja el mapa (Codex o Claude en su propio proceso); la sesión principal de Claude no la carga.
-version: 1
+version: 2
 ---
 
 # El mapa «Workflow» de un proyecto
@@ -17,6 +17,7 @@ Tú solo devuelves los datos; la app lo dibuja siempre igual. Saber cómo se dib
 - **Tres niveles de zoom.** De lejos se ven los bloques, sus flechas y las etiquetas de las flechas. Al acercarse aparecen las piezas (módulos) de cada bloque, las flechas entre piezas y la regla del bloque. Más cerca, el detalle de cada pieza: sus frases, sus reglas (✕), sus bucles (↻) y sus archivos.
 - **Columnas por tipo, de izquierda a derecha:** persona → interfaz → núcleo → proceso → datos. Los servicios de internet (tipo externo) van en una banda arriba, sobre el bloque con el que hablan.
 - **Colores:** azul para los datos, ámbar para lo que se repite solo (↻), rojo discontinuo para las reglas que niegan o condicionan (✕).
+- **El stack tecnológico** va en una esquina fija, a la vista en todos los niveles: con qué está hecho el proyecto.
 - **Lo que no cabe se corta.** Respeta las longitudes de cada campo.
 
 ## Método
@@ -29,6 +30,7 @@ Tú solo devuelves los datos; la app lo dibuja siempre igual. Saber cómo se dib
 6. Lo que se repite solo: temporizadores, tareas programadas, sondeos, reintentos. Con su frecuencia si se ve («↻ cada 5 min»).
 7. Lo que niega o condiciona la comunicación: autenticación, permisos, tokens, validaciones, listas de acceso, cortafuegos, modos de solo lectura. Empieza por «✕».
 8. Cada regla y cada bucle, con la ruta del archivo donde se ve en «fuente». Si no lo has visto en el material, no lo pongas.
+9. El stack tecnológico: de 3 a 8 piezas, de la más importante a la menos: lenguaje y plataforma, marco principal, bibliotecas que definen el proyecto, base de datos, contenedores. Con la versión si sale en los manifiestos (la principal, «45», no «^45.2.3») y para qué se usa en dos o tres palabras. Nada de herramientas de desarrollo menores (linters, formateadores) salvo que sean lo único que hay.
 
 ## Cómo escribir
 
@@ -49,7 +51,8 @@ Responde solo con JSON válido, sin texto alrededor:
   "modulos": [{ "id": "corto", "bloque": "id del bloque", "nombre": "22 caracteres", "sub": "archivo o pieza principal", "detalle": ["hasta 3 frases de 40 caracteres"], "archivos": ["rutas relativas"], "reglas": [{ "texto": "36 caracteres", "fuente": "ruta" }], "bucles": [{ "texto": "36 caracteres", "fuente": "ruta" }] }],
   "flechas": [{ "de": "id de bloque", "a": "id de bloque", "tipo": "datos | bucle | regla", "texto": "24 caracteres", "doble": false }],
   "internas": [{ "de": "id de módulo", "a": "id de módulo del mismo bloque", "tipo": "datos | bucle | regla" }],
-  "reglas": [{ "bloque": "id", "texto": "36 caracteres", "fuente": "ruta" }]
+  "reglas": [{ "bloque": "id", "texto": "36 caracteres", "fuente": "ruta" }],
+  "stack": [{ "nombre": "22 caracteres", "version": "14 caracteres o vacío", "para": "30 caracteres" }]
 }
 ```
 
@@ -84,6 +87,13 @@ Una tienda web con su API, una base de datos y una pasarela de pago (resumido):
     { "de": "api", "a": "pago", "tipo": "regla", "texto": "✕ cobra con token", "doble": false }
   ],
   "internas": [{ "de": "limpieza", "a": "pedidos", "tipo": "bucle" }],
-  "reglas": [{ "bloque": "api", "texto": "✕ Solo responde a la web", "fuente": "api/servidor.py" }]
+  "reglas": [{ "bloque": "api", "texto": "✕ Solo responde a la web", "fuente": "api/servidor.py" }],
+  "stack": [
+    { "nombre": "Python", "version": "3.12", "para": "el servidor" },
+    { "nombre": "FastAPI", "version": "0.115", "para": "la API de pedidos" },
+    { "nombre": "PostgreSQL", "version": "16", "para": "guardar los datos" },
+    { "nombre": "Vue", "version": "3", "para": "la web de la tienda" },
+    { "nombre": "Docker Compose", "version": "", "para": "arrancarlo todo junto" }
+  ]
 }
 ```

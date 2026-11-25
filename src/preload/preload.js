@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('api', {
   workflowOpen: (tabId) => ipcRenderer.invoke('workflow:open', String(tabId)),
   workflowClose: (tabId) => ipcRenderer.send('workflow:close', String(tabId)),
   workflowRedo: (tabId) => ipcRenderer.invoke('workflow:redo', String(tabId)),
+  workflowEnter: (tabId, cwd) => ipcRenderer.send('workflow:enter', String(tabId), String(cwd || '')), // se entra en un proyecto
   onWorkflow: on('workflow:update'), // ({ key, folder, map, status, at, engine, error, next… })
 
   // Panel «Actividad»: lo que va haciendo Claude en cada pestaña, contado por Haiku.

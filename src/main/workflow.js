@@ -20,10 +20,11 @@ const digest = require('./workflow-digest');
 
 const SCHEMA = 2;
 const CHECK_EVERY = Number(process.env.CLAUDES_WORKFLOW_EVERY_MS) > 0 ? Number(process.env.CLAUDES_WORKFLOW_EVERY_MS) : 5 * 60 * 1000;
+const ENTER_EVERY = process.env.CLAUDES_WORKFLOW_ENTER_MS !== undefined ? Number(process.env.CLAUDES_WORKFLOW_ENTER_MS) || 0 : 30 * 1000;
 const TIMEOUT = 8 * 60 * 1000;
 const TYPES = ['persona', 'interfaz', 'nucleo', 'proceso', 'datos', 'externo'];
 const KINDS = ['datos', 'bucle', 'regla'];
-const LIMITS = { blocks: 9, external: 3, modules: 8, arrows: 12, inner: 24, rules: 1, lines: 3, marks: 3 };
+const LIMITS = { blocks: 9, external: 3, modules: 8, arrows: 12, inner: 24, rules: 1, lines: 3, marks: 3, stack: 8 };
 
 const SYSTEM = 'Eres un arquitecto de software que explica proyectos a personas no expertas. Describes cómo funciona un proyecto como un mapa. Respondes solo con JSON válido, sin texto alrededor.';
 
@@ -114,7 +115,14 @@ function validate(raw, sources = null) {
   }
   // Un servicio de internet sin ninguna flecha quedaría suelto: fuera.
   const linked = (b) => b.tipo !== 'externo' || arrows.some((a) => a.de === b.id || a.a === b.id);
-  return { resumen: clip(raw.resumen, 160), bloques: blocks.filter(linked), modulos: modules, flechas: arrows, internas: inner, reglas: rules };
+  // El stack tecnológico: con qué está hecho (lenguajes, marcos, bibliotecas clave, bases de datos).
+  const stack = [];
+  for (const s of list(raw.stack)) {
+    const name = clip(s && s.nombre, 22);
+    if (!name || stack.some((x) => x.nombre.toLowerCase() === name.toLowerCase()) || stack.length >= LIMITS.stack) continue;
+    stack.push({ nombre: name, version: clip(s.version, 14), para: clip(s.para, 30) });
+  }
+  return { resumen: clip(raw.resumen, 160), bloques: blocks.filter(linked), modulos: modules, flechas: arrows, internas: inner, reglas: rules, stack };
 }
 
 // ── Lo que se le pide al modelo ───────────────────────────────────────
@@ -193,7 +201,7 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
   const snapshot = (p) => ({
     key: p.key, folder: p.folder, map: p.map, at: p.at, engine: p.engine, partial: p.partial, status: p.status, error: p.error,
     kind: p.kind, startedAt: p.startedAt, checkedAt: p.checkedAt, next: p.open && p.timer ? p.nextAt : 0, masked: p.masked,
-    paused: Boolean(p.paused), pending: p.pending || 0, using: p.controller ? p.using || null : null,
+    paused: Boolean(p.paused), pending: p.pending || 0, using: p.controller ? p.using || null : null, waiting: Boolean(p.waiting),
     oldGuide: Boolean(p.map && p.guide !== GUIDE.hash), // hecho con otra versión de la guía
   });
   const update = (p) => send('workflow:update', snapshot(p));
@@ -286,22 +294,62 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
     }
   }
 
+  // De uno en uno: otro proyecto está comprobando o dibujando, y el siguiente que esperaba.
+  const busyOther = (p) => [...projects.values()].some((q) => q !== p && (q.controller || q.checking));
+  function kickNext() {
+    const next = [...projects.values()].find((q) => q.waiting && !q.controller && !q.checking);
+    if (next && !stopped) { next.waiting = false; setImmediate(() => check(next, { auto: next.waitingAuto })); }
+  }
+
   // ¿Ha cambiado el proyecto desde el último mapa? Si sí, se rehace (o se hace, si no lo hay).
-  async function check(p) {
-    if (p.controller || stopped) return;
+  // auto: lo pide la app al entrar en el proyecto, no el usuario con la ventana: sin Codex y con
+  // el plan de Claude al 80 %, tampoco se hace el primer mapa (se hará al pulsar «Workflow»).
+  async function check(p, { auto = false } = {}) {
+    if (p.controller || p.checking || stopped) return;
+    // Un mapa a la vez entre todos los proyectos: este espera su turno.
+    if (busyOther(p)) {
+      p.waiting = true;
+      p.waitingAuto = auto && p.waitingAuto !== false;
+      update(p);
+      return;
+    }
+    p.checking = true; // el turno se reserva ya: la huella tarda y otro podría colarse
+    p.waiting = false;
+    p.waitingAuto = undefined;
     try {
       const { manifest } = await digest.fingerprint(p.folder, p.manifest);
       const changes = digest.diff(p.manifest, manifest);
       p.pending = p.map ? changes.count : 0;
       p.paused = false;
-      if (!p.map) { await generate(p, 'full', { manifest }); return; }
-      if (changes.count && choose().name === 'claude' && planBusy()) {
-        p.paused = true; // se rehará cuando el plan tenga margen (o con «Rehacer»)
+      const saving = choose().name === 'claude' && planBusy(); // sin Codex y con el plan justo
+      if (!p.map && !(auto && saving)) { await generate(p, 'full', { manifest }); return; }
+      if (!p.map || (changes.count && saving)) {
+        p.paused = true; // se hará cuando el plan tenga margen (o al pulsar «Workflow» o «Rehacer»)
+        if (!p.map && p.status === 'working') p.status = 'idle';
       } else if (changes.count) { await generate(p, 'refresh', { manifest, changes }); return; }
-    } catch (err) { log(`Workflow: no se ha podido comprobar ${p.folder} (${err.message})`); }
-    p.checkedAt = Date.now();
-    schedule(p);
-    update(p);
+      p.checkedAt = Date.now();
+      schedule(p);
+      update(p);
+    } catch (err) {
+      log(`Workflow: no se ha podido comprobar ${p.folder} (${err.message})`);
+      p.checkedAt = Date.now();
+      schedule(p);
+      update(p);
+    } finally {
+      p.checking = false;
+      kickNext();
+    }
+  }
+
+  // El usuario entra en un proyecto (abre su pestaña o cambia a ella): el mapa se prepara en
+  // segundo plano, para que al pulsar «Workflow» ya esté. Como mucho una vez cada 30 s por proyecto.
+  function enter(folder, tabId = null) {
+    if (!folder || stopped) return;
+    const p = project(folder);
+    if (tabId) p.tabId = tabId;
+    if (p.controller || p.waiting || Date.now() - (p.enteredAt || 0) < ENTER_EVERY) return;
+    p.enteredAt = Date.now();
+    setImmediate(() => check(p, { auto: true }));
   }
 
   function schedule(p) {
@@ -325,7 +373,7 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
     return snapshot(p);
   }
 
-  // Se cierra: no se rehace más. Lo que se estaba rehaciendo se corta; el primer mapa sigue.
+  // Se cierra: no se revisa más cada 5 minutos. Lo que esté en marcha termina y se guarda.
   function close(folder) {
     const p = projects.get(folder);
     if (!p) return;
@@ -333,7 +381,6 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
     if (p.open) return;
     clearTimeout(p.timer);
     p.timer = null;
-    if (p.controller && p.kind === 'refresh') p.controller.abort();
   }
 
   // «Rehacer»: un mapa nuevo desde cero, aunque no haya cambios.
@@ -341,7 +388,7 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
     const p = project(folder);
     if (p.controller) return snapshot(p);
     const { manifest } = await digest.fingerprint(p.folder, p.manifest);
-    generate(p, 'full', { manifest });
+    generate(p, 'full', { manifest }).then(kickNext);
     return snapshot(p);
   }
 
@@ -351,7 +398,7 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
     runner.stop();
   }
 
-  return { open, close, redo, stop, get: (folder) => (projects.get(folder) ? snapshot(projects.get(folder)) : null) };
+  return { open, close, enter, redo, stop, get: (folder) => (projects.get(folder) ? snapshot(projects.get(folder)) : null) };
 }
 
 module.exports = { createWorkflow, validate, fullPrompt, refreshPrompt, loadGuide, GUIDE, SCHEMA };

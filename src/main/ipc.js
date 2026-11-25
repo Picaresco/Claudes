@@ -3,6 +3,7 @@
 // updater.js, context.js…). Se registran una vez, al arrancar, con todo ya creado.
 const fs = require('fs');
 const os = require('os');
+const path = require('path');
 const { checkProject } = require('./optimize');
 const { saveDefaultModel, defaultModel } = require('./claude-config');
 
@@ -93,6 +94,15 @@ function registerIpc({
   ipcMain.handle('workflow:open', (_e, tabId) => workflow.open(optimizeFolder(String(tabId)), String(tabId)));
   ipcMain.on('workflow:close', (_e, tabId) => workflow.close(optimizeFolder(String(tabId))));
   ipcMain.handle('workflow:redo', (_e, tabId) => workflow.redo(optimizeFolder(String(tabId))));
+  // Al entrar en un proyecto, el mapa se prepara solo. Si la sesión aún no ha arrancado, vale
+  // la carpeta de la pestaña (una carpeta que exista).
+  ipcMain.on('workflow:enter', (_e, tabId, cwd) => {
+    let folder = optimizeFolder(String(tabId));
+    if (!folder && typeof cwd === 'string' && path.isAbsolute(cwd)) {
+      try { if (fs.statSync(cwd).isDirectory()) folder = cwd; } catch { /* no existe */ }
+    }
+    if (folder) workflow.enter(folder, String(tabId));
+  });
 
   // Micrófono para dictar: la interfaz lo aplica a las teclas; aquí solo se recuerda.
   // (Cada sesión arranca con el dictado de Claude Code en modo «mantener»: graba mientras se

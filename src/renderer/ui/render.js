@@ -1,5 +1,6 @@
 // ── Pintado ──────────────────────────────────────────────────────
 import { renderActivity } from './activity.js';
+import { enterProject } from './workflow.js';
 import { codexInfo } from './codex.js';
 import { colorHex, SIDES, SVG, STATUS, EFFORT_LEVELS } from './constants.js';
 import { contextCount } from './context.js';
@@ -287,6 +288,7 @@ export function layout() {
   }
 
   renderAll();
+  enterProject(); // el mapa «Workflow» del proyecto, preparado en segundo plano
   requestAnimationFrame(() => {
     for (const id of visibleIds()) {
       const view = views.get(id);

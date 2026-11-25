@@ -7,7 +7,7 @@
 // Rueda o pellizco para acercar, arrastrar para moverse, pulsar un bloque o una pieza para
 // entrar, doble clic o «Ver todo» para volver. Con la ventana abierta, el mapa se revisa
 // cada 5 minutos y solo se rehace si el proyecto ha cambiado.
-import { api, $ } from './dom.js';
+import { api, $, el } from './dom.js';
 import { S, byId } from './state.js';
 import { focusTerminal } from './views.js';
 import { layoutMap, wrap } from './workflow-layout.js';
@@ -94,10 +94,26 @@ function fitBox() {
   const W = L ? L.W : 1600;
   const H = L ? L.H : 900;
   const pad = 1.18; // margen para la ayuda, el estado y las migas, que van encima del mapa
-  if (ar > W / H) { const h = H * pad; const w = h * ar; return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
-  const w = W * pad;
-  const h = w / ar;
-  return { x: (W - w) / 2, y: (H - h) / 2, w, h };
+  const box = (reserve) => {
+    const room = Math.max(1, r.width - reserve);
+    const px = Math.min(room / (W * pad), r.height / (H * pad));
+    const w = r.width / px;
+    return { x: W / 2 - room / 2 / px, y: H / 2 - w / ar / 2, w, h: w / ar, px };
+  };
+  // El stack ocupa la esquina de arriba a la derecha: el mapa se aparta lo justo, y solo si
+  // algún bloque quedaría debajo de él.
+  const panel = $('#wf-stack');
+  if (!L || panel.hidden || r.width <= 900) return box(0);
+  const pr = panel.getBoundingClientRect();
+  const left = pr.left - r.left - 12;
+  const bottom = pr.bottom - r.top + 12;
+  const boxes = [...L.blocks, ...L.ext];
+  for (let reserve = 0; reserve <= r.width - left; reserve += 24) {
+    const v = box(reserve);
+    const hit = boxes.some((b) => (b.x + b.w - v.x) * v.px > left && (b.y - v.y) * v.px < bottom);
+    if (!hit) return v;
+  }
+  return box(r.width - left);
 }
 
 // El zoom de cada nivel: el primero, el mapa entero; cada uno, 1,6 veces el anterior y, como
@@ -262,7 +278,9 @@ function renderStatus() {
     $('#wf-empty-title').textContent = failed ? 'No se ha podido dibujar el mapa' : 'Dibujando el mapa del proyecto…';
     $('#wf-empty-text').textContent = failed
       ? snap.error
-      : `${snap.using ? `Lo hace ${snap.using}` : 'Preparando lo que se le enseña al modelo'}${snap.startedAt ? ` · ${mmss(now - snap.startedAt)}` : ''}. Suele tardar entre uno y tres minutos. Puedes cerrar esta ventana y seguir trabajando: el mapa estará listo al volver, y tu sesión de Claude no se entera.`;
+      : snap.waiting
+        ? 'En cola: se está terminando el mapa de otro proyecto (se hacen de uno en uno). Puedes cerrar esta ventana y seguir trabajando.'
+        : `${snap.using ? `Lo hace ${snap.using}` : 'Preparando lo que se le enseña al modelo'}${snap.status === 'working' && snap.startedAt ? ` · ${mmss(now - snap.startedAt)}` : ''}. Suele tardar entre uno y tres minutos. Puedes cerrar esta ventana y seguir trabajando: el mapa estará listo al volver, y tu sesión de Claude no se entera.`;
     $('#wf-retry').hidden = !failed;
   }
   const parts = [];
@@ -280,6 +298,17 @@ function renderStatus() {
   $('#wf-redo').disabled = working;
 }
 
+// El stack tecnológico, en su esquina: nombre, versión y para qué se usa.
+function renderStack(stack) {
+  $('#wf-stack').hidden = !stack.length;
+  $('#wf-stack-list').replaceChildren(...stack.map((s) => {
+    const li = el('li');
+    li.append(el('b', '', s.nombre), el('span', 'v', s.version || ''), el('span', 'p', s.para || ''));
+    li.title = [s.nombre, s.version, s.para].filter(Boolean).join(' · ');
+    return li;
+  }));
+}
+
 function show(snap) {
   if (!current) return;
   current.key = snap.key;
@@ -289,9 +318,20 @@ function show(snap) {
   $('#wf-sum').textContent = snap.map ? snap.map.resumen : 'Cómo funciona este proyecto, en un mapa. Lo dibuja un modelo aparte, sin tocar tu sesión de Claude.';
   if (snap.map && current.drawnAt !== snap.at) {
     current.drawnAt = snap.at;
+    renderStack(snap.map.stack || []); // antes que el dibujo: «Ver todo» le deja su hueco
     draw(snap.map);
   }
   renderStatus();
+}
+
+// Al entrar en un proyecto (la pestaña activa cambia, también al arrancar), el mapa se
+// prepara en segundo plano: así, al pulsar «Workflow», ya está. Lo llama layout().
+let entered = null;
+export function enterProject() {
+  const tab = byId(S.activeId);
+  if (!tab || tab.id === entered) return;
+  entered = tab.id;
+  api.workflowEnter(tab.id, tab.cwd);
 }
 
 async function openWorkflow() {
@@ -302,6 +342,7 @@ async function openWorkflow() {
   L = null;
   svg().innerHTML = '';
   $('#wf-crumb').textContent = '';
+  $('#wf-stack').hidden = true;
   if (!dialog.open) dialog.showModal();
   let snap = null;
   try { snap = await api.workflowOpen(tab.id); } catch { /* sin respuesta */ }

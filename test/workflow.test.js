@@ -1,6 +1,7 @@
 // Botón «Workflow»: qué se envía al modelo, cómo se comprueba lo que devuelve, cuándo se
 // rehace el mapa y dónde va cada cosa al dibujarlo.
 process.env.CLAUDES_WORKFLOW_EVERY_MS = '60'; // el ciclo de 5 minutos, en milisegundos para las pruebas
+process.env.CLAUDES_WORKFLOW_ENTER_MS = '150'; // y los 30 s entre entradas en un proyecto
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -65,6 +66,8 @@ test('la guía del Workflow (SKILL.md) está completa y los dos motores la recib
   const map = validate(example);
   assert.equal(map.bloques.length, 5);
   assert.equal(map.flechas.length, 4);
+  assert.deepEqual(map.stack.map((s) => s.nombre), ['Python', 'FastAPI', 'PostgreSQL', 'Vue', 'Docker Compose']);
+  assert.equal(map.stack[0].version, '3.12');
   const full = fullPrompt({ name: 'tienda', text: 'MATERIAL', partial: false });
   const again = refreshPrompt({ name: 'tienda', text: 'CAMBIOS', map, changes: { added: [], modified: ['a.js'], removed: [] } });
   for (const prompt of [full, again]) assert.ok(prompt.includes(GUIDE.body));
@@ -196,6 +199,55 @@ test('el mapa se hace al abrir, se guarda, y solo se rehace si el proyecto cambi
   assert.equal(snap.status, 'ready');
   assert.equal(snap.map.bloques.length, 4);
   again.stop();
+});
+
+test('al entrar en un proyecto el mapa se prepara solo, de uno en uno y como mucho una vez cada poco', async (t) => {
+  const one = project(t);
+  const two = project(t);
+  const data = tempDir(t);
+  const asked = [];
+  let running = 0;
+  let most = 0;
+  const codex = {
+    chatgptLogin: async () => true,
+    askCodex: async ({ effort }) => {
+      running += 1;
+      most = Math.max(most, running);
+      asked.push(effort);
+      await wait(80);
+      running -= 1;
+      return { ok: true, text: JSON.stringify({ ...MAP, stack: [{ nombre: 'Node.js', version: '22', para: 'el servidor' }] }) };
+    },
+  };
+  const wf = createWorkflow({ codexState: { usable: () => true }, codex, model: 'm', findClaude: () => null, workDir: () => path.join(data, 'v'), dir: () => path.join(data, 'mapas') });
+  t.after(() => wf.stop());
+  wf.enter(one, 't1');
+  wf.enter(two, 't2'); // otro proyecto: espera su turno
+  wf.enter(one, 't1'); // otra vez enseguida: no cuenta
+  assert.ok(await until(() => wf.get(one)?.status === 'ready' && wf.get(two)?.status === 'ready'));
+  assert.deepEqual(asked, ['medium', 'medium']);
+  assert.equal(most, 1, 'nunca dos mapas a la vez');
+  assert.deepEqual(wf.get(one).map.stack, [{ nombre: 'Node.js', version: '22', para: 'el servidor' }]);
+  assert.equal(wf.get(one).next, 0, 'sin la ventana abierta no se programa la revisión de 5 minutos');
+  // Al volver a entrar, pasado el plazo y con cambios, se actualiza.
+  fs.writeFileSync(path.join(one, 'src', 'index.js'), 'cambio\n');
+  await wait(170);
+  wf.enter(one, 't1');
+  assert.ok(await until(() => asked.length === 3));
+  assert.equal(asked[2], 'low');
+});
+
+test('sin Codex y con el plan al 80 %, al entrar no se dibuja el primer mapa; al pulsar «Workflow» sí', async (t) => {
+  const dir = project(t);
+  const data = tempDir(t);
+  const wf = createWorkflow({ codexState: { usable: () => false }, codex: {}, model: 'm', findClaude: () => null, workDir: () => path.join(data, 'v'), dir: () => path.join(data, 'mapas'), planBusy: () => true });
+  t.after(() => wf.stop());
+  wf.enter(dir, 't1');
+  assert.ok(await until(() => wf.get(dir)?.paused));
+  assert.equal(wf.get(dir).status, 'idle');
+  wf.open(dir, 't1'); // el usuario lo pide: se intenta (aquí sin Claude Code, así que falla)
+  assert.ok(await until(() => wf.get(dir).status === 'error'));
+  assert.match(wf.get(dir).error, /Claude Code/);
 });
 
 test('sin Codex y con el plan de Claude al 80 %, el mapa no se rehace solo', async (t) => {
