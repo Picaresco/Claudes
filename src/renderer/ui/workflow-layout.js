@@ -232,7 +232,15 @@ export function layoutMap(map) {
   const innerRoutes = map.internas.map((f) => ({ f, a: byId.get(f.de), b: byId.get(f.a) })).filter((r) => r.a && r.b);
   const lanesIn = new Map(); // bloque → carriles usados
   const portsIn = new Map(); // tarjeta|lado → puntos
-  const port = (card, side, r) => { const key = `${card.id}|${side}`; if (!portsIn.has(key)) portsIn.set(key, []); portsIn.get(key).push(r); };
+  // Los que dan al pasillo se reparten por fila, contando las dos columnas juntas: así dos tramos
+  // horizontales del pasillo nunca van a la misma altura (salvo los dos extremos de una misma
+  // flecha entre piezas de la misma fila, que van rectos de lado a lado).
+  const keyOf = (card, side) => (side === 'left' || side === 'right' ? `${card.bloque}|fila${card.r}` : `${card.id}|${side}`);
+  const port = (card, side, r) => {
+    const key = keyOf(card, side);
+    if (!portsIn.has(key)) portsIn.set(key, []);
+    if (!portsIn.get(key).includes(r)) portsIn.get(key).push(r);
+  };
   for (const r of innerRoutes) {
     const { a, b } = r;
     if (a.c === b.c && Math.abs(a.r - b.r) === 1) {
@@ -249,7 +257,7 @@ export function layoutMap(map) {
     }
   }
   const at = (card, side, r) => {
-    const list = portsIn.get(`${card.id}|${side}`);
+    const list = portsIn.get(keyOf(card, side));
     const k = list.indexOf(r);
     if (side === 'bottom' || side === 'top') return { x: card.x + card.w / 2 + (k - (list.length - 1) / 2) * 18, y: side === 'bottom' ? card.y + card.h : card.y };
     return { x: side === 'right' ? card.x + card.w : card.x, y: card.y + 26 + ((k + 1) * (card.h - 36)) / (list.length + 1) };

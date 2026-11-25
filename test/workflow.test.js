@@ -180,6 +180,15 @@ test('el mapa se dibuja sin bloques montados y con cada flecha y tarjeta en su s
   for (const x of lanes) assert.ok(x > web.x && x < web.x + web.w, 'un carril se sale del bloque');
   const cardsWeb = L2.cards.filter((c) => c.bloque === 'web');
   for (const x of lanes) assert.ok(!cardsWeb.some((c) => x > c.x && x < c.x + c.w), 'un carril pasa por encima de una pieza');
+  // Y sus tramos horizontales nunca van a la misma altura que los de otra conexión.
+  const heights = L2.inner.filter((a) => a.bloque === 'web').map((a) => /^M[\d.]+ ([\d.]+)H[\d.]+V([\d.]+)H/.exec(a.d)).filter(Boolean);
+  const seenY = new Map();
+  heights.forEach((m, i) => {
+    for (const y of new Set([m[1], m[2]].map(Number))) {
+      assert.ok(!seenY.has(y) || seenY.get(y) === i, `dos conexiones a la misma altura (${y})`);
+      seenY.set(y, i);
+    }
+  });
 });
 
 test('el mapa se hace al abrir, se guarda, y solo se rehace si el proyecto cambia con la ventana abierta', async (t) => {
