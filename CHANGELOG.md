@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.29.1 — 2026-11-25
+- La ventana «Actualizar» vuelve a tener una sola barra de desplazamiento, la de la lista de cambios: si no cabe, la lista encoge y los botones se siguen viendo.
+
 ## 0.29.0 — 2026-11-25
 - En el «Workflow», al pasar el ratón por un bloque se iluminan sus conexiones y los bloques a los que llega, y lo demás se atenúa; dentro de un bloque, lo mismo con cada pieza. Así se sigue el flujo de una parte sin perderse.
 - De cerca (nivel de detalle), pulsar una pieza enseña su archivo principal en el Explorador, ya seleccionado. No lo abre con su programa: en Windows, abrir un .js o un .bat lo ejecutaría.
