@@ -21,7 +21,7 @@ Tú solo devuelves los datos; la app lo dibuja siempre igual. Saber cómo se dib
 - **Columnas por tipo, de izquierda a derecha:** persona → interfaz → núcleo → proceso → datos, con dos bloques como mucho por columna. Los servicios de internet (tipo externo) van en una banda arriba, sobre el bloque con el que hablan.
 - **Flechas entre bloques lejanos:** van por debajo de los bloques, cada una por su carril y con los tramos verticales separados y encajados, sin cruzarse. Cuantas menos, más claro: une bloques lejanos solo si es una conexión principal.
 - **Colores:** azul para los datos, ámbar para lo que se repite solo (↻), rojo discontinuo para las reglas que niegan o condicionan (✕).
-- **El stack tecnológico** se abre con su botón «Stack Tecnológico», en un recuadro aparte: con qué está hecho el proyecto.
+- **El stack tecnológico** se abre con su botón «Stack Tecnológico», violeta y en la esquina del mapa, en un recuadro aparte: con qué está hecho el proyecto.
 - **Lo que no cabe se corta.** Respeta las longitudes de cada campo. El título y el resumen de cada bloque se ajustan a su tamaño: un nombre corto se lee mejor.
 
 ## Método

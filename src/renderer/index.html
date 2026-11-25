@@ -274,7 +274,6 @@
         <span><i class="wf-sw" data-k="regla"></i>✕ regla o corte</span>
       </div>
       <div class="wf-tools">
-        <button id="wf-stack-btn" type="button" class="btn" aria-controls="wf-stack" aria-expanded="false" title="Con qué está hecho el proyecto" hidden>Stack Tecnológico</button>
         <button id="wf-out" type="button" class="btn" aria-label="Alejar" title="Alejar (−)">−</button>
         <div id="wf-lvl" class="wf-lvl" aria-live="polite"><i></i><i></i><i></i><i></i><i></i><span>Vista general</span></div>
         <button id="wf-in" type="button" class="btn" aria-label="Acercar" title="Acercar (+)">+</button>
@@ -288,6 +287,8 @@
     <div id="wf-stage" class="wf-stage">
       <svg id="wf-map" role="img" aria-label="Mapa de cómo funciona el proyecto" data-lod="1"></svg>
       <div id="wf-crumb" class="wf-crumb"></div>
+      <!-- El stack tecnológico: botón flotante en la esquina del mapa, de un color que no usa el mapa. -->
+      <button id="wf-stack-btn" type="button" class="wf-stack-btn" aria-controls="wf-stack" aria-expanded="false" title="Con qué está hecho el proyecto" hidden><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.8 14.5 5 8 8.2 1.5 5z"/><path d="M1.5 8 8 11.2 14.5 8"/><path d="M1.5 11 8 14.2 14.5 11"/></svg><span>Stack Tecnológico</span></button>
       <div id="wf-stack" class="wf-stack" hidden>
         <div class="wf-stack-head">Stack Tecnológico</div>
         <ul id="wf-stack-list"></ul>

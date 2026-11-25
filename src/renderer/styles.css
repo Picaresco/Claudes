@@ -770,8 +770,12 @@ dialog .btn-primary { background: var(--txt); }
 .wf-crumb b { color: var(--ok); font-weight: 600; }
 .wf-hint { bottom: 12px; left: 12px; }
 /* El stack tecnológico: recuadro que abre su botón, arriba a la derecha y encima del mapa. */
-.wf-stack { position: absolute; top: 12px; right: 12px; width: 300px; max-height: calc(100% - 90px); overflow: auto; background: var(--bg1); border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
-#wf-stack-btn[aria-expanded="true"] { border-color: var(--dim); }
+.wf-stack { position: absolute; top: 62px; right: 12px; width: 300px; max-height: calc(100% - 140px); overflow: auto; background: var(--bg1); border: 1px solid #8B5CF6; border-radius: 10px; padding: 10px 12px 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+/* El botón del stack: flotante en la esquina del mapa, violeta (un color que el mapa no usa). */
+.wf-stack-btn { position: absolute; top: 12px; right: 12px; display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 13px; border: 0; border-radius: 999px; background: linear-gradient(135deg, #A855F7, #7C3AED); color: #fff; font: 600 14px var(--sans); cursor: pointer; box-shadow: 0 0 0 1px rgba(196, 160, 255, 0.35), 0 6px 22px rgba(139, 92, 246, 0.45); transition: transform 0.15s, box-shadow 0.15s; }
+.wf-stack-btn:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(216, 190, 255, 0.6), 0 8px 28px rgba(139, 92, 246, 0.6); }
+.wf-stack-btn:focus-visible { outline: 2px solid #E9D5FF; outline-offset: 3px; }
+.wf-stack-btn[aria-expanded="true"] { background: linear-gradient(135deg, #9333EA, #6D28D9); }
 .wf-stack-head { font-size: 12px; font-weight: 600; color: var(--dim); margin-bottom: 6px; }
 .wf-stack ul { margin: 0; padding: 0; list-style: none; }
 .wf-stack li { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 6px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 12px; }

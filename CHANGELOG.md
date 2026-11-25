@@ -6,6 +6,7 @@ sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambi
 
 ## 0.28.2 — 2026-11-25
 - En el «Workflow», las líneas ya no van casi pegadas: las flechas que pasan por debajo de los bloques llevan sus tramos verticales bien separados y encajados unos dentro de otros, sin cruzarse, y dentro de cada bloque el pasillo entre piezas es más ancho y cada conexión va por su carril y a su propia altura, para seguirla con la vista.
+- El botón «Stack Tecnológico» pasa a la esquina del mapa, en violeta para que se vea, y su recuadro se abre justo debajo.
 
 ## 0.28.1 — 2026-11-25
 - Los mapas del «Workflow» hechos con una versión anterior se completan solos al entrar en el proyecto o abrir la ventana, con el modelo rápido y sin rehacerlos desde cero: así aparece el botón «Stack Tecnológico» también en los proyectos que ya tenían mapa.
