@@ -322,8 +322,10 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
       p.pending = p.map ? changes.count : 0;
       p.paused = false;
       const saving = choose().name === 'claude' && planBusy(); // sin Codex y con el plan justo
-      if (!p.map && !(auto && saving)) { await generate(p, 'full', { manifest }); return; }
-      if (!p.map || (changes.count && saving)) {
+      // Sin mapa, o hecho con otra versión de la guía (le faltaría lo nuevo, como el stack): entero.
+      const stale = !p.map || p.guide !== GUIDE.hash;
+      if (stale && !(auto && saving)) { await generate(p, 'full', { manifest }); return; }
+      if (stale || (changes.count && saving)) {
         p.paused = true; // se hará cuando el plan tenga margen (o al pulsar «Workflow» o «Rehacer»)
         if (!p.map && p.status === 'working') p.status = 'idle';
       } else if (changes.count) { await generate(p, 'refresh', { manifest, changes }); return; }

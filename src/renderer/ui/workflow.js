@@ -295,7 +295,8 @@ function showStack(open) {
 function renderStack(stack) {
   const button = $('#wf-stack-btn');
   button.hidden = !stack.length;
-  button.textContent = `Stack tecnológico · ${stack.length}`;
+  button.textContent = 'Stack Tecnológico';
+  button.title = `Con qué está hecho el proyecto: ${stack.length} ${stack.length === 1 ? 'pieza' : 'piezas'}`;
   showStack(false);
   $('#wf-stack-list').replaceChildren(...stack.map((s) => {
     const li = el('li');

@@ -199,6 +199,18 @@ test('el mapa se hace al abrir, se guarda, y solo se rehace si el proyecto cambi
   assert.equal(snap.status, 'ready');
   assert.equal(snap.map.bloques.length, 4);
   again.stop();
+  // Un mapa hecho con otra versión de la guía (p. ej. sin stack) se rehace entero al entrar.
+  const file = fs.readdirSync(path.join(data, 'mapas')).find((f) => f.endsWith('.json'));
+  const saved = JSON.parse(fs.readFileSync(path.join(data, 'mapas', file), 'utf8'));
+  fs.writeFileSync(path.join(data, 'mapas', file), JSON.stringify({ ...saved, guide: 'antigua' }));
+  const before = asked.length;
+  const third = make();
+  third.enter(dir, 't1');
+  assert.ok(await until(() => asked.length === before + 1));
+  assert.equal(asked[before].effort, 'medium');
+  assert.match(asked[before].prompt, /Dibuja el mapa/);
+  assert.ok(await until(() => third.get(dir).status === 'ready' && !third.get(dir).oldGuide));
+  third.stop();
 });
 
 test('al entrar en un proyecto el mapa se prepara solo, de uno en uno y como mucho una vez cada poco', async (t) => {
