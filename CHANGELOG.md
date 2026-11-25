@@ -5,7 +5,9 @@ la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
 ## 0.28.1 — 2026-11-25
-- Los mapas del «Workflow» hechos con una versión anterior se rehacen solos al entrar en el proyecto o abrir la ventana: así aparece el botón «Stack Tecnológico» también en los proyectos que ya tenían mapa.
+- Los mapas del «Workflow» hechos con una versión anterior se completan solos al entrar en el proyecto o abrir la ventana, con el modelo rápido y sin rehacerlos desde cero: así aparece el botón «Stack Tecnológico» también en los proyectos que ya tenían mapa.
+- Cada tarea del «Workflow» usa su modelo: el primer mapa y «Rehacer», el de calidad (Codex con razonamiento medio o Sonnet); las actualizaciones, el rápido (Codex con razonamiento bajo o Haiku).
+- Al actualizar un mapa ya no se pierden las reglas y bucles de sus piezas.
 
 ## 0.28.0 — 2026-11-25
 - El mapa del «Workflow» se prepara solo al entrar en un proyecto (al abrir su pestaña o cambiar a ella): al pulsar «Workflow» ya está, sin esperar. Cada vez que vuelves a entrar se actualiza si el proyecto ha cambiado; con la ventana abierta, cada 5 minutos si hay cambios. Varios proyectos se hacen de uno en uno, sin tocar tu sesión de Claude.

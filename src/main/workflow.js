@@ -37,11 +37,14 @@ const clip = (value, max) => {
 const ident = (value) => String(value ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const list = (value) => (Array.isArray(value) ? value : []);
 
-// El mapa, limpio: { resumen, bloques, modulos, flechas, internas, reglas } o null si no sirve.
-// `sources`: rutas que se le enseñaron; una regla o un bucle sin una de ellas no entra.
-function validate(raw, sources = null) {
+// El mapa, limpio: { resumen, bloques, modulos, flechas, internas, reglas, stack } o null si no
+// sirve. `sources`: rutas que se le enseñaron; una regla o un bucle sin una de ellas no entra.
+// `prev`: el mapa del que se parte al actualizar; sus reglas y bucles (ya comprobados, sin
+// «fuente») se conservan si el modelo los devuelve tal cual.
+function validate(raw, sources = null, prev = null) {
   if (!raw || typeof raw !== 'object') return null;
   const known = sources ? new Set([...sources].map((s) => s.toLowerCase())) : null;
+  const kept = new Set((prev && Array.isArray(prev.modulos) ? prev.modulos : []).flatMap((m) => [...list(m.reglas), ...list(m.bucles)]));
   const cited = (src) => {
     if (!known) return true;
     const s = String(src || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/:\d+.*$/, '').toLowerCase();
@@ -72,7 +75,7 @@ function validate(raw, sources = null) {
     if (perBlock[block] > LIMITS.modules) continue;
     modIds.add(id);
     // { texto, fuente } del modelo, o el texto solo si viene de un mapa ya comprobado (sources null).
-    const marks = (items) => list(items).filter((r) => r && (typeof r === 'string' ? !known : cited(r.fuente))).slice(0, LIMITS.marks).map((r) => clip(typeof r === 'string' ? r : r.texto, 36)).filter(Boolean);
+    const marks = (items) => list(items).filter((r) => r && (typeof r === 'string' ? !known || kept.has(clip(r, 36)) : cited(r.fuente))).slice(0, LIMITS.marks).map((r) => clip(typeof r === 'string' ? r : r.texto, 36)).filter(Boolean);
     modules.push({
       id, bloque: block, nombre: clip(m.nombre || id, 22), sub: clip(m.sub || list(m.archivos)[0] || '', 28),
       detalle: list(m.detalle).map((l) => clip(l, 40)).filter(Boolean).slice(0, LIMITS.lines),
@@ -130,7 +133,10 @@ function validate(raw, sources = null) {
 // La guía (src/workflow/SKILL.md): el método, la forma de escribir, cómo se presenta y el
 // formato JSON, en un solo sitio. Los dos motores reciben exactamente ese texto, así que el
 // mapa se hace y se presenta siempre igual. No es una skill de la sesión principal: esa no la
-// carga, para no gastarle contexto ni distraerla. Cada mapa guarda con qué versión se hizo.
+// carga, para no gastarle contexto ni distraerla.
+// Cada mapa guarda el número de `version` de la guía con el que se hizo. Solo ese número
+// cuenta: retocar el texto no toca los mapas hechos; subirlo los pone al día la próxima vez que
+// se entra en cada proyecto, completándolos con el modelo rápido (no se rehacen desde cero).
 const GUIDE_FILE = path.join(__dirname, '..', 'workflow', 'SKILL.md');
 function loadGuide(file = GUIDE_FILE) {
   const text = fs.readFileSync(file, 'utf8').replace(/\r/g, '');
@@ -138,7 +144,7 @@ function loadGuide(file = GUIDE_FILE) {
   const head = m ? m[1] : '';
   const body = (m ? m[2] : text).trim();
   const field = (key) => (new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(head) || [])[1] || '';
-  return { name: field('name'), version: field('version'), hash: crypto.createHash('sha1').update(body).digest('hex').slice(0, 10), body };
+  return { name: field('name'), version: field('version'), number: Number(field('version')) || 1, body };
 }
 const GUIDE = loadGuide();
 
@@ -150,12 +156,16 @@ function fullPrompt({ name, text, partial }) {
   ].join('\n');
 }
 
-function refreshPrompt({ name, text, map, changes }) {
+// Actualizar un mapa: con lo que ha cambiado y, si se hizo con una guía anterior (`from`),
+// completándolo para que cumpla la de ahora. Nunca desde cero.
+function refreshPrompt({ name, text, map, changes, from = null }) {
+  const touched = [...changes.modified, ...changes.added];
   return [
     `Sigue esta guía de ClaudHome («${GUIDE.name}», versión ${GUIDE.version}):`, '', GUIDE.body, '', '---', '',
-    `Este es el mapa actual de cómo funciona el proyecto «${name}». Desde que se hizo han cambiado estos archivos: ${[...changes.modified, ...changes.added].slice(0, 60).join(', ') || 'ninguno'}${changes.removed.length ? `; se han borrado: ${changes.removed.slice(0, 40).join(', ')}` : ''}.`,
-    'Actualiza el mapa con lo que muestran los archivos cambiados (abajo). Cambia solo lo necesario y conserva los mismos id. Si lo esencial no cambia, devuelve el mismo mapa.',
-    '', 'Mapa actual:', JSON.stringify(map), '', 'Archivos cambiados (extractos):', '', text,
+    `Este es el mapa actual de cómo funciona el proyecto «${name}».${touched.length || changes.removed.length ? ` Desde que se hizo han cambiado estos archivos: ${touched.slice(0, 60).join(', ') || 'ninguno'}${changes.removed.length ? `; se han borrado: ${changes.removed.slice(0, 40).join(', ')}` : ''}.` : ''}`,
+    ...(from ? [`Se hizo con la versión ${from} de la guía y ahora es la ${GUIDE.version}: complétalo para que cumpla la guía de arriba (por ejemplo, el stack tecnológico si falta, sacado de los manifiestos), sin rehacer lo demás.`] : []),
+    'Actualiza el mapa con lo que muestran los archivos de abajo. Cambia solo lo necesario y conserva los mismos id; las reglas y bucles que no cambien, devuélvelos tal cual. Si lo esencial no cambia, devuelve el mismo mapa.',
+    '', 'Mapa actual:', JSON.stringify(map), '', 'Archivos (extractos; los manifiestos siempre van):', '', text,
   ].join('\n');
 }
 
@@ -182,7 +192,10 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
       const saved = JSON.parse(fs.readFileSync(fileOf(folder), 'utf8'));
       // Se vuelve a comprobar al cargarlo: si los límites han cambiado, se aplican.
       const map = saved && saved.schema === SCHEMA ? validate(saved.map) : null;
-      if (map) Object.assign(p, { map, manifest: saved.manifest || {}, at: saved.at || 0, engine: saved.engine || null, partial: Boolean(saved.partial), guide: saved.guide || null, status: 'ready' });
+      if (map) Object.assign(p, { map, manifest: saved.manifest || {}, at: saved.at || 0, engine: saved.engine || null, partial: Boolean(saved.partial), status: 'ready',
+        // La versión de la guía con la que se hizo (los mapas de la 0.27 no la guardan: la 1,
+        // o la 2 si ya tienen stack).
+        guideVersion: Number(saved.guideVersion) || (map.stack.length ? 2 : 1) });
     } catch { /* todavía sin mapa */ }
     projects.set(folder, p);
     return p;
@@ -193,7 +206,7 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
       fs.mkdirSync(dir(), { recursive: true });
       const file = fileOf(p.folder);
       const tmp = `${file}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ schema: SCHEMA, folder: p.folder, map: p.map, manifest: p.manifest, at: p.at, engine: p.engine, partial: p.partial, guide: p.guide }));
+      fs.writeFileSync(tmp, JSON.stringify({ schema: SCHEMA, folder: p.folder, map: p.map, manifest: p.manifest, at: p.at, engine: p.engine, partial: p.partial, guideVersion: p.guideVersion }));
       fs.renameSync(tmp, file); // de una vez: un corte no deja un mapa a medias
     } catch (err) { log(`Workflow: no se ha podido guardar el mapa (${err.message})`); }
   }
@@ -202,7 +215,7 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
     key: p.key, folder: p.folder, map: p.map, at: p.at, engine: p.engine, partial: p.partial, status: p.status, error: p.error,
     kind: p.kind, startedAt: p.startedAt, checkedAt: p.checkedAt, next: p.open && p.timer ? p.nextAt : 0, masked: p.masked,
     paused: Boolean(p.paused), pending: p.pending || 0, using: p.controller ? p.using || null : null, waiting: Boolean(p.waiting),
-    oldGuide: Boolean(p.map && p.guide !== GUIDE.hash), // hecho con otra versión de la guía
+    oldGuide: Boolean(p.map && (p.guideVersion || 1) < GUIDE.number), // hecho con una guía anterior
   });
   const update = (p) => send('workflow:update', snapshot(p));
 
@@ -244,8 +257,9 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
     };
   }
 
-  // Hace el mapa (kind 'full') o lo rehace con lo que ha cambiado (kind 'refresh').
-  async function generate(p, kind, { manifest, changes = null } = {}) {
+  // Hace el mapa (kind 'full': modelo de calidad) o lo actualiza (kind 'refresh': modelo rápido)
+  // con lo que ha cambiado y, si `from`, completándolo para la guía de ahora.
+  async function generate(p, kind, { manifest, changes = null, from = null } = {}) {
     if (p.controller || stopped) return;
     const controller = new AbortController();
     p.controller = controller;
@@ -259,7 +273,7 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
       const only = kind === 'refresh' ? new Set([...changes.added, ...changes.modified]) : null;
       const shown = await digest.material(p.folder, { kind, only });
       const sources = new Set(kind === 'refresh' ? [...shown.used, ...Object.keys(manifest)] : shown.used);
-      const prompt = kind === 'full' ? fullPrompt({ name, text: shown.text, partial: shown.partial }) : refreshPrompt({ name, text: shown.text, map: p.map, changes });
+      const prompt = kind === 'full' ? fullPrompt({ name, text: shown.text, partial: shown.partial }) : refreshPrompt({ name, text: shown.text, map: p.map, changes, from });
       const motor = choose();
       const what = motor.label(kind);
       p.using = what;
@@ -269,13 +283,13 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
       if (record) record.record({ tabId: p.tabId, kind: 'workflow', target: p.folder, detail: `${what} · ${shown.used.length} archivos${shown.masked ? ` · ${shown.masked} valores con pinta de clave tapados` : ''}`, dest: motor.dest, external: true, size: shown.size });
       const answer = await motor.run(prompt, kind, controller.signal);
       if (controller.signal.aborted || answer.error === 'cancelado') { p.status = p.map ? 'ready' : 'idle'; return; }
-      const map = answer.text ? validate(jsonIn(answer.text), sources) : null;
+      const map = answer.text ? validate(jsonIn(answer.text), sources, kind === 'refresh' ? p.map : null) : null;
       if (!map) throw new Error(answer.error || 'La respuesta no tiene un mapa que se pueda dibujar.');
       p.map = map;
       p.manifest = manifest;
       p.at = Date.now();
       p.engine = what;
-      if (kind === 'full') p.guide = GUIDE.hash; // al actualizar se conserva la del mapa de partida
+      if (kind === 'full' || from) p.guideVersion = GUIDE.number;
       if (kind === 'full') p.partial = shown.partial; // al actualizar solo se envía lo cambiado
       p.masked = shown.masked;
       p.pending = 0;
@@ -322,13 +336,13 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
       p.pending = p.map ? changes.count : 0;
       p.paused = false;
       const saving = choose().name === 'claude' && planBusy(); // sin Codex y con el plan justo
-      // Sin mapa, o hecho con otra versión de la guía (le faltaría lo nuevo, como el stack): entero.
-      const stale = !p.map || p.guide !== GUIDE.hash;
-      if (stale && !(auto && saving)) { await generate(p, 'full', { manifest }); return; }
-      if (stale || (changes.count && saving)) {
+      // Hecho con una guía anterior (por número de versión): se completa, no se rehace.
+      const from = p.map && (p.guideVersion || 1) < GUIDE.number ? (p.guideVersion || 1) : null;
+      if (!p.map && !(auto && saving)) { await generate(p, 'full', { manifest }); return; }
+      if (!p.map || ((changes.count || from) && saving)) {
         p.paused = true; // se hará cuando el plan tenga margen (o al pulsar «Workflow» o «Rehacer»)
         if (!p.map && p.status === 'working') p.status = 'idle';
-      } else if (changes.count) { await generate(p, 'refresh', { manifest, changes }); return; }
+      } else if (changes.count || from) { await generate(p, 'refresh', { manifest, changes, from }); return; }
       p.checkedAt = Date.now();
       schedule(p);
       update(p);

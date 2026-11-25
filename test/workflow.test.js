@@ -60,6 +60,7 @@ const MAP = {
 test('la guía del Workflow (SKILL.md) está completa y los dos motores la reciben entera', () => {
   assert.equal(GUIDE.name, 'workflow-de-proyecto');
   assert.match(GUIDE.version, /^\d+$/);
+  assert.equal(GUIDE.number, Number(GUIDE.version));
   for (const part of ['## Método', '## Cómo escribir', '## Formato', '## Ejemplo', '"flechas"', 'persona | interfaz | nucleo | proceso | datos | externo']) assert.ok(GUIDE.body.includes(part), `falta «${part}»`);
   // El ejemplo de la guía es un mapa válido: lo que se pide se puede dibujar.
   const example = JSON.parse(/## Ejemplo[\s\S]*?```\n([\s\S]*?)\n```/.exec(GUIDE.body)[1]);
@@ -199,18 +200,30 @@ test('el mapa se hace al abrir, se guarda, y solo se rehace si el proyecto cambi
   assert.equal(snap.status, 'ready');
   assert.equal(snap.map.bloques.length, 4);
   again.stop();
-  // Un mapa hecho con otra versión de la guía (p. ej. sin stack) se rehace entero al entrar.
+  // Un mapa hecho con una versión anterior de la guía (p. ej. sin stack) se completa al entrar,
+  // con el modelo rápido y sin rehacerlo desde cero. Retocar el texto de la guía no cuenta: solo
+  // el número de versión.
   const file = fs.readdirSync(path.join(data, 'mapas')).find((f) => f.endsWith('.json'));
   const saved = JSON.parse(fs.readFileSync(path.join(data, 'mapas', file), 'utf8'));
-  fs.writeFileSync(path.join(data, 'mapas', file), JSON.stringify({ ...saved, guide: 'antigua' }));
+  assert.equal(saved.guideVersion, GUIDE.number);
+  fs.writeFileSync(path.join(data, 'mapas', file), JSON.stringify({ ...saved, guideVersion: 1 }));
   const before = asked.length;
   const third = make();
   third.enter(dir, 't1');
   assert.ok(await until(() => asked.length === before + 1));
-  assert.equal(asked[before].effort, 'medium');
-  assert.match(asked[before].prompt, /Dibuja el mapa/);
+  assert.equal(asked[before].effort, 'low');
+  assert.match(asked[before].prompt, /Se hizo con la versión 1 de la guía/);
+  assert.match(asked[before].prompt, /=== package\.json ===/); // los manifiestos, para sacar el stack
   assert.ok(await until(() => third.get(dir).status === 'ready' && !third.get(dir).oldGuide));
   third.stop();
+});
+
+test('al actualizar se conservan las reglas y bucles ya comprobados; uno nuevo sin archivo, no', () => {
+  const prev = validate(MAP, new Set(['src/index.js']));
+  assert.deepEqual(prev.modulos[0].reglas, ['Solo pedidos válidos']);
+  const echoed = { ...MAP, modulos: [{ ...MAP.modulos[0], reglas: ['Solo pedidos válidos', 'Inventada sin archivo'] }] };
+  const again = validate(echoed, new Set(['src/db.js']), prev);
+  assert.deepEqual(again.modulos[0].reglas, ['Solo pedidos válidos']);
 });
 
 test('al entrar en un proyecto el mapa se prepara solo, de uno en uno y como mucho una vez cada poco', async (t) => {

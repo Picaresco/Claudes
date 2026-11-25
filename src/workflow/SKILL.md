@@ -2,6 +2,8 @@
 name: workflow-de-proyecto
 description: Cómo hace ClaudHome el mapa «Workflow» de un proyecto (bloques, piezas, flechas, bucles y reglas) y en qué formato lo devuelve. La recibe el modelo aparte que dibuja el mapa (Codex o Claude en su propio proceso); la sesión principal de Claude no la carga.
 version: 2
+# Sube «version» solo si el cambio debe llegar a los mapas ya hechos: se completan al entrar en
+# cada proyecto (Codex bajo o Haiku). Retocar el texto sin subirla no toca los mapas hechos.
 ---
 
 # El mapa «Workflow» de un proyecto

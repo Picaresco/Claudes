@@ -280,7 +280,7 @@ function renderStatus() {
     else if (snap.next) parts.push(`busca cambios en ${mmss(snap.next - now)}`);
   }
   if (snap.map && snap.partial) parts.push('proyecto grande: hecho con la parte principal del código');
-  if (snap.map && snap.oldGuide && !working) parts.push('hecho con una guía anterior: «Rehacer» lo pone al día');
+  if (snap.map && snap.oldGuide && !working) parts.push('hecho con una guía anterior: se completa solo al entrar en el proyecto');
   $('#wf-status').textContent = parts.join(' · ');
   $('#wf-status').hidden = !parts.length;
   $('#wf-redo').disabled = working;
