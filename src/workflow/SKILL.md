@@ -17,7 +17,7 @@ Tú solo devuelves los datos; la app lo dibuja siempre igual. Saber cómo se dib
 - **Tres niveles de zoom.** De lejos se ven los bloques, sus flechas y las etiquetas de las flechas. Al acercarse aparecen las piezas (módulos) de cada bloque, las flechas entre piezas y la regla del bloque. Más cerca, el detalle de cada pieza: sus frases, sus reglas (✕), sus bucles (↻) y sus archivos.
 - **Columnas por tipo, de izquierda a derecha:** persona → interfaz → núcleo → proceso → datos. Los servicios de internet (tipo externo) van en una banda arriba, sobre el bloque con el que hablan.
 - **Colores:** azul para los datos, ámbar para lo que se repite solo (↻), rojo discontinuo para las reglas que niegan o condicionan (✕).
-- **El stack tecnológico** va en una esquina fija, a la vista en todos los niveles: con qué está hecho el proyecto.
+- **El stack tecnológico** se abre con su botón, en un recuadro aparte: con qué está hecho el proyecto.
 - **Lo que no cabe se corta.** Respeta las longitudes de cada campo.
 
 ## Método

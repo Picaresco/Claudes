@@ -54,11 +54,15 @@ function draw(map) {
   const blocks = L.blocks.map((b) => {
     const [stroke, fill] = BLOCK[b.tipo] || BLOCK.nucleo;
     // El resumen, grande: es lo que se lee en la vista general (las piezas aparecen al acercarse).
-    const lines = wrap(b.resumen, Math.max(12, Math.floor((b.w - 40) / 15)), 4);
+    // Título y resumen, al tamaño que quepa en el bloque (un bloque estrecho, letra más pequeña).
+    const tfs = Math.max(18, Math.min(34, Math.floor((b.w - 36) / (Math.max(1, [...b.nombre].length) * 0.58))));
+    const sfs = b.w < 300 ? 24 : 28;
+    const lh = sfs * 1.35;
+    const lines = wrap(b.resumen, Math.max(10, Math.floor((b.w - 36) / (sfs * 0.53))), Math.max(1, Math.min(4, Math.floor((b.h - 84) / lh))));
     const mid = b.y + 70 + (b.h - 70) / 2;
-    const sum = lines.map((l, i) => `<text class="wf-sum" x="${b.x + b.w / 2}" y="${mid + 10 + (i - (lines.length - 1) / 2) * 38}" text-anchor="middle">${esc(l)}</text>`).join('');
+    const sum = lines.map((l, i) => `<text class="wf-sum" x="${b.x + b.w / 2}" y="${mid + 10 + (i - (lines.length - 1) / 2) * lh}" text-anchor="middle" style="font-size:${sfs}px">${esc(l)}</text>`).join('');
     const zoom = b.n ? ` data-zoom="${b.x} ${b.y} ${b.w} ${b.h}"` : '';
-    return `<g class="wf-blk${b.n ? ' wf-zoomable' : ''}" data-id="${esc(b.id)}" data-name="${esc(b.nombre)}"${zoom}><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="${fill}" stroke="${stroke}" stroke-opacity=".6"/><text class="wf-bt" x="${b.x + 18}" y="${b.y + 46}" style="fill:${stroke === '#A9AFB9' ? '#E7E9EC' : stroke}">${esc(b.nombre)}</text>${b.n ? `<g class="wf-lod1">${sum}</g>` : sum}</g>`; // sin piezas, el resumen se queda a la vista
+    return `<g class="wf-blk${b.n ? ' wf-zoomable' : ''}" data-id="${esc(b.id)}" data-name="${esc(b.nombre)}"${zoom}><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="${fill}" stroke="${stroke}" stroke-opacity=".6"/><text class="wf-bt" x="${b.x + 18}" y="${b.y + 46}" style="fill:${stroke === '#A9AFB9' ? '#E7E9EC' : stroke};font-size:${tfs}px">${esc(b.nombre)}</text>${b.n ? `<g class="wf-lod1">${sum}</g>` : sum}</g>`; // sin piezas, el resumen se queda a la vista
   }).join('');
   const ext = L.ext.map((e) => `<g class="wf-blk wf-ext" data-id="${esc(e.id)}"><rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" rx="12"/><text class="wf-et" x="${e.x + 16}" y="${e.y + 42}">${esc(e.nombre)}</text><text class="wf-es" x="${e.x + 16}" y="${e.y + 76}">${esc(wrap(e.resumen, 21, 1)[0] || '')}</text></g>`).join('');
   const arrow = (a, cls = '') => {
@@ -94,26 +98,10 @@ function fitBox() {
   const W = L ? L.W : 1600;
   const H = L ? L.H : 900;
   const pad = 1.18; // margen para la ayuda, el estado y las migas, que van encima del mapa
-  const box = (reserve) => {
-    const room = Math.max(1, r.width - reserve);
-    const px = Math.min(room / (W * pad), r.height / (H * pad));
-    const w = r.width / px;
-    return { x: W / 2 - room / 2 / px, y: H / 2 - w / ar / 2, w, h: w / ar, px };
-  };
-  // El stack ocupa la esquina de arriba a la derecha: el mapa se aparta lo justo, y solo si
-  // algún bloque quedaría debajo de él.
-  const panel = $('#wf-stack');
-  if (!L || panel.hidden || r.width <= 900) return box(0);
-  const pr = panel.getBoundingClientRect();
-  const left = pr.left - r.left - 12;
-  const bottom = pr.bottom - r.top + 12;
-  const boxes = [...L.blocks, ...L.ext];
-  for (let reserve = 0; reserve <= r.width - left; reserve += 24) {
-    const v = box(reserve);
-    const hit = boxes.some((b) => (b.x + b.w - v.x) * v.px > left && (b.y - v.y) * v.px < bottom);
-    if (!hit) return v;
-  }
-  return box(r.width - left);
+  if (ar > W / H) { const h = H * pad; const w = h * ar; return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
+  const w = W * pad;
+  const h = w / ar;
+  return { x: (W - w) / 2, y: (H - h) / 2, w, h };
 }
 
 // El zoom de cada nivel: el primero, el mapa entero; cada uno, 1,6 veces el anterior y, como
@@ -298,9 +286,17 @@ function renderStatus() {
   $('#wf-redo').disabled = working;
 }
 
-// El stack tecnológico, en su esquina: nombre, versión y para qué se usa.
+// El stack tecnológico, tras su botón (cerrado de entrada: el mapa usa toda la ventana):
+// nombre, versión y para qué se usa.
+function showStack(open) {
+  $('#wf-stack').hidden = !open;
+  $('#wf-stack-btn').setAttribute('aria-expanded', String(open));
+}
 function renderStack(stack) {
-  $('#wf-stack').hidden = !stack.length;
+  const button = $('#wf-stack-btn');
+  button.hidden = !stack.length;
+  button.textContent = `Stack tecnológico · ${stack.length}`;
+  showStack(false);
   $('#wf-stack-list').replaceChildren(...stack.map((s) => {
     const li = el('li');
     li.append(el('b', '', s.nombre), el('span', 'v', s.version || ''), el('span', 'p', s.para || ''));
@@ -318,8 +314,8 @@ function show(snap) {
   $('#wf-sum').textContent = snap.map ? snap.map.resumen : 'Cómo funciona este proyecto, en un mapa. Lo dibuja un modelo aparte, sin tocar tu sesión de Claude.';
   if (snap.map && current.drawnAt !== snap.at) {
     current.drawnAt = snap.at;
-    renderStack(snap.map.stack || []); // antes que el dibujo: «Ver todo» le deja su hueco
     draw(snap.map);
+    renderStack(snap.map.stack || []);
   }
   renderStatus();
 }
@@ -342,7 +338,8 @@ async function openWorkflow() {
   L = null;
   svg().innerHTML = '';
   $('#wf-crumb').textContent = '';
-  $('#wf-stack').hidden = true;
+  showStack(false);
+  $('#wf-stack-btn').hidden = true;
   if (!dialog.open) dialog.showModal();
   let snap = null;
   try { snap = await api.workflowOpen(tab.id); } catch { /* sin respuesta */ }
@@ -368,6 +365,17 @@ export function wireWorkflow() {
   };
   $('#wf-redo').addEventListener('click', redo);
   $('#wf-retry').addEventListener('click', redo);
+  // El recuadro del stack: se abre y se cierra con su botón, al pulsar fuera o con Esc (que
+  // entonces no cierra la ventana).
+  $('#wf-stack-btn').addEventListener('click', () => showStack($('#wf-stack').hidden));
+  dialog.addEventListener('pointerdown', (e) => {
+    if (!$('#wf-stack').hidden && !e.target.closest('#wf-stack, #wf-stack-btn')) showStack(false);
+  });
+  dialog.addEventListener('cancel', (e) => {
+    if ($('#wf-stack').hidden) return;
+    e.preventDefault();
+    showStack(false);
+  });
   dialog.addEventListener('keydown', (e) => {
     if (e.target.closest('button')) return;
     if (e.key === '+' || e.key === '=') zoomStep(1);
