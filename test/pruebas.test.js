@@ -26,6 +26,24 @@ test('reconoce las órdenes que pasan pruebas, en sus formas habituales', () => 
   assert.equal(isTestCommand('& "C:\\Program Files\\nodejs\\npm.cmd" test', { shell: 'powershell' }), true);
 });
 
+test('reconoce las pruebas lanzadas con Start-Process (con la salida a un archivo) y con cmd //c', () => {
+  const ps = { shell: 'powershell' };
+  const line = '$o = "C:\\tmp\\salida.txt"; $p = Start-Process cmd -ArgumentList \'/c\',\'npm test\' -NoNewWindow -RedirectStandardOutput $o -RedirectStandardError "$o.err" -PassThru; if (-not $p.WaitForExit(240000)) { Stop-Process -Id $p.Id -Force }; Get-Content $o | Select-String \'^ℹ (pass|fail)\'';
+  for (const command of [line, "Start-Process -FilePath node -ArgumentList '--test','test/a.test.js' -Wait", "start npm -ArgumentList 'test' -Wait", "saps pwsh -ArgumentList '-Command','npm test' -Wait"]) {
+    assert.equal(isTestCommand(command, ps), true, command);
+  }
+  assert.equal(isTestCommand('cmd //c npm test'), true); // desde Git Bash
+  assert.equal(isTestCommand("Start-Process notepad -ArgumentList 'leeme.txt'", ps), false);
+  assert.equal(isTestCommand('Start-Process cmd -ArgumentList \'/c\',\'echo npm test\'', ps), false);
+  // Start-Process termina bien aunque fallen: el éxito o el fallo, por lo que se ve de su salida.
+  const [run] = testRuns(line, ps);
+  assert.equal(outcome(run, { output: 'ℹ pass 224\nℹ fail 0' }), 'passed');
+  assert.equal(outcome(run, { output: 'ℹ pass 223\nℹ fail 1' }), 'failed');
+  // Sin -Wait ni -PassThru, se queda en segundo plano: lanzadas, sin resultado aún.
+  const [later] = testRuns("Start-Process cmd -ArgumentList '/c','npm test'", ps);
+  assert.equal(outcome(later, {}), 'launched');
+});
+
 test('no cuenta como pruebas lo que solo las menciona ni lo que no ejecuta ninguna', () => {
   const heredoc = 'git commit -m "$(cat <<\'EOF\'\nArreglo del cálculo\n\npytest pasa en local; npm test también\nEOF\n)"';
   const hereString = "git commit -m @'\nArreglo\npytest pasa\n'@";

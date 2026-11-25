@@ -48,6 +48,7 @@ function chip(kind, text, [x, y], extra = '') {
 
 function draw(map) {
   L = layoutMap(map);
+  focused = null;
   const marker = (k) => `<marker id="wf-a-${k}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="${COL[k]}"/></marker>`;
   const defs = `<defs>${Object.keys(COL).map(marker).join('')}</defs>`;
   const band = L.band ? `<line class="wf-edge" x1="0" y1="${L.band - 10}" x2="${L.W}" y2="${L.band - 10}"/><text class="wf-band" x="20" y="${L.band - 22}">internet</text><text class="wf-band" x="20" y="${L.band + 10}">tu equipo</text>` : '';
@@ -65,13 +66,14 @@ function draw(map) {
     return `<g class="wf-blk${b.n ? ' wf-zoomable' : ''}" data-id="${esc(b.id)}" data-name="${esc(b.nombre)}"${zoom}><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="${fill}" stroke="${stroke}" stroke-opacity=".6"/><text class="wf-bt" x="${b.x + 18}" y="${b.y + 46}" style="fill:${stroke === '#A9AFB9' ? '#E7E9EC' : stroke};font-size:${tfs}px">${esc(b.nombre)}</text>${b.n ? `<g class="wf-lod1">${sum}</g>` : sum}</g>`; // sin piezas, el resumen se queda a la vista
   }).join('');
   const ext = L.ext.map((e) => `<g class="wf-blk wf-ext" data-id="${esc(e.id)}"><rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" rx="12"/><text class="wf-et" x="${e.x + 16}" y="${e.y + 42}">${esc(e.nombre)}</text><text class="wf-es" x="${e.x + 16}" y="${e.y + 76}">${esc(wrap(e.resumen, 21, 1)[0] || '')}</text></g>`).join('');
+  // Cada flecha sabe qué une (data-de, data-a): al pasar el ratón se iluminan las de lo señalado.
   const arrow = (a, cls = '') => {
     const m = `url(#wf-a-${a.kind})`;
     const ends = `marker-end="${m}"${a.bi ? ` marker-start="${m}"` : ''}`;
     const flow = a.kind === 'regla' ? '' : `<path class="wf-flow" d="${a.d}"/>`;
-    return `<g class="wf-ar k-${a.kind}${cls}"><path class="wf-base" d="${a.d}" ${ends}/>${flow}</g>`;
+    return `<g class="wf-ar k-${a.kind}${cls}" data-de="${esc(a.de)}" data-a="${esc(a.a)}"${a.bloque ? ` data-b="${esc(a.bloque)}"` : ''}><path class="wf-base" d="${a.d}" ${ends}/>${flow}</g>`;
   };
-  const arrows = L.arrows.map((a) => arrow(a)).join('') + L.inner.map((a) => arrow({ ...a, bi: false }, ' wf-in wf-lod2').replace('<g ', `<g data-b="${esc(a.bloque)}" `)).join('');
+  const arrows = L.arrows.map((a) => arrow(a)).join('') + L.inner.map((a) => arrow({ ...a, bi: false }, ' wf-in wf-lod2')).join('');
   const cards = L.cards.map((c) => {
     // Hasta 4 renglones si abajo van los archivos; 5 si no.
     const lines = [...c.detalle, ...c.reglas.map((r) => `✕ ${r.replace(/^✕\s*/, '')}`), ...c.bucles.map((r) => `↻ ${r.replace(/^↻\s*/, '')}`)].slice(0, c.archivos.length ? 4 : 5);
@@ -82,10 +84,13 @@ function draw(map) {
     const blk = L.blocks.find((b) => b.id === c.bloque);
     const dx = ((blk.x + blk.w / 2) - (c.x + c.w / 2)) * 0.7;
     const dy = ((blk.y + blk.h / 2) - (c.y + c.h / 2)) * 0.7;
-    return `<g class="wf-card wf-lod2" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--d:${c.i * 45}ms" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}"><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
+    // De cerca, pulsarla muestra su archivo principal en el Explorador.
+    const tip = c.archivos.length ? `${c.nombre}: de lejos, pulsa para acercarte; de cerca, para ver ${c.archivos[0]} en el Explorador` : c.nombre;
+    return `<g class="wf-card wf-lod2" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--d:${c.i * 45}ms" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-id="${esc(c.id)}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}" data-file="${esc(c.archivos[0] || '')}"><title>${esc(tip)}</title><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
   }).join('');
   // Las reglas de cada bloque, al pie, aparecen al acercarse; en la vista general, las de las flechas.
-  const labels = L.arrows.filter((a) => a.text).map((a) => chip(a.kind, a.text, a.at)).join('') + L.pills.map((p) => chip('regla', p.text.startsWith('✕') ? p.text : `✕ ${p.text}`, p.at, ' data-pill="1"').replace('class="wf-chip', 'class="wf-lod2 wf-chip')).join('');
+  const labels = L.arrows.filter((a) => a.text).map((a) => chip(a.kind, a.text, a.at, ` data-de="${esc(a.de)}" data-a="${esc(a.a)}"`)).join('')
+    + L.pills.map((p) => chip('regla', p.text.startsWith('✕') ? p.text : `✕ ${p.text}`, p.at, ` data-pill="1" data-b="${esc(p.bloque)}"`).replace('class="wf-chip', 'class="wf-lod2 wf-chip')).join('');
   svg().innerHTML = defs + band + blocks + ext + arrows + cards + labels;
   chips = [...svg().querySelectorAll('.wf-chip')].map((g) => ({ g, x: Number(g.dataset.x), y: Number(g.dataset.y), w: Number(g.querySelector('rect').getAttribute('width')), h: Number(g.dataset.h) }));
   base = fitBox();
@@ -207,11 +212,49 @@ function zoomStep(dir) {
   if (i >= 0) zoomToLevel(i, center());
 }
 
+// Al pasar el ratón por un bloque (o, de cerca, por una pieza) se iluminan sus conexiones y lo
+// que une, y lo demás se atenúa: así se sigue el flujo de esa parte.
+let focused = null;
+function setFocus(el) {
+  const s = svg();
+  const key = el ? `${el.classList.contains('wf-card') ? 'c' : 'b'}|${el.dataset.id}` : null;
+  if (key === focused) return;
+  focused = key;
+  for (const on of s.querySelectorAll('.on')) on.classList.remove('on');
+  s.classList.toggle('wf-focus', Boolean(el));
+  if (!el) return;
+  const id = el.dataset.id;
+  const card = el.classList.contains('wf-card');
+  el.classList.add('on');
+  const near = new Set();
+  const sel = card ? '.wf-ar.wf-in' : '.wf-ar:not(.wf-in), .wf-chip[data-de]';
+  for (const g of s.querySelectorAll(sel)) {
+    if (g.dataset.de !== id && g.dataset.a !== id) continue;
+    g.classList.add('on');
+    near.add(g.dataset.de === id ? g.dataset.a : g.dataset.de);
+  }
+  if (card) {
+    const blk = s.querySelector(`.wf-blk[data-id="${CSS.escape(el.dataset.b)}"]`);
+    if (blk) blk.classList.add('on');
+    for (const c of s.querySelectorAll('.wf-card')) if (near.has(c.dataset.id)) c.classList.add('on');
+  } else {
+    for (const b of s.querySelectorAll('.wf-blk')) if (near.has(b.dataset.id)) b.classList.add('on');
+    for (const p of s.querySelectorAll(`.wf-chip[data-b="${CSS.escape(id)}"]`)) p.classList.add('on');
+  }
+}
+
 function wirePointer() {
   const s = svg();
   const pts = new Map();
   let moved = 0;
   let pinch = 0;
+  s.addEventListener('pointerover', (e) => {
+    if (pts.size) return; // arrastrando
+    const lod = Number(s.dataset.lod);
+    const target = (lod > 1 && e.target.closest('.wf-card')) || e.target.closest('.wf-blk');
+    setFocus(target || null);
+  });
+  s.addEventListener('pointerleave', () => setFocus(null));
   s.addEventListener('wheel', (e) => {
     e.preventDefault();
     cancelAnimationFrame(anim);
@@ -249,6 +292,11 @@ function wirePointer() {
     const lod = Number(s.dataset.lod);
     const hit = document.elementFromPoint(e.clientX, e.clientY);
     const target = hit && (lod === 1 ? hit.closest('.wf-zoomable') : hit.closest('.wf-card') || hit.closest('.wf-zoomable'));
+    // De cerca (detalle), una pieza enseña su archivo en el Explorador; si no, se acerca.
+    if (target && lod === 3 && target.classList.contains('wf-card') && target.dataset.file && current) {
+      api.workflowReveal(current.tabId, target.dataset.file);
+      return;
+    }
     if (target && target.dataset.zoom) zoomToBox(target.dataset.zoom.split(' ').map(Number), target.classList.contains('wf-card'));
   });
   s.addEventListener('pointercancel', up);

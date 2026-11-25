@@ -838,6 +838,16 @@ dialog .btn-primary { background: var(--txt); }
 .wf-card { transform-box: fill-box; transform-origin: center; transition: transform 0.6s cubic-bezier(0.2, 0.85, 0.25, 1) var(--d, 0s), opacity 0.35s ease var(--d, 0s); }
 #wf-map[data-lod="1"] .wf-card { transform: translate(var(--dx, 0), var(--dy, 0)) scale(0.8); }
 .wf-ar.wf-in { transition: opacity 0.3s; }
+/* Al pasar el ratón por un bloque o una pieza: sus conexiones y lo que une, iluminado; lo demás, atenuado. */
+.wf-blk, .wf-chip, .wf-ar { transition: opacity 0.2s; }
+#wf-map.wf-focus .wf-blk:not(.on) { opacity: 0.4; }
+#wf-map.wf-focus .wf-ar:not(.wf-in):not(.on), #wf-map.wf-focus .wf-chip:not(.on) { opacity: 0.12; }
+#wf-map.wf-focus:not([data-lod="1"]) .wf-ar.wf-in:not(.on) { opacity: 0.12; }
+#wf-map.wf-focus:not([data-lod="1"]) .wf-card:not(.on) { opacity: 0.35; transition-delay: 0s; }
+#wf-map.wf-focus:not([data-lod="1"]) .wf-card.on { transition-delay: 0s; }
+#wf-map.wf-focus .wf-ar.on .wf-base { stroke-width: 3.2; }
+#wf-map.wf-focus:not([data-lod="1"]) .wf-ar.wf-in { transition: opacity 0.2s; } /* sin el retraso de la animación de entrada */
+#wf-map[data-lod="3"] .wf-card[data-file]:not([data-file=""]) { cursor: pointer; }
 #wf-map[data-lod="2"] .wf-ar.wf-in, #wf-map[data-lod="3"] .wf-ar.wf-in { transition: opacity 0.4s ease 0.5s; }
 @media (max-width: 900px) { .wf-legend, .wf-hint { display: none; } }
 @media (prefers-reduced-motion: reduce) { .wf-flow { animation: none; opacity: 0; } .wf-spin { animation-duration: 3s; } .wf-lod1, .wf-lod2, .wf-lod3, .wf-card, .wf-ar.wf-in { transition: none !important; } #wf-map[data-lod="1"] .wf-card { transform: none; } }

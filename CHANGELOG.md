@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.29.0 — 2026-11-25
+- En el «Workflow», al pasar el ratón por un bloque se iluminan sus conexiones y los bloques a los que llega, y lo demás se atenúa; dentro de un bloque, lo mismo con cada pieza. Así se sigue el flujo de una parte sin perderse.
+- De cerca (nivel de detalle), pulsar una pieza enseña su archivo principal en el Explorador, ya seleccionado. No lo abre con su programa: en Windows, abrir un .js o un .bat lo ejecutaría.
+- «Pruebas antes de terminar» reconoce también las pruebas lanzadas con Start-Process (con la salida a un archivo), con «$p = Start-Process …» y con «cmd //c» desde Git Bash: ya no pide pasarlas cuando ya se han pasado. El resultado lo saca de lo que se ve de su salida.
+
 ## 0.28.2 — 2026-11-25
 - En el «Workflow», las líneas ya no van casi pegadas: las flechas que pasan por debajo de los bloques llevan sus tramos verticales bien separados y encajados unos dentro de otros, sin cruzarse, y dentro de cada bloque el pasillo entre piezas es más ancho y cada conexión va por su carril y a su propia altura, para seguirla con la vista.
 - El botón «Stack Tecnológico» pasa a la esquina del mapa, en violeta para que se vea, y su recuadro se abre justo debajo.

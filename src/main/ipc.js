@@ -94,6 +94,17 @@ function registerIpc({
   ipcMain.handle('workflow:open', (_e, tabId) => workflow.open(optimizeFolder(String(tabId)), String(tabId)));
   ipcMain.on('workflow:close', (_e, tabId) => workflow.close(optimizeFolder(String(tabId))));
   ipcMain.handle('workflow:redo', (_e, tabId) => workflow.redo(optimizeFolder(String(tabId))));
+  // Pulsar una pieza del mapa: su archivo, seleccionado en el Explorador (no se abre con su
+  // programa: en Windows, abrir un .js, .bat o .cmd lo ejecutaría). Solo dentro del proyecto.
+  ipcMain.on('workflow:reveal', (_e, tabId, rel) => {
+    const folder = optimizeFolder(String(tabId));
+    if (!folder || typeof rel !== 'string' || !rel.trim() || path.isAbsolute(rel)) return;
+    const root = path.resolve(folder);
+    const full = path.resolve(root, rel.trim());
+    if (full !== root && !full.startsWith(root + path.sep)) return;
+    if (fs.existsSync(full)) shell.showItemInFolder(full);
+    else if (fs.existsSync(path.dirname(full)) && path.dirname(full).startsWith(root)) shell.openPath(path.dirname(full)); // la carpeta, si el archivo ya no está
+  });
   // Al entrar en un proyecto, el mapa se prepara solo. Si la sesión aún no ha arrancado, vale
   // la carpeta de la pestaña (una carpeta que exista).
   ipcMain.on('workflow:enter', (_e, tabId, cwd) => {

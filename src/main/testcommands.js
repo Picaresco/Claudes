@@ -191,7 +191,8 @@ function testSegment(words, shell = 'bash', depth = 0) {
     return exe === 'hatch' && isTestScript(rest[0]) ? yes(true) : again(rest);
   }
   if (SHELLS.has(exe)) {
-    const at = args.findIndex((a) => /^(-c|-lc|-ic|-command|\/c|\/k)$/i.test(a));
+    // «//c»: así lo escribe Git Bash para que no lo convierta en una ruta (cmd //c npm test).
+    const at = args.findIndex((a) => /^(-c|-lc|-ic|-command|\/c|\/k|\/\/c|\/\/k)$/i.test(a));
     if (at < 0) return null;
     const inner = exe === 'cmd' ? 'cmd' : exe === 'powershell' || exe === 'pwsh' ? 'powershell' : 'bash';
     const nested = testRuns(args.slice(at + 1).join(' '), { shell: inner, depth: depth + 1 });
@@ -266,6 +267,54 @@ function testSegment(words, shell = 'bash', depth = 0) {
       }
       return null;
   }
+}
+
+// PowerShell: Start-Process <programa> -ArgumentList '…','…' (también «start» y «saps»), una
+// forma frecuente de lanzar las pruebas con la salida a un archivo. `text`: lo que va detrás
+// de Start-Process, tal cual (con sus comillas). Lo que lance se mira como otra línea; su
+// código de salida no es el de las pruebas (Start-Process termina bien aunque fallen), así
+// que un éxito solo lo dice su salida, si se ve. Sin -Wait ni -PassThru va en segundo plano.
+const START = new Set(['start-process', 'saps', 'start']);
+function startProcess(text, depth) {
+  const toks = String(text).match(/'(?:[^']|'')*'|"(?:[^"`]|`.)*"|,|[^\s,]+/g) || [];
+  const unq = (s) => (/^'.*'$/s.test(s) ? s.slice(1, -1).replace(/''/g, "'") : /^".*"$/s.test(s) ? s.slice(1, -1) : s);
+  // Un valor, o una lista separada por comas ('/c','npm test').
+  const list = (from) => {
+    const vals = from < toks.length ? [toks[from]] : [];
+    let j = from + 1;
+    while (toks[j] === ',' && j + 1 < toks.length) { vals.push(toks[j + 1]); j += 2; }
+    return [vals, j];
+  };
+  let file = null;
+  let argv = null;
+  let wait = false;
+  const positional = [];
+  for (let i = 0; i < toks.length;) {
+    const t = toks[i];
+    if (/^-[a-z]/i.test(t)) {
+      const name = t.toLowerCase().replace(/:$/, '');
+      if (name === '-wait' || name === '-passthru') { wait = true; i += 1; continue; }
+      if (/^-(f|file\w*|path|a|args|arg\w*|wo|work\w*|r\w*|window\w*|verb|cred\w*|env\w*)$/.test(name) && !/^-(nonewwindow|loaduserprofile|useNewEnvironment)$/i.test(name)) {
+        const [vals, j] = list(i + 1);
+        if (/^-(f|file\w*|path)$/.test(name)) file = vals[0] || null;
+        else if (/^-(a|args|arg\w*)$/.test(name)) argv = vals;
+        i = j;
+        continue;
+      }
+      i += 1; // una opción sin valor (-NoNewWindow…)
+      continue;
+    }
+    if (t === ',' || /^[;|)}]/.test(t)) { if (/^[;|)}]/.test(t)) break; i += 1; continue; }
+    const [vals, j] = list(i);
+    positional.push(vals);
+    i = j;
+  }
+  if (!file && positional.length) file = positional.shift()[0];
+  if (!argv && positional.length) argv = positional.shift();
+  if (!file) return null;
+  const nested = testRuns([unq(file), ...(argv || []).map(unq)].join(' '), { shell: 'powershell', depth: depth + 1 });
+  if (!nested.length) return null;
+  return { nested: nested.map((run) => ({ ...run, exit: run.exit === 'own' ? 'pipe' : run.exit, background: run.background || !wait })) };
 }
 
 // En Windows, Git Bash escribe las rutas de disco como /c/proyecto (o /mnt/c, /cygdrive/c).
@@ -346,6 +395,8 @@ function testRuns(command, { shell = 'bash', depth = 0 } = {}) {
     const closes = isQuoted(foot) ? 0 : (/\)+$/.exec(foot) || [''])[0].length;
     for (let n = 0; n < opens; n += 1) scopes.push(cd);
     let words = seg.words;
+    // PowerShell: «$p = Start-Process …» (el resultado se guarda en una variable).
+    if (shell === 'powershell' && words.length > 2 && /^\$[\w:]+$/.test(words[0]) && words[1] === '=') words = words.slice(2);
     // Lo que va delante de la orden: «& npm.cmd …», VAR=x, y las palabras de un bucle o una condición.
     let branch = false;
     while (words.length && (words[0] === '&' || /^\$?[A-Za-z_][\w:]*=/.test(words[0]) || KEYWORDS.has(words[0]))) {
@@ -365,7 +416,11 @@ function testRuns(command, { shell = 'bash', depth = 0 } = {}) {
     } else if (exe === 'popd' || exe === 'pop-location') {
       if (pushed.length) cd = pushed.pop();
     } else if (exe) {
-      const found = testSegment(words, shell, depth);
+      let found;
+      if (shell === 'powershell' && START.has(exe)) {
+        const at = /(?:^|[\s;(=&])(?:start-process|saps|start)(?=\s)/i.exec(seg.text);
+        found = at ? startProcess(seg.text.slice(at.index + at[0].length), depth) : null;
+      } else found = testSegment(words, shell, depth);
       if (found) {
         const info = exitInfo(segs, i, shell);
         if (branch && info.cond !== 'or') info.cond = 'maybe';

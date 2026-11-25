@@ -278,7 +278,7 @@ export function layoutMap(map) {
       const t = at(b, r.sideB, r);
       d = `M${s.x} ${s.y}H${lane}V${t.y}H${t.x}`;
     }
-    return { d, kind: r.f.tipo, bloque: a.bloque };
+    return { d, kind: r.f.tipo, bloque: a.bloque, de: r.f.de, a: r.f.a };
   });
 
   // Reglas de cada bloque: etiquetas al pie.

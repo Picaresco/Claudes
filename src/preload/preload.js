@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('api', {
   workflowOpen: (tabId) => ipcRenderer.invoke('workflow:open', String(tabId)),
   workflowClose: (tabId) => ipcRenderer.send('workflow:close', String(tabId)),
   workflowRedo: (tabId) => ipcRenderer.invoke('workflow:redo', String(tabId)),
+  workflowReveal: (tabId, rel) => ipcRenderer.send('workflow:reveal', String(tabId), String(rel || '')), // un archivo del proyecto, en el Explorador
   workflowEnter: (tabId, cwd) => ipcRenderer.send('workflow:enter', String(tabId), String(cwd || '')), // se entra en un proyecto
   onWorkflow: on('workflow:update'), // ({ key, folder, map, status, at, engine, error, next… })
 
