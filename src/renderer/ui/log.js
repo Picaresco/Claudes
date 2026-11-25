@@ -5,6 +5,7 @@
 import { api, $, el } from './dom.js';
 import { formatSize } from './preview.js';
 import { renderToolbar } from './render.js';
+import { closeSettings } from './settings.js';
 import { S, byId } from './state.js';
 import { focusTerminal } from './views.js';
 
@@ -69,7 +70,9 @@ function renderLog() {
     const target = el('td', 'c-target', e.target);
     target.title = e.detail ? `${e.target}\n${e.detail}` : e.target;
     const dest = el('td', 'c-dest', e.dest);
-    dest.title = e.external ? 'Sale directamente a internet y, además, Claude recibe el resultado' : 'Claude recibe el resultado y lo envía a Anthropic con la conversación';
+    dest.title = e.kind === 'workflow'
+      ? 'Lo envía ClaudHome directamente, sin pasar por la sesión de Claude: un extracto del proyecto, con lo que parece una clave tapado'
+      : e.external ? 'Sale directamente a internet y, además, Claude recibe el resultado' : 'Claude recibe el resultado y lo envía a Anthropic con la conversación';
     tr.append(time, el('td', 'c-tab', e.tabName), kind, target, dest, el('td', 'c-size', logSize(e.size)));
     return tr;
   }));
@@ -96,7 +99,8 @@ function openLog() {
 
 export function wireLog() {
   const dialog = $('#dlg-log');
-  $('#btn-log').addEventListener('click', openLog);
+  // En la rueda de opciones: se cierra la rueda y se abre el Log.
+  $('#btn-log').addEventListener('click', () => { closeSettings(); openLog(); });
   $('#log-close').addEventListener('click', () => dialog.close());
   $('#log-file').addEventListener('click', () => api.netlogOpenFile());
   dialog.addEventListener('close', () => requestAnimationFrame(focusTerminal));

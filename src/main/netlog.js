@@ -32,6 +32,7 @@ const KIND_LABEL = {
   opinion: 'Segunda opinión de Codex',
   plan: 'Crítica de un plan (Codex)',
   imagen: 'Imagen con Codex',
+  workflow: 'Mapa del proyecto (Workflow)',
 };
 
 // ── Direcciones locales o de internet ────────────────────────────────

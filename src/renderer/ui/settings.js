@@ -1,7 +1,7 @@
 // ── Rueda de opciones ────────────────────────────────────────────
 // Un panel con todo lo que se enciende o se apaga (respuestas, Codex, micrófono y
-// depuración), para dejar sitio en la barra superior a las pestañas. Pulsar una opción
-// no lo cierra; se cierra al pulsar fuera, con Esc o con la propia rueda.
+// depuración) y el «Log», para dejar sitio en las barras de arriba. Pulsar una opción no
+// lo cierra (el «Log» sí, porque se abre); se cierra al pulsar fuera, con Esc o con la rueda.
 import { $ } from './dom.js';
 import { focusTerminal } from './views.js';
 

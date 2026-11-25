@@ -60,7 +60,7 @@
       <span id="codex-job-security" class="cx-work" aria-hidden="true" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z"/><path class="cx-shield" d="M8.5 12l2.5 2.5 4.5-5"/></svg><span class="cx-time"></span></span>
       <span id="codex-job-draw" class="cx-work" aria-hidden="true" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="cx-brush"><path d="M20.5 3.5 11.5 12.5"/><path d="M11.5 12.5c-2.3-.5-4.6.9-5.1 3.3-.3 1.4-1.1 2.4-2.4 2.9 2.9 1.6 7.3.8 8.5-2.6.5-1.3.1-2.7-1-3.6z"/></g><path class="cx-stroke" d="M3 22h9"/></svg><span class="cx-time"></span></span>
     </button>
-    <button id="btn-settings" class="icon-btn gear-btn" aria-label="Opciones" aria-controls="settings-menu" aria-expanded="false" title="Opciones: respuestas, Codex, micrófono y depuración">
+    <button id="btn-settings" class="icon-btn gear-btn" aria-label="Opciones" aria-controls="settings-menu" aria-expanded="false" title="Opciones: respuestas, Codex, micrófono, depuración y Log">
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
     <div id="settings-menu" class="popover flip settings-menu" role="group" aria-label="Opciones" hidden>
@@ -75,6 +75,9 @@
       <div class="menu-label">Equipo</div>
       <button id="mic-btn" class="opt-row" aria-pressed="false" aria-label="Micrófono para dictar" hidden><span class="opt-text"><span class="opt-name">Micrófono</span><span class="opt-desc">Dictar manteniendo pulsada la barra espaciadora</span></span><span class="brief-switch" aria-hidden="true"><i></i></span></button>
       <button id="sb-debug" class="opt-row" aria-pressed="false" hidden><span class="opt-text"><span class="opt-name">Depuración</span><span class="opt-desc">Registros detallados de cada sesión, para soporte</span></span><span class="brief-switch" aria-hidden="true"><i></i></span></button>
+      <div class="menu-sep" aria-hidden="true"></div>
+      <div class="menu-label">Registro</div>
+      <button id="btn-log" class="opt-row opt-open" title="Lo que ha visto Claude en este proyecto (y por tanto se ha enviado a Anthropic) y lo que ha salido directamente hacia internet. «Todos» enseña el de todos los proyectos"><span class="opt-text"><span class="opt-name">Log</span><span class="opt-desc">Lo que ha visto Claude y lo que sale hacia internet</span></span><span id="log-badge" class="count" hidden></span><svg class="opt-go" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg></button>
     </div>
   </div>
 </header>
@@ -100,10 +103,9 @@
       Contexto
       <span id="ctx-count" class="count" hidden></span>
     </button>
-    <button id="btn-log" class="btn" title="Log: lo que ha visto Claude en este proyecto (y por tanto se ha enviado a Anthropic) y lo que ha salido directamente hacia internet. «Todos» enseña el de todos los proyectos">
-      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c1.9 1.8 2.8 3.9 2.8 6.3S9.9 12.5 8 14.3M8 1.7C6.1 3.5 5.2 5.6 5.2 8s.9 4.5 2.8 6.3"/></svg>
-      Log
-      <span id="log-badge" class="count" hidden></span>
+    <button id="btn-workflow" class="btn" title="Workflow: cómo funciona este proyecto, en un mapa con zoom (de los bloques a los módulos). Lo dibuja un modelo aparte, sin tocar tu sesión de Claude">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="5" height="4" rx="1"/><rect x="9.5" y="9.5" width="5" height="4" rx="1"/><path d="M6.5 4.5h2.5a1.5 1.5 0 0 1 1.5 1.5v3.5"/></svg>
+      Workflow
     </button>
     <button id="btn-terminal" class="btn" aria-pressed="false" title="Mostrar u ocultar la terminal (Ctrl+ñ)">
       <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4.5 6l2.5 2-2.5 2M8.5 10.5h3"/></svg>
@@ -256,6 +258,45 @@
       <button id="f-submit" type="submit" class="btn btn-primary">Abrir sesión</button>
     </div>
   </form>
+</dialog>
+
+<!-- «Workflow» (ui/workflow.js): cómo funciona el proyecto, en un mapa con zoom por niveles. -->
+<dialog id="dlg-workflow" aria-labelledby="wf-title">
+  <div class="wf">
+    <div class="wf-head">
+      <div class="wf-titles">
+        <h1 id="wf-title">Workflow <span id="wf-proj" class="wf-proj"></span></h1>
+        <p id="wf-sum"></p>
+      </div>
+      <div class="wf-legend" aria-label="Leyenda">
+        <span><i class="wf-sw" data-k="datos"></i>datos</span>
+        <span><i class="wf-sw" data-k="bucle"></i>↻ se repite</span>
+        <span><i class="wf-sw" data-k="regla"></i>✕ regla o corte</span>
+      </div>
+      <div class="wf-tools">
+        <button id="wf-out" type="button" class="btn" aria-label="Alejar" title="Alejar (−)">−</button>
+        <div id="wf-lvl" class="wf-lvl" aria-live="polite"><i></i><i></i><i></i><span>Vista general</span></div>
+        <button id="wf-in" type="button" class="btn" aria-label="Acercar" title="Acercar (+)">+</button>
+        <button id="wf-fit" type="button" class="btn" title="Ver todo el mapa (0)">Ver todo</button>
+        <button id="wf-redo" type="button" class="btn" title="Dibujar el mapa de nuevo desde cero">Rehacer</button>
+        <button id="wf-close" type="button" class="icon-btn" aria-label="Cerrar" title="Cerrar (Esc)">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="wf-stage" class="wf-stage">
+      <svg id="wf-map" role="img" aria-label="Mapa de cómo funciona el proyecto" data-lod="1"></svg>
+      <div id="wf-crumb" class="wf-crumb"></div>
+      <div id="wf-empty" class="wf-empty" hidden>
+        <div class="wf-spin" aria-hidden="true"></div>
+        <p id="wf-empty-title">Dibujando el mapa del proyecto…</p>
+        <p id="wf-empty-text" class="wf-empty-text"></p>
+        <button id="wf-retry" type="button" class="btn" hidden>Volver a intentarlo</button>
+      </div>
+      <div class="wf-hint">Rueda: acercar · arrastrar: moverse · clic: entrar · doble clic: ver todo</div>
+      <div id="wf-status" class="wf-status"></div>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="dlg-log" aria-labelledby="dlg-log-title">

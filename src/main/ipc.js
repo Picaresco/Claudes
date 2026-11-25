@@ -10,7 +10,7 @@ function registerIpc({
   electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
   DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
   sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator,
+  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow,
 }) {
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
@@ -88,6 +88,11 @@ function registerIpc({
   // Si conviene optimizar (optimize-hint.js) y «Ahora no».
   ipcMain.handle('optimize:hint', (_e, tabId) => optimizeHints.hint(tabId));
   ipcMain.handle('optimize:snooze', (_e, tabId) => optimizeHints.snooze(tabId));
+
+  // Botón «Workflow» (workflow.js): el mapa del proyecto de la pestaña, aparte de su sesión.
+  ipcMain.handle('workflow:open', (_e, tabId) => workflow.open(optimizeFolder(String(tabId)), String(tabId)));
+  ipcMain.on('workflow:close', (_e, tabId) => workflow.close(optimizeFolder(String(tabId))));
+  ipcMain.handle('workflow:redo', (_e, tabId) => workflow.redo(optimizeFolder(String(tabId))));
 
   // Micrófono para dictar: la interfaz lo aplica a las teclas; aquí solo se recuerda.
   // (Cada sesión arranca con el dictado de Claude Code en modo «mantener»: graba mientras se

@@ -1,0 +1,357 @@
+// Botón «Workflow»: cómo funciona el proyecto de la pestaña, como un mapa con zoom. Es
+// independiente de la sesión de Claude de la pestaña: no usa sus hooks ni su conversación.
+//
+// - Lo dibuja un modelo aparte a partir de lo que la app elige enviarle (workflow-digest.js):
+//   Codex (con sesión de ChatGPT) si está, para no gastar del plan de Claude: razonamiento
+//   medio el primer mapa y bajo al rehacerlo. Si no, Claude Code en modo no interactivo, en su
+//   propio proceso y en una carpeta vacía, sin herramientas: Sonnet el primero, Haiku al rehacerlo.
+// - El modelo solo devuelve JSON con un esquema fijo; aquí se comprueba (cantidades, longitudes,
+//   referencias, cada regla y bucle con un archivo del material) y la interfaz lo dibuja.
+// - Se guarda por proyecto (<datos>\workflow\<hash>.json). Al abrir, se enseña lo guardado;
+//   con la ventana abierta, cada 5 minutos (contados desde que acaba la comprobación anterior)
+//   se mira la huella del proyecto y solo si ha cambiado algo se rehace. Cerrada, no se rehace.
+// - Lo que sale del equipo queda en el «Log».
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { maskSecrets } = require('./secrets');
+const { command, resultText, jsonIn, createRunner } = require('./haiku');
+const digest = require('./workflow-digest');
+
+const SCHEMA = 2;
+const CHECK_EVERY = Number(process.env.CLAUDES_WORKFLOW_EVERY_MS) > 0 ? Number(process.env.CLAUDES_WORKFLOW_EVERY_MS) : 5 * 60 * 1000;
+const TIMEOUT = 8 * 60 * 1000;
+const TYPES = ['persona', 'interfaz', 'nucleo', 'proceso', 'datos', 'externo'];
+const KINDS = ['datos', 'bucle', 'regla'];
+const LIMITS = { blocks: 9, external: 3, modules: 8, arrows: 12, inner: 24, rules: 1, lines: 3, marks: 3 };
+
+const SYSTEM = 'Eres un arquitecto de software que explica proyectos a personas no expertas. Describes cómo funciona un proyecto como un mapa. Respondes solo con JSON válido, sin texto alrededor.';
+
+// ── Comprobación de lo que devuelve el modelo ─────────────────────────
+
+const clip = (value, max) => {
+  const text = maskSecrets(String(value ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim());
+  return text.length > max ? `${text.slice(0, max - 1).replace(/\s+\S*$/, '')}…` : text;
+};
+const ident = (value) => String(value ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+const list = (value) => (Array.isArray(value) ? value : []);
+
+// El mapa, limpio: { resumen, bloques, modulos, flechas, internas, reglas } o null si no sirve.
+// `sources`: rutas que se le enseñaron; una regla o un bucle sin una de ellas no entra.
+function validate(raw, sources = null) {
+  if (!raw || typeof raw !== 'object') return null;
+  const known = sources ? new Set([...sources].map((s) => s.toLowerCase())) : null;
+  const cited = (src) => {
+    if (!known) return true;
+    const s = String(src || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/:\d+.*$/, '').toLowerCase();
+    return Boolean(s) && (known.has(s) || [...known].some((k) => k.endsWith(`/${s}`)));
+  };
+  const blocks = [];
+  const ids = new Set();
+  let external = 0;
+  for (const b of list(raw.bloques)) {
+    const id = ident(b && b.id);
+    const type = TYPES.includes(b && b.tipo) ? b.tipo : 'nucleo';
+    if (!id || ids.has(id)) continue;
+    if (type === 'externo' ? external >= LIMITS.external : blocks.length - external >= LIMITS.blocks - LIMITS.external) continue;
+    if (type === 'externo') external += 1;
+    ids.add(id);
+    blocks.push({ id, nombre: clip(b.nombre || id, 24), tipo: type, resumen: clip(b.resumen, 70) });
+  }
+  if (blocks.filter((b) => b.tipo !== 'externo').length < 2) return null;
+  const modules = [];
+  const modIds = new Set();
+  const perBlock = {};
+  for (const m of list(raw.modulos)) {
+    const id = ident(m && m.id);
+    const block = ident(m && m.bloque);
+    if (!id || modIds.has(id) || !ids.has(block)) continue;
+    if (blocks.find((b) => b.id === block).tipo === 'externo') continue;
+    perBlock[block] = (perBlock[block] || 0) + 1;
+    if (perBlock[block] > LIMITS.modules) continue;
+    modIds.add(id);
+    // { texto, fuente } del modelo, o el texto solo si viene de un mapa ya comprobado (sources null).
+    const marks = (items) => list(items).filter((r) => r && (typeof r === 'string' ? !known : cited(r.fuente))).slice(0, LIMITS.marks).map((r) => clip(typeof r === 'string' ? r : r.texto, 36)).filter(Boolean);
+    modules.push({
+      id, bloque: block, nombre: clip(m.nombre || id, 22), sub: clip(m.sub || list(m.archivos)[0] || '', 28),
+      detalle: list(m.detalle).map((l) => clip(l, 40)).filter(Boolean).slice(0, LIMITS.lines),
+      archivos: list(m.archivos).map((a) => clip(a, 80)).filter(Boolean).slice(0, 6),
+      reglas: marks(m.reglas), bucles: marks(m.bucles),
+    });
+  }
+  const arrows = [];
+  const seen = new Set();
+  for (const a of list(raw.flechas)) {
+    const from = ident(a && a.de);
+    const to = ident(a && a.a);
+    const kind = KINDS.includes(a && a.tipo) ? a.tipo : 'datos';
+    if (!ids.has(from) || !ids.has(to) || from === to || seen.has(`${from}>${to}>${kind}`)) continue;
+    // La vuelta de una flecha que ya está: la misma, de doble sentido (menos ruido en el mapa).
+    const back = arrows.find((x) => x.de === to && x.a === from && x.tipo === kind);
+    if (back) { back.doble = true; continue; }
+    if (arrows.length >= LIMITS.arrows) continue;
+    seen.add(`${from}>${to}>${kind}`);
+    arrows.push({ de: from, a: to, tipo: kind, texto: clip(a.texto, 24), doble: Boolean(a.doble) });
+  }
+  const inner = [];
+  for (const a of list(raw.internas)) {
+    const from = ident(a && a.de);
+    const to = ident(a && a.a);
+    const mf = modules.find((m) => m.id === from);
+    const mt = modules.find((m) => m.id === to);
+    if (!mf || !mt || from === to || mf.bloque !== mt.bloque || inner.length >= LIMITS.inner) continue;
+    inner.push({ de: from, a: to, tipo: KINDS.includes(a.tipo) ? a.tipo : 'datos' });
+  }
+  const rules = [];
+  const rulesPer = {};
+  for (const r of list(raw.reglas)) {
+    const block = ident(r && r.bloque);
+    if (!ids.has(block) || !cited(r.fuente)) continue;
+    rulesPer[block] = (rulesPer[block] || 0) + 1;
+    if (rulesPer[block] > LIMITS.rules) continue;
+    const text = clip(r.texto, 36);
+    if (text) rules.push({ bloque: block, texto: text });
+  }
+  // Un servicio de internet sin ninguna flecha quedaría suelto: fuera.
+  const linked = (b) => b.tipo !== 'externo' || arrows.some((a) => a.de === b.id || a.a === b.id);
+  return { resumen: clip(raw.resumen, 160), bloques: blocks.filter(linked), modulos: modules, flechas: arrows, internas: inner, reglas: rules };
+}
+
+// ── Lo que se le pide al modelo ───────────────────────────────────────
+
+// La guía (src/workflow/SKILL.md): el método, la forma de escribir, cómo se presenta y el
+// formato JSON, en un solo sitio. Los dos motores reciben exactamente ese texto, así que el
+// mapa se hace y se presenta siempre igual. No es una skill de la sesión principal: esa no la
+// carga, para no gastarle contexto ni distraerla. Cada mapa guarda con qué versión se hizo.
+const GUIDE_FILE = path.join(__dirname, '..', 'workflow', 'SKILL.md');
+function loadGuide(file = GUIDE_FILE) {
+  const text = fs.readFileSync(file, 'utf8').replace(/\r/g, '');
+  const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(text);
+  const head = m ? m[1] : '';
+  const body = (m ? m[2] : text).trim();
+  const field = (key) => (new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(head) || [])[1] || '';
+  return { name: field('name'), version: field('version'), hash: crypto.createHash('sha1').update(body).digest('hex').slice(0, 10), body };
+}
+const GUIDE = loadGuide();
+
+function fullPrompt({ name, text, partial }) {
+  return [
+    `Sigue esta guía de ClaudHome («${GUIDE.name}», versión ${GUIDE.version}):`, '', GUIDE.body, '', '---', '',
+    `Dibuja el mapa de cómo funciona el proyecto «${name}». Abajo tienes su árbol de archivos, sus manifiestos y extractos de su código${partial ? ' (el proyecto es grande: es una parte)' : ''}.`,
+    '', 'Material del proyecto:', '', text,
+  ].join('\n');
+}
+
+function refreshPrompt({ name, text, map, changes }) {
+  return [
+    `Sigue esta guía de ClaudHome («${GUIDE.name}», versión ${GUIDE.version}):`, '', GUIDE.body, '', '---', '',
+    `Este es el mapa actual de cómo funciona el proyecto «${name}». Desde que se hizo han cambiado estos archivos: ${[...changes.modified, ...changes.added].slice(0, 60).join(', ') || 'ninguno'}${changes.removed.length ? `; se han borrado: ${changes.removed.slice(0, 40).join(', ')}` : ''}.`,
+    'Actualiza el mapa con lo que muestran los archivos cambiados (abajo). Cambia solo lo necesario y conserva los mismos id. Si lo esencial no cambia, devuelve el mismo mapa.',
+    '', 'Mapa actual:', JSON.stringify(map), '', 'Archivos cambiados (extractos):', '', text,
+  ].join('\n');
+}
+
+// ── El proceso ────────────────────────────────────────────────────────
+
+// codexState: lo que se sabe de Codex · codex: codex.js · model: el de Codex · findClaude,
+// env, workDir: para Claude Code · dir: carpeta de los mapas · send(canal, …): a la interfaz ·
+// netlog(): el «Log» · engine: forzar 'codex' o 'claude' (pruebas).
+// planBusy(): el plan de Claude va justo (≥ 80 %): sin Codex, no se rehace solo, para no
+// quitarle margen a la sesión de trabajo.
+function createWorkflow({ codexState, codex, model, findClaude, env = () => process.env, workDir, dir, send = () => {}, log = () => {}, netlog = () => null, engine = null, planBusy = () => false }) {
+  const runner = createRunner({ env, workDir, timeout: TIMEOUT });
+  const projects = new Map(); // carpeta → estado
+  let stopped = false; // la app se cierra: nada más se comprueba ni se programa
+
+  const keyOf = (folder) => crypto.createHash('sha1').update(path.resolve(folder).toLowerCase()).digest('hex').slice(0, 16);
+  const fileOf = (folder) => path.join(dir(), `${keyOf(folder)}.json`);
+
+  function project(folder) {
+    let p = projects.get(folder);
+    if (p) return p;
+    p = { folder, key: keyOf(folder), map: null, manifest: {}, at: 0, engine: null, partial: false, status: 'idle', error: '', open: 0, timer: null, controller: null, kind: null, startedAt: 0, checkedAt: 0, masked: 0 };
+    try {
+      const saved = JSON.parse(fs.readFileSync(fileOf(folder), 'utf8'));
+      // Se vuelve a comprobar al cargarlo: si los límites han cambiado, se aplican.
+      const map = saved && saved.schema === SCHEMA ? validate(saved.map) : null;
+      if (map) Object.assign(p, { map, manifest: saved.manifest || {}, at: saved.at || 0, engine: saved.engine || null, partial: Boolean(saved.partial), guide: saved.guide || null, status: 'ready' });
+    } catch { /* todavía sin mapa */ }
+    projects.set(folder, p);
+    return p;
+  }
+
+  function save(p) {
+    try {
+      fs.mkdirSync(dir(), { recursive: true });
+      const file = fileOf(p.folder);
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify({ schema: SCHEMA, folder: p.folder, map: p.map, manifest: p.manifest, at: p.at, engine: p.engine, partial: p.partial, guide: p.guide }));
+      fs.renameSync(tmp, file); // de una vez: un corte no deja un mapa a medias
+    } catch (err) { log(`Workflow: no se ha podido guardar el mapa (${err.message})`); }
+  }
+
+  const snapshot = (p) => ({
+    key: p.key, folder: p.folder, map: p.map, at: p.at, engine: p.engine, partial: p.partial, status: p.status, error: p.error,
+    kind: p.kind, startedAt: p.startedAt, checkedAt: p.checkedAt, next: p.open && p.timer ? p.nextAt : 0, masked: p.masked,
+    paused: Boolean(p.paused), pending: p.pending || 0, using: p.controller ? p.using || null : null,
+    oldGuide: Boolean(p.map && p.guide !== GUIDE.hash), // hecho con otra versión de la guía
+  });
+  const update = (p) => send('workflow:update', snapshot(p));
+
+  // Qué motor toca ahora: { name, label, run(prompt, kind, signal) }.
+  function choose() {
+    const useCodex = engine ? engine === 'codex' : codexState.usable();
+    if (useCodex) {
+      return {
+        name: 'codex',
+        label: (kind) => `Codex (${model}, razonamiento ${kind === 'full' ? 'medio' : 'bajo'})`,
+        dest: 'OpenAI (Codex)',
+        async run(prompt, kind, signal) {
+          if (!(await codex.chatgptLogin())) return { error: 'Codex no tiene la sesión de ChatGPT iniciada.' };
+          const cwd = workDir();
+          fs.mkdirSync(cwd, { recursive: true });
+          const result = await codex.askCodex({ cwd, prompt: `${SYSTEM}\n\n${prompt}`, model, effort: kind === 'full' ? 'medium' : 'low', signal, timeout: TIMEOUT });
+          if (result.aborted) return { error: 'cancelado' };
+          return result.ok ? { text: result.text } : { error: result.failure || 'Codex no ha contestado.' };
+        },
+      };
+    }
+    return {
+      name: 'claude',
+      label: (kind) => `Claude (${kind === 'full' ? 'Sonnet' : 'Haiku'}, en un proceso aparte)`,
+      dest: 'Anthropic',
+      async run(prompt, kind, signal) {
+        const exe = findClaude();
+        if (!exe) return { error: 'No se encuentra Claude Code.' };
+        const args = ['-p', '--model', kind === 'full' ? 'sonnet' : 'haiku', '--tools', '', '--strict-mcp-config', '--no-session-persistence',
+          '--disable-slash-commands', '--setting-sources', '', '--system-prompt', SYSTEM, '--output-format', 'json'];
+        const stop = () => runner.stop();
+        if (signal) signal.addEventListener('abort', stop, { once: true });
+        const { code, stdout } = await runner.run(command(exe, args), prompt);
+        if (signal) signal.removeEventListener('abort', stop);
+        if (signal && signal.aborted) return { error: 'cancelado' };
+        const text = code === 0 ? resultText(stdout) : null;
+        return text ? { text } : { error: code === null ? 'Claude no ha terminado a tiempo.' : 'Claude no ha contestado.' };
+      },
+    };
+  }
+
+  // Hace el mapa (kind 'full') o lo rehace con lo que ha cambiado (kind 'refresh').
+  async function generate(p, kind, { manifest, changes = null } = {}) {
+    if (p.controller || stopped) return;
+    const controller = new AbortController();
+    p.controller = controller;
+    p.status = 'working';
+    p.kind = kind;
+    p.error = '';
+    p.startedAt = Date.now();
+    update(p);
+    const name = path.basename(p.folder);
+    try {
+      const only = kind === 'refresh' ? new Set([...changes.added, ...changes.modified]) : null;
+      const shown = await digest.material(p.folder, { kind, only });
+      const sources = new Set(kind === 'refresh' ? [...shown.used, ...Object.keys(manifest)] : shown.used);
+      const prompt = kind === 'full' ? fullPrompt({ name, text: shown.text, partial: shown.partial }) : refreshPrompt({ name, text: shown.text, map: p.map, changes });
+      const motor = choose();
+      const what = motor.label(kind);
+      p.using = what;
+      update(p);
+      log(`Workflow: ${kind === 'full' ? 'dibuja' : 'rehace'} el mapa de ${p.folder} con ${what} (${shown.used.length} archivos, ${Math.round(shown.size / 1024)} KB${shown.masked ? `, ${shown.masked} valores tapados` : ''})`);
+      const record = netlog();
+      if (record) record.record({ tabId: p.tabId, kind: 'workflow', target: p.folder, detail: `${what} · ${shown.used.length} archivos${shown.masked ? ` · ${shown.masked} valores con pinta de clave tapados` : ''}`, dest: motor.dest, external: true, size: shown.size });
+      const answer = await motor.run(prompt, kind, controller.signal);
+      if (controller.signal.aborted || answer.error === 'cancelado') { p.status = p.map ? 'ready' : 'idle'; return; }
+      const map = answer.text ? validate(jsonIn(answer.text), sources) : null;
+      if (!map) throw new Error(answer.error || 'La respuesta no tiene un mapa que se pueda dibujar.');
+      p.map = map;
+      p.manifest = manifest;
+      p.at = Date.now();
+      p.engine = what;
+      if (kind === 'full') p.guide = GUIDE.hash; // al actualizar se conserva la del mapa de partida
+      if (kind === 'full') p.partial = shown.partial; // al actualizar solo se envía lo cambiado
+      p.masked = shown.masked;
+      p.pending = 0;
+      p.status = 'ready';
+      save(p);
+      log(`Workflow: mapa listo (${map.bloques.length} bloques, ${map.modulos.length} módulos, ${Math.round((Date.now() - p.startedAt) / 1000)} s)`);
+    } catch (err) {
+      p.status = p.map ? 'ready' : 'error';
+      p.error = String(err.message || err);
+      log(`Workflow: no se ha podido ${kind === 'full' ? 'dibujar' : 'rehacer'} el mapa de ${p.folder} (${p.error})`);
+    } finally {
+      p.controller = null;
+      p.checkedAt = Date.now();
+      schedule(p);
+      update(p);
+    }
+  }
+
+  // ¿Ha cambiado el proyecto desde el último mapa? Si sí, se rehace (o se hace, si no lo hay).
+  async function check(p) {
+    if (p.controller || stopped) return;
+    try {
+      const { manifest } = await digest.fingerprint(p.folder, p.manifest);
+      const changes = digest.diff(p.manifest, manifest);
+      p.pending = p.map ? changes.count : 0;
+      p.paused = false;
+      if (!p.map) { await generate(p, 'full', { manifest }); return; }
+      if (changes.count && choose().name === 'claude' && planBusy()) {
+        p.paused = true; // se rehará cuando el plan tenga margen (o con «Rehacer»)
+      } else if (changes.count) { await generate(p, 'refresh', { manifest, changes }); return; }
+    } catch (err) { log(`Workflow: no se ha podido comprobar ${p.folder} (${err.message})`); }
+    p.checkedAt = Date.now();
+    schedule(p);
+    update(p);
+  }
+
+  function schedule(p) {
+    clearTimeout(p.timer);
+    p.timer = null;
+    if (!p.open || stopped) return;
+    p.nextAt = Date.now() + CHECK_EVERY;
+    p.timer = setTimeout(() => { p.timer = null; check(p); }, CHECK_EVERY);
+  }
+
+  // La ventana se abre para un proyecto: lo guardado al momento y, si hace falta, se rehace.
+  function open(folder, tabId = null) {
+    if (!folder) return null;
+    const p = project(folder);
+    p.open += 1;
+    p.tabId = tabId; // para el «Log» (filtra por la pestaña y su carpeta)
+    if (!p.controller) {
+      if (!p.map) p.status = 'working';
+      setImmediate(() => check(p));
+    }
+    return snapshot(p);
+  }
+
+  // Se cierra: no se rehace más. Lo que se estaba rehaciendo se corta; el primer mapa sigue.
+  function close(folder) {
+    const p = projects.get(folder);
+    if (!p) return;
+    p.open = Math.max(0, p.open - 1);
+    if (p.open) return;
+    clearTimeout(p.timer);
+    p.timer = null;
+    if (p.controller && p.kind === 'refresh') p.controller.abort();
+  }
+
+  // «Rehacer»: un mapa nuevo desde cero, aunque no haya cambios.
+  async function redo(folder) {
+    const p = project(folder);
+    if (p.controller) return snapshot(p);
+    const { manifest } = await digest.fingerprint(p.folder, p.manifest);
+    generate(p, 'full', { manifest });
+    return snapshot(p);
+  }
+
+  function stop() {
+    stopped = true;
+    for (const p of projects.values()) { clearTimeout(p.timer); if (p.controller) p.controller.abort(); }
+    runner.stop();
+  }
+
+  return { open, close, redo, stop, get: (folder) => (projects.get(folder) ? snapshot(projects.get(folder)) : null) };
+}
+
+module.exports = { createWorkflow, validate, fullPrompt, refreshPrompt, loadGuide, GUIDE, SCHEMA };

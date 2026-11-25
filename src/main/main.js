@@ -28,6 +28,7 @@ const { createOptimizer } = require('./optimize');
 const { createOptimizeHints } = require('./optimize-hint');
 const { createChecker } = require('./optimize-check');
 const { createNarrator } = require('./narrator');
+const { createWorkflow } = require('./workflow');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -59,6 +60,7 @@ let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
 let optimizeChecker = null; // la segunda mirada de Haiku (optimize-check.js)
 let narrator = null; // panel «Actividad»: lo que hace Claude, contado por Haiku (narrator.js)
+let workflow = null; // botón «Workflow»: el mapa del proyecto (workflow.js)
 // Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
 // pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
 const NOTICE_BUDGET = 1500;
@@ -467,13 +469,30 @@ if (!app.requestSingleInstanceLock()) {
       tabName: (id) => (tabs.get(id) || {}).name || null,
       cwdOf: (id) => (tabs.get(id) || {}).folder || null,
     });
+    // «Workflow»: el mapa del proyecto, con Codex si está (no gasta del plan de Claude) o con
+    // Claude Code en un proceso aparte. Independiente de la sesión de la pestaña.
+    workflow = createWorkflow({
+      codexState, codex, model: review.MODEL,
+      findClaude: sessions.findClaude,
+      env: haikuEnv,
+      workDir: () => path.join(app.getPath('temp'), 'Claudes-workflow'),
+      dir: () => path.join(app.getPath('userData'), 'workflow'),
+      send, log: appLog,
+      netlog: () => netlog,
+      engine: DEV && ['codex', 'claude'].includes(process.env.CLAUDES_WORKFLOW_ENGINE) ? process.env.CLAUDES_WORKFLOW_ENGINE : null,
+      // Sin Codex, con el plan de Claude al 80 % o más, el mapa no se rehace solo.
+      planBusy: () => {
+        const plan = limits ? limits.snapshot().plan : null;
+        return Boolean(plan && ['five_hour', 'seven_day'].some((k) => plan[k] && plan[k].pct >= 80));
+      },
+    });
     const pluginNames = style.prepare();
     appLog(`plugins para las sesiones: ${pluginNames.join(', ') || 'ninguno'}${gitBash ? '' : ' (sin Git Bash, sin el explicativo)'}`);
     registerIpc({
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
       sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator,
+      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow,
     });
     wm.create();
     limits.start();
@@ -485,6 +504,7 @@ if (!app.requestSingleInstanceLock()) {
     codexState.stop();
     if (optimizeChecker) optimizeChecker.stop(); // una pregunta a Haiku en marcha no sigue tras cerrar
     if (narrator) narrator.stop();
+    if (workflow) workflow.stop(); // un mapa a medias no sigue tras cerrar
     if (hookServer) hookServer.stop();
     if (limits) limits.stop();
     // Con una versión nueva lista, se instala ahora que Claudes se cierra.

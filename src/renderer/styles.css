@@ -566,7 +566,8 @@ body.dragging #workspace * { pointer-events: none; }
 #btn-optimize[data-recommended="true"] { border-color: var(--ok); color: var(--txt); }
 #btn-optimize[data-recommended="true"] svg { color: var(--ok); }
 .opt-badge { padding: 1px 6px; border-radius: 8px; background: rgba(127, 212, 160, 0.16); color: var(--ok); font-size: 11px; font-weight: 600; }
-.btn .count {
+.opt-open .opt-go { flex: none; color: var(--mute); }
+.btn .count, .opt-row .count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -694,7 +695,7 @@ body.dragging #workspace * { pointer-events: none; }
 dialog {
   width: 600px;
   max-width: calc(100% - 32px);
-  max-height: calc(100% - 32px);
+  max-height: calc(100% - 116px); /* centrado, sin llegar a los botones de Windows (50 px) */
   padding: 0;
   overflow: auto;
   background: var(--bg2);
@@ -737,8 +738,90 @@ dialog .btn-primary { background: var(--txt); }
 .radio { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 13px; cursor: pointer; }
 .dlg-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 
+/* ── Workflow: el mapa del proyecto ─────────────────────────────── */
+/* Empieza debajo de los botones de Windows (minimizar, maximizar y cerrar: 50 px de alto). */
+#dlg-workflow { width: calc(100% - 32px); max-width: none; height: calc(100% - 74px); max-height: none; margin: 58px auto 16px; overflow: hidden; }
+.wf { display: flex; flex-direction: column; height: 100%; }
+.wf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 14px 16px 12px 20px; border-bottom: 1px solid var(--line); }
+.wf-titles { flex: 1 1 280px; min-width: 0; }
+.wf-titles h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.wf-proj { color: var(--dim); font-weight: 400; }
+.wf-titles p { margin-top: 2px; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--dim); }
+.wf-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.wf-sw { width: 18px; border-top: 2.5px solid var(--accent); }
+.wf-sw[data-k="bucle"] { border-top-color: var(--warn); }
+.wf-sw[data-k="regla"] { border-top-color: var(--alert); border-top-style: dashed; }
+.wf-tools { display: flex; align-items: center; gap: 6px; }
+#dlg-workflow .wf-tools .btn { height: 34px; min-width: 34px; padding: 0 10px; justify-content: center; }
+.wf-tools .icon-btn { width: 36px; height: 36px; }
+.wf-lvl { display: flex; align-items: center; gap: 5px; min-width: 112px; justify-content: center; font-size: 12px; color: var(--dim); }
+.wf-lvl i { width: 7px; height: 7px; border-radius: 50%; background: var(--line2); }
+.wf-lvl i.on { background: var(--ok); }
+.wf-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: radial-gradient(circle at 1px 1px, #1a1e25 1px, transparent 1.5px) 0 0 / 22px 22px, #0B0D10; }
+#wf-map { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; }
+#wf-map.drag { cursor: grabbing; }
+#wf-map text { font-family: var(--sans); fill: var(--txt); }
+.wf-crumb, .wf-hint, .wf-status { position: absolute; font-size: 12px; color: var(--dim); background: rgba(20, 23, 28, 0.92); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; pointer-events: none; }
+.wf-crumb { top: 12px; left: 12px; color: var(--txt); }
+.wf-crumb:empty { display: none; }
+.wf-crumb b { color: var(--ok); font-weight: 600; }
+.wf-hint { bottom: 12px; left: 12px; }
+.wf-status { bottom: 12px; right: 12px; max-width: calc(100% - 520px); text-align: right; }
+.wf-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; background: #0B0D10; }
+.wf-empty p { font-size: 17px; font-weight: 600; }
+.wf-empty .wf-empty-text { max-width: 560px; font-size: 13px; font-weight: 400; color: var(--dim); }
+.wf-empty.failed .wf-spin { display: none; }
+.wf-empty.failed p:first-of-type { color: var(--alert); }
+.wf-spin { width: 28px; height: 28px; border: 3px solid var(--line2); border-top-color: var(--ok); border-radius: 50%; animation: wf-spin 0.9s linear infinite; }
+@keyframes wf-spin { to { transform: rotate(360deg); } }
+.wf-edge { stroke: var(--line2); stroke-dasharray: 3 7; vector-effect: non-scaling-stroke; }
+.wf-band { font-size: 22px; fill: var(--mute) !important; }
+.wf-blk > rect { stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.wf-zoomable { cursor: zoom-in; }
+.wf-zoomable:hover > rect { stroke-opacity: 1; }
+.wf-bt { font-size: 34px; font-weight: 700; }
+.wf-sum { font-size: 28px; fill: var(--dim) !important; }
+.wf-ext > rect { fill: #151920; stroke: var(--line2); stroke-dasharray: 4 4; }
+.wf-et { font-size: 30px; font-weight: 700; }
+.wf-es { font-size: 20px; fill: var(--mute) !important; }
+.wf-card { cursor: zoom-in; }
+.wf-card > rect { fill: var(--bg2); stroke: var(--line2); vector-effect: non-scaling-stroke; }
+.wf-card:hover > rect { stroke: var(--dim); }
+.wf-ct { font-size: 16px; font-weight: 600; }
+.wf-cs { font-family: var(--mono) !important; font-size: 11.5px; fill: var(--mute) !important; }
+.wf-cd { font-size: 8.2px; fill: var(--dim) !important; }
+.wf-cd.r { fill: var(--alert) !important; }
+.wf-cd.l { fill: var(--warn) !important; }
+.wf-cf { font-family: var(--mono) !important; font-size: 7px; fill: var(--mute) !important; }
+.wf-ar path { fill: none; vector-effect: non-scaling-stroke; }
+.wf-base { stroke-width: 2; }
+.wf-ar.k-datos .wf-base { stroke: var(--accent); }
+.wf-ar.k-bucle .wf-base { stroke: var(--warn); }
+.wf-ar.k-regla .wf-base { stroke: var(--alert); stroke-dasharray: 6 5; }
+.wf-ar.wf-in .wf-base { stroke-width: 1.4; opacity: 0.8; }
+.wf-flow { stroke-width: 3.6; stroke-linecap: round; stroke-dasharray: 0.1 18; animation: wf-run 1.4s linear infinite; }
+.wf-ar.k-datos .wf-flow { stroke: #C4DBFF; }
+.wf-ar.k-bucle .wf-flow { stroke: #FFE2B3; animation-duration: 2.8s; }
+@keyframes wf-run { to { stroke-dashoffset: -18.1; } }
+.wf-chip rect { fill: #0B0D10; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.wf-chip text { font-size: 15px; font-weight: 500; text-anchor: middle; dominant-baseline: central; }
+.wf-chip.k-datos rect { stroke: var(--accent); }
+.wf-chip.k-datos text { fill: #CFE2FF !important; }
+.wf-chip.k-bucle rect { stroke: var(--warn); }
+.wf-chip.k-bucle text { fill: var(--warn) !important; }
+.wf-chip.k-regla rect { stroke: var(--alert); }
+.wf-chip.k-regla text { fill: #FFB4B4 !important; }
+.wf-lod1, .wf-lod2, .wf-lod3 { transition: opacity 0.3s; }
+.wf-lod2, .wf-lod3 { opacity: 0; pointer-events: none; }
+#wf-map[data-lod="2"] .wf-lod2, #wf-map[data-lod="3"] .wf-lod2, #wf-map[data-lod="3"] .wf-lod3 { opacity: 1; pointer-events: auto; }
+#wf-map[data-lod="2"] .wf-lod1, #wf-map[data-lod="3"] .wf-lod1 { opacity: 0; pointer-events: none; }
+#wf-map[data-lod="2"] .wf-zoomable, #wf-map[data-lod="3"] .wf-zoomable { cursor: grab; }
+@media (max-width: 900px) { .wf-legend, .wf-hint { display: none; } }
+@media (prefers-reduced-motion: reduce) { .wf-flow { animation: none; opacity: 0; } .wf-spin { animation-duration: 3s; } .wf-lod1, .wf-lod2, .wf-lod3 { transition: none; } }
+
 /* ── Log: llamadas al exterior ──────────────────────────────────── */
-#dlg-log { width: min(1180px, calc(100% - 32px)); height: min(780px, calc(100% - 32px)); overflow: hidden; }
+#dlg-log { width: min(1180px, calc(100% - 32px)); height: min(780px, calc(100% - 116px)); overflow: hidden; }
 .dlg-log { display: flex; flex-direction: column; gap: 14px; height: 100%; padding: 20px 22px; }
 .log-head { display: flex; align-items: flex-start; gap: 12px; flex: none; }
 .log-titles { flex: 1 1 auto; min-width: 0; }

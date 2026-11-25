@@ -4,6 +4,12 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.27.0 — 2026-11-25
+- Botón «Workflow»: cómo funciona tu proyecto, en un mapa que cabe en una pantalla. De lejos ves los bloques y cómo se conectan; al acercarte, las piezas de cada uno; más cerca, qué hace cada pieza, lo que se repite solo (↻) y las reglas que niegan o condicionan la comunicación (✕). Rueda o pellizco para acercar, arrastra para moverte y pulsa un bloque para entrar.
+- El mapa lo dibuja un modelo aparte, sin tocar tu sesión de Claude ni llenar su conversación: Codex si lo tienes (no gasta de tu plan de Claude) o, si no, Claude en un proceso propio. Se le envía un extracto del proyecto sin archivos .env, sin claves y con lo que parezca una contraseña tapado; queda en el «Log».
+- Con la ventana abierta, cada 5 minutos se mira si el proyecto ha cambiado y solo entonces se actualiza el mapa. Sin Codex y con tu plan de Claude al 80 % o más, no se actualiza solo para no quitarle margen a tu trabajo.
+- El «Log» pasa a la rueda de opciones, con su número de entradas.
+
 ## 0.26.0 — 2026-11-24
 - ClaudHome trae de serie el plugin «frontend-design» de Anthropic, el más instalado de Claude Code: cuando pides una web, una app o una pantalla, Claude lo usa solo para darle un diseño pensado para lo que estás haciendo, en vez del aspecto genérico de una plantilla. No hay que instalar ni activar nada. Si ya lo tenías en tu Claude Code, se usa el tuyo.
 

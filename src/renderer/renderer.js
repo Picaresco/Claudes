@@ -13,6 +13,7 @@ import { api, $ } from './ui/dom.js';
 import { wireTabs, wireChrome, wireDialog, wireKeyboard } from './ui/events.js';
 import { setLimitsSnap, renderPlanLimits } from './ui/limits.js';
 import { wireLog } from './ui/log.js';
+import { wireWorkflow } from './ui/workflow.js';
 import { baseName } from './ui/newtab.js';
 import { wireRainbow } from './ui/rainbow.js';
 import { renderTabs, renderStatusbar, layout } from './ui/render.js';
@@ -147,6 +148,7 @@ async function init() {
   wireChrome();
   wireRainbow();
   wireLog();
+  wireWorkflow();
   wireActivity();
   wireZoom();
   wireModel();

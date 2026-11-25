@@ -72,6 +72,12 @@ contextBridge.exposeInMainWorld('api', {
   onOptimizeHint: on('optimize:hint'), // (tabId, { recommended, reasons, snoozed, first })
   onCodexChanged: on('codex:changed'),
 
+  // Botón «Workflow»: el mapa del proyecto de una pestaña (lo dibuja un modelo aparte).
+  workflowOpen: (tabId) => ipcRenderer.invoke('workflow:open', String(tabId)),
+  workflowClose: (tabId) => ipcRenderer.send('workflow:close', String(tabId)),
+  workflowRedo: (tabId) => ipcRenderer.invoke('workflow:redo', String(tabId)),
+  onWorkflow: on('workflow:update'), // ({ key, folder, map, status, at, engine, error, next… })
+
   // Panel «Actividad»: lo que va haciendo Claude en cada pestaña, contado por Haiku.
   activityGet: (tabId) => ipcRenderer.invoke('activity:get', tabId === undefined ? undefined : String(tabId)),
   activitySetEnabled: (on) => ipcRenderer.invoke('activity:setEnabled', Boolean(on)), // rueda de opciones
