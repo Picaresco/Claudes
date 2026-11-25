@@ -14,7 +14,12 @@ import { layoutMap, wrap } from './workflow-layout.js';
 
 const COL = { datos: '#6AA5F8', bucle: '#F2B866', regla: '#F26B6B' };
 const BLOCK = { persona: ['#A9AFB9', 'rgba(169,175,185,.05)'], interfaz: ['#6AA5F8', 'rgba(106,165,248,.07)'], nucleo: ['#7FD4A0', 'rgba(127,212,160,.06)'], proceso: ['#F2B866', 'rgba(242,184,102,.06)'], datos: ['#A9AFB9', 'rgba(169,175,185,.05)'] };
-const NAMES = ['Vista general', 'Módulos', 'Detalle'];
+// Cinco niveles de zoom: + y − van de uno en uno, y la rueda y el pellizco no salen de ellos.
+// Cada nivel enseña lo que se lee a ese tamaño (LOD_OF: 1 bloques, 2 piezas, 3 detalle).
+const NAMES = ['Vista general', 'Bloques', 'Piezas', 'Detalle', 'Detalle ampliado'];
+const LOD_OF = [1, 2, 2, 3, 3];
+const MIN_PX = [0, 0.85, 1.35, 2.1, 3.2]; // píxeles por unidad del lienzo, como mínimo, en cada nivel
+let steps = [1, 1.6, 2.6, 4.1, 6.6]; // los de este mapa en esta ventana (computeSteps)
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hhmm = (ms) => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -76,6 +81,7 @@ function draw(map) {
   svg().innerHTML = defs + band + blocks + ext + arrows + cards + labels;
   chips = [...svg().querySelectorAll('.wf-chip')].map((g) => ({ g, x: Number(g.dataset.x), y: Number(g.dataset.y), w: Number(g.querySelector('rect').getAttribute('width')), h: Number(g.dataset.h) }));
   base = fitBox();
+  computeSteps();
   vb = { ...base };
   apply();
 }
@@ -94,17 +100,29 @@ function fitBox() {
   return { x: (W - w) / 2, y: (H - h) / 2, w, h };
 }
 
+// El zoom de cada nivel: el primero, el mapa entero; cada uno, 1,6 veces el anterior y, como
+// poco, lo que hace falta para leer lo que enseña.
+function computeSteps() {
+  const r = stage().getBoundingClientRect();
+  steps = [r.width / base.w];
+  for (let i = 1; i < NAMES.length; i += 1) steps.push(Math.max(steps[i - 1] * 1.6, MIN_PX[i]));
+}
+// El nivel más cercano a un zoom.
+const levelOf = (px) => steps.reduce((best, s, i) => (Math.abs(Math.log(px / s)) < Math.abs(Math.log(px / steps[best])) ? i : best), 0);
+
 function apply() {
   const s = svg();
   s.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
   const r = stage().getBoundingClientRect();
   const px = r.width / vb.w; // píxeles por unidad del lienzo
-  const k = base.w / vb.w; // cuánto se ha acercado desde «Ver todo»
-  const lod = px >= 1.9 ? 3 : px >= 0.78 && k >= 1.15 ? 2 : 1;
+  const level = levelOf(px);
+  const lod = LOD_OF[level];
   if (s.dataset.lod !== String(lod)) s.dataset.lod = String(lod);
   const lvl = $('#wf-lvl');
-  lvl.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i < lod));
-  lvl.querySelector('span').textContent = NAMES[lod - 1];
+  lvl.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i <= level));
+  lvl.querySelector('span').textContent = NAMES[level];
+  $('#wf-out').disabled = px <= steps[0] * 1.03;
+  $('#wf-in').disabled = px >= steps[steps.length - 1] / 1.03;
   // Las etiquetas de las flechas guardan su tamaño en pantalla (al acercarse no tapan nada)
   // y, si dos se montan, la de abajo baja lo justo.
   const cs = Math.max(0.35, Math.min(2.2, 0.8 / Math.max(0.01, px)));
@@ -130,7 +148,8 @@ function apply() {
 function setView(v) {
   const r = stage().getBoundingClientRect();
   const ar = r.width / Math.max(1, r.height);
-  const w = Math.min(base.w / 0.8, Math.max(base.w / 14, v.w));
+  // Entre el primer nivel (el mapa entero) y el último.
+  const w = Math.min(r.width / steps[0], Math.max(r.width / steps[steps.length - 1], v.w));
   const h = w / ar;
   const cx = v.x + v.w / 2;
   const cy = v.y + v.h / 2;
@@ -160,18 +179,25 @@ function toCanvas(clientX, clientY) {
 }
 function zoomAt(f, p) { setView({ x: p.x - (p.x - vb.x) / f, y: p.y - (p.y - vb.y) / f, w: vb.w / f, h: vb.h / f }); }
 
-// Entrar en un bloque (se ven sus piezas) o en una pieza (se ve su detalle).
-function zoomToBox([x, y, w, h], card) {
+// Ir a un nivel, centrado en un punto del lienzo.
+function zoomToLevel(i, c, ms = 300) {
   const r = stage().getBoundingClientRect();
-  const ar = r.width / Math.max(1, r.height);
-  let vw = Math.max(w * 1.15, h * 1.12 * ar);
-  // Una pieza, a tamaño de lectura (nivel de detalle); un bloque, entero y en el de módulos.
-  vw = card ? Math.max(vw, r.width / 2.4) : Math.max(Math.min(vw, base.w / 1.25, r.width / 0.85), r.width / 1.8);
-  animateTo({ x: x + w / 2 - vw / 2, y: y + h / 2 - vw / ar / 2, w: vw, h: vw / ar });
+  const w = r.width / steps[i];
+  const h = w / (r.width / Math.max(1, r.height));
+  animateTo({ x: c.x - w / 2, y: c.y - h / 2, w, h }, ms);
 }
-const fit = () => { base = fitBox(); animateTo(base); };
+// Entrar en un bloque (nivel «Bloques», se ven sus piezas) o en una pieza (nivel «Detalle»).
+const zoomToBox = ([x, y, w, h], card) => zoomToLevel(card ? 3 : 1, { x: x + w / 2, y: y + h / 2 }, 420);
+const fit = () => { base = fitBox(); computeSteps(); animateTo(base); };
 const center = () => ({ x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 });
-const zoomBy = (f) => { const c = center(); animateTo({ x: c.x - vb.w / f / 2, y: c.y - vb.h / f / 2, w: vb.w / f, h: vb.h / f }, 280); };
+// + y −: al nivel siguiente o al anterior (desde un zoom intermedio, al más cercano en ese sentido).
+function zoomStep(dir) {
+  const px = stage().getBoundingClientRect().width / vb.w;
+  let i = -1;
+  if (dir > 0) i = steps.findIndex((s) => s > px * 1.03);
+  else steps.forEach((s, k) => { if (s < px / 1.03) i = k; });
+  if (i >= 0) zoomToLevel(i, center());
+}
 
 function wirePointer() {
   const s = svg();
@@ -293,8 +319,8 @@ export function wireWorkflow() {
   $('#btn-workflow').addEventListener('click', openWorkflow);
   $('#wf-close').addEventListener('click', () => dialog.close());
   $('#wf-fit').addEventListener('click', fit);
-  $('#wf-in').addEventListener('click', () => zoomBy(1.6));
-  $('#wf-out').addEventListener('click', () => zoomBy(1 / 1.6));
+  $('#wf-in').addEventListener('click', () => zoomStep(1));
+  $('#wf-out').addEventListener('click', () => zoomStep(-1));
   const redo = async () => {
     if (!current) return;
     try { show(await api.workflowRedo(current.tabId)); } catch { /* llegará con la siguiente actualización */ }
@@ -303,8 +329,8 @@ export function wireWorkflow() {
   $('#wf-retry').addEventListener('click', redo);
   dialog.addEventListener('keydown', (e) => {
     if (e.target.closest('button')) return;
-    if (e.key === '+' || e.key === '=') zoomBy(1.6);
-    else if (e.key === '-') zoomBy(1 / 1.6);
+    if (e.key === '+' || e.key === '=') zoomStep(1);
+    else if (e.key === '-') zoomStep(-1);
     else if (e.key === '0') fit();
   });
   dialog.addEventListener('close', () => {
@@ -319,6 +345,7 @@ export function wireWorkflow() {
     const k = base.w / vb.w;
     const c = center();
     base = fitBox();
+    computeSteps();
     const w = base.w / k;
     const r = stage().getBoundingClientRect();
     const h = w / (r.width / Math.max(1, r.height));

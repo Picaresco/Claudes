@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.27.1 — 2026-11-25
+- El zoom del «Workflow» tiene cinco niveles: vista general, bloques, piezas, detalle y detalle ampliado. Cada pulsación de + o − va exactamente un nivel, los puntos de arriba dicen en cuál estás, y + y − se apagan al llegar al último y al primero. La rueda y el pellizco tampoco pasan de esos límites.
+
 ## 0.27.0 — 2026-11-25
 - Botón «Workflow»: cómo funciona tu proyecto, en un mapa que cabe en una pantalla. De lejos ves los bloques y cómo se conectan; al acercarte, las piezas de cada uno; más cerca, qué hace cada pieza, lo que se repite solo (↻) y las reglas que niegan o condicionan la comunicación (✕). Rueda o pellizco para acercar, arrastra para moverte y pulsa un bloque para entrar.
 - El mapa lo dibuja un modelo aparte, sin tocar tu sesión de Claude ni llenar su conversación: Codex si lo tienes (no gasta de tu plan de Claude) o, si no, Claude en un proceso propio. Se le envía un extracto del proyecto sin archivos .env, sin claves y con lo que parezca una contraseña tapado; queda en el «Log».

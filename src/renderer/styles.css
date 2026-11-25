@@ -755,7 +755,9 @@ dialog .btn-primary { background: var(--txt); }
 .wf-tools { display: flex; align-items: center; gap: 6px; }
 #dlg-workflow .wf-tools .btn { height: 34px; min-width: 34px; padding: 0 10px; justify-content: center; }
 .wf-tools .icon-btn { width: 36px; height: 36px; }
-.wf-lvl { display: flex; align-items: center; gap: 5px; min-width: 112px; justify-content: center; font-size: 12px; color: var(--dim); }
+.wf-lvl { display: flex; align-items: center; gap: 5px; min-width: 168px; justify-content: center; font-size: 12px; color: var(--dim); }
+.wf-lvl span { min-width: 104px; }
+#dlg-workflow .wf-tools .btn:disabled { opacity: 0.4; cursor: default; }
 .wf-lvl i { width: 7px; height: 7px; border-radius: 50%; background: var(--line2); }
 .wf-lvl i.on { background: var(--ok); }
 .wf-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: radial-gradient(circle at 1px 1px, #1a1e25 1px, transparent 1.5px) 0 0 / 22px 22px, #0B0D10; }
