@@ -14,9 +14,13 @@ export const CARD_W = 210;
 export const CARD_H = 116;
 // Entre las piezas de un bloque: un pasillo ancho entre columnas, donde cada conexión interna
 // lleva su propio carril, y aire entre filas.
-const IN_X = 84; // pasillo entre columnas de piezas
+const IN_X = 120; // pasillo entre columnas de piezas (hasta 6 carriles bien separados)
 const IN_Y = 34; // entre filas de piezas
-const SIDE = 46; // pasillo a la derecha de un bloque de una columna con conexiones internas
+const SIDE = 64; // pasillo a la derecha de un bloque de una columna con conexiones internas
+// Las flechas que van por debajo de los bloques: carriles separados en alto y sus tramos
+// verticales separados en ancho, para poder seguir cada una con la vista.
+const LANE_GAP = 40;
+const LANE_STEP = 26;
 const PAD = 18; // borde del bloque
 const HEAD = 66; // título del bloque
 const COL_GAP = 190; // entre columnas: sitio para las etiquetas de las flechas
@@ -140,18 +144,25 @@ export function layoutMap(map) {
     if (a.col === b.col) {
       // Misma columna con otro bloque en medio: por el hueco de la derecha de la columna.
       const col = cols[a.col];
-      const gutter = col.x + col.w + 28 + (gutters[a.col] = (gutters[a.col] || 0) + 1) * 10;
+      const gutter = col.x + col.w + 4 + (gutters[a.col] = (gutters[a.col] || 0) + 1) * LANE_STEP;
       return { f, i, type: 'gutter', gutter, ends: [{ box: a, side: 'right' }, { box: b, side: 'right' }] };
     }
     // Columnas alejadas: sale por el lado que mira al otro, baja por el hueco entre columnas
     // hasta un carril bajo todos los bloques y sube por el hueco junto al destino.
-    const lane = bottom + 46 + lanes.length * 26;
+    const k = lanes.length;
+    const lane = bottom + 50 + k * LANE_GAP;
     lanes.push(lane);
-    const right = a.col < b.col;
-    const g1 = right ? cols[a.col].x + cols[a.col].w + 30 + lanes.length * 6 : cols[a.col].x - 30 - lanes.length * 6;
-    const g2 = right ? cols[b.col].x - 30 - lanes.length * 6 : cols[b.col].x + cols[b.col].w + 30 + lanes.length * 6;
-    return { f, i, type: 'lane', lane, g1, g2, ends: [{ box: a, side: right ? 'right' : 'left' }, { box: b, side: right ? 'left' : 'right' }] };
+    return { f, i, type: 'lane', lane, k, right: a.col < b.col, ends: [{ box: a, side: a.col < b.col ? 'right' : 'left' }, { box: b, side: a.col < b.col ? 'left' : 'right' }] };
   });
+  // Los tramos verticales de los carriles, bien separados y encajados unos dentro de otros: el
+  // carril más hondo baja más pegado a su bloque, así ninguno cruza a otro.
+  for (const r of routes) {
+    if (r.type !== 'lane') continue;
+    const [a, b] = r.ends.map((e) => e.box);
+    const off = 24 + (lanes.length - 1 - r.k) * LANE_STEP;
+    r.g1 = r.right ? cols[a.col].x + cols[a.col].w + off : cols[a.col].x - off;
+    r.g2 = r.right ? cols[b.col].x - off : cols[b.col].x + cols[b.col].w + off;
+  }
   const far = Math.max(0, ...routes.map((r) => r.gutter || Math.max(r.g1 || 0, r.g2 || 0)));
   if (far + MARGIN > W) W = far + MARGIN;
   // Puntos de cada lado, ordenados según dónde está el otro extremo.
@@ -161,7 +172,10 @@ export function layoutMap(map) {
       const other = r.ends[1 - k].box;
       const key = `${end.box.id}|${end.side}`;
       if (!sides.has(key)) sides.set(key, []);
-      sides.get(key).push({ end, sortKey: end.side === 'left' || end.side === 'right' ? other.y + other.h / 2 : other.x + other.w / 2 });
+      // Los carriles de abajo salen por la parte baja del lado, el más hondo el último: así su
+      // tramo horizontal no cruza el vertical de otro.
+      const sortKey = r.type === 'lane' ? 1e6 + r.k : end.side === 'left' || end.side === 'right' ? other.y + other.h / 2 : other.x + other.w / 2;
+      sides.get(key).push({ end, sortKey });
     });
   }
   for (const [, items] of sides) {

@@ -154,6 +154,16 @@ test('el mapa se dibuja sin bloques montados y con cada flecha y tarjeta en su s
   }
   for (const e of L.ext) assert.ok(e.y + e.h < L.band, 'los servicios de internet van en su banda');
   assert.deepEqual(wrap('una frase bastante larga que no cabe en un renglón', 14, 2), ['una frase', 'bastante larga…']);
+  // Las flechas que van por debajo: sus tramos verticales, bien separados para seguirlas.
+  const under = layoutMap(validate({ ...big, flechas: [...big.flechas, { de: 'web', a: 'bd', tipo: 'datos', texto: 'lejos 2' }] }));
+  const verticals = under.arrows.map((a) => /^M[\d.]+ [\d.]+H([\d.]+)V[\d.]+H([\d.]+)V/.exec(a.d)).filter(Boolean).flatMap((m) => [Number(m[1]), Number(m[2])]);
+  assert.ok(verticals.length >= 4, 'hacen falta dos flechas por debajo');
+  for (let i = 0; i < verticals.length; i += 1) {
+    for (let j = i + 1; j < verticals.length; j += 1) {
+      const gap = Math.abs(verticals[i] - verticals[j]);
+      assert.ok(gap >= 20 || gap > 150, `dos tramos verticales a ${gap.toFixed(0)} unidades`);
+    }
+  }
   // Las conexiones internas van cada una por su carril del pasillo, dentro de su bloque.
   const inside = validate({
     ...big,
