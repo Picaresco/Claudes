@@ -4,14 +4,19 @@
 //   - Columnas fijas por tipo de bloque, de izquierda a derecha: persona, interfaz, núcleo,
 //     procesos y datos. Las vacías no se dibujan. Los servicios de internet van en una banda
 //     arriba, sobre el bloque con el que más hablan.
-//   - Cada bloque mide lo que sus módulos: una columna de tarjetas hasta 4, dos a partir de 5.
+//   - Cada bloque mide lo que sus módulos: una columna de tarjetas hasta 2, dos a partir de 3,
+//     con un pasillo entre columnas por el que van las conexiones internas, cada una por su carril.
 //   - Flechas entre columnas contiguas, de borde a borde; entre columnas alejadas o dentro de
 //     la misma columna, por un carril de abajo, para no cruzar por encima de otros bloques.
 //     Los puntos de salida de cada lado se reparten para que no se monten.
 
 export const CARD_W = 210;
 export const CARD_H = 116;
-const GAP = 12; // entre tarjetas
+// Entre las piezas de un bloque: un pasillo ancho entre columnas, donde cada conexión interna
+// lleva su propio carril, y aire entre filas.
+const IN_X = 84; // pasillo entre columnas de piezas
+const IN_Y = 34; // entre filas de piezas
+const SIDE = 46; // pasillo a la derecha de un bloque de una columna con conexiones internas
 const PAD = 18; // borde del bloque
 const HEAD = 66; // título del bloque
 const COL_GAP = 190; // entre columnas: sitio para las etiquetas de las flechas
@@ -49,9 +54,11 @@ export function layoutMap(map) {
     const cols = n >= 3 ? 2 : 1;
     const rows = Math.ceil(n / cols);
     const foot = 22 + rulesOf(b.id).length * 34;
-    const w = n ? cols * CARD_W + (cols - 1) * GAP + PAD * 2 : (b.tipo === 'persona' ? 220 : 260);
-    const h = Math.max(n ? HEAD + rows * (CARD_H + GAP) - GAP + foot : 200, 200);
-    boxes.set(b.id, { ...b, w, h, cols, n });
+    // Una sola columna con conexiones internas: su pasillo, a la derecha.
+    const side = cols === 1 && map.internas.some((f) => modsOf(b.id).some((m) => m.id === f.de)) ? SIDE : 0;
+    const w = n ? cols * CARD_W + (cols - 1) * IN_X + PAD * 2 + side : (b.tipo === 'persona' ? 220 : 260);
+    const h = Math.max(n ? HEAD + rows * (CARD_H + IN_Y) - IN_Y + foot : 200, 200);
+    boxes.set(b.id, { ...b, w, h, cols, n, side });
   }
 
   // Columnas por tipo (sin las vacías), con dos bloques como mucho en cada una.
@@ -107,7 +114,7 @@ export function layoutMap(map) {
     modsOf(b.id).forEach((m, i) => {
       const c = i % b.cols;
       const r = Math.floor(i / b.cols);
-      cards.push({ ...m, x: b.x + PAD + c * (CARD_W + GAP), y: b.y + HEAD + r * (CARD_H + GAP), w: CARD_W, h: CARD_H, c });
+      cards.push({ ...m, x: b.x + PAD + c * (CARD_W + IN_X), y: b.y + HEAD + r * (CARD_H + IN_Y), w: CARD_W, h: CARD_H, c, r, i });
     });
   }
 
@@ -203,30 +210,54 @@ export function layoutMap(map) {
     return { d, at, kind: r.f.tipo, text: r.f.texto, bi: r.f.doble, de: r.f.de, a: r.f.a };
   });
 
-  // Flechas entre módulos de un mismo bloque.
+  // Flechas entre piezas de un mismo bloque. Entre vecinas de arriba y abajo, recta por el aire
+  // entre filas; las demás, por el pasillo del bloque, cada una por su carril y en ángulo recto,
+  // saliendo y entrando por el lado de la tarjeta que da al pasillo. Los puntos de cada lado de
+  // una tarjeta se reparten, así no se pisan ni las líneas ni las puntas.
   const byId = new Map(cards.map((c) => [c.id, c]));
-  const inner = map.internas.map((f) => {
-    const a = byId.get(f.de);
-    const b = byId.get(f.a);
-    if (!a || !b) return null;
-    let d;
-    if (a.c !== b.c) {
-      const [s, t] = a.x < b.x ? [{ x: a.x + a.w, y: a.y + a.h / 2 }, { x: b.x, y: b.y + b.h / 2 }] : [{ x: a.x, y: a.y + a.h / 2 }, { x: b.x + b.w, y: b.y + b.h / 2 }];
-      const dx = (t.x - s.x) / 2;
-      d = `M${s.x} ${s.y}C${s.x + dx} ${s.y} ${t.x - dx} ${t.y} ${t.x} ${t.y}`;
-    } else if (Math.abs(a.y - b.y) <= CARD_H + GAP) {
-      const [s, t] = a.y < b.y ? [{ x: a.x + a.w / 2, y: a.y + a.h }, { x: b.x + b.w / 2, y: b.y }] : [{ x: a.x + a.w / 2, y: a.y }, { x: b.x + b.w / 2, y: b.y + b.h }];
-      d = `M${s.x} ${s.y}L${t.x} ${t.y}`;
+  const innerRoutes = map.internas.map((f) => ({ f, a: byId.get(f.de), b: byId.get(f.a) })).filter((r) => r.a && r.b);
+  const lanesIn = new Map(); // bloque → carriles usados
+  const portsIn = new Map(); // tarjeta|lado → puntos
+  const port = (card, side, r) => { const key = `${card.id}|${side}`; if (!portsIn.has(key)) portsIn.set(key, []); portsIn.get(key).push(r); };
+  for (const r of innerRoutes) {
+    const { a, b } = r;
+    if (a.c === b.c && Math.abs(a.r - b.r) === 1) {
+      r.type = 'near';
+      port(a, a.r < b.r ? 'bottom' : 'top', r);
     } else {
-      // Misma columna, no contiguas: por el borde de fuera de la columna.
-      const left = a.c === 0;
-      const sx = left ? a.x : a.x + a.w;
-      const tx = left ? b.x : b.x + b.w;
-      const bulge = left ? -12 : 12;
-      d = `M${sx} ${a.y + a.h / 2}C${sx + bulge} ${a.y + a.h / 2} ${tx + bulge} ${b.y + b.h / 2} ${tx} ${b.y + b.h / 2}`;
+      r.type = 'lane';
+      r.lane = lanesIn.get(a.bloque) || 0;
+      lanesIn.set(a.bloque, r.lane + 1);
+      r.sideA = a.c === 0 ? 'right' : 'left';
+      r.sideB = b.c === 0 ? 'right' : 'left';
+      port(a, r.sideA, r);
+      port(b, r.sideB, r);
     }
-    return { d, kind: f.tipo, bloque: a.bloque };
-  }).filter(Boolean);
+  }
+  const at = (card, side, r) => {
+    const list = portsIn.get(`${card.id}|${side}`);
+    const k = list.indexOf(r);
+    if (side === 'bottom' || side === 'top') return { x: card.x + card.w / 2 + (k - (list.length - 1) / 2) * 18, y: side === 'bottom' ? card.y + card.h : card.y };
+    return { x: side === 'right' ? card.x + card.w : card.x, y: card.y + 26 + ((k + 1) * (card.h - 36)) / (list.length + 1) };
+  };
+  const inner = innerRoutes.map((r) => {
+    const { a, b } = r;
+    let d;
+    if (r.type === 'near') {
+      const s = at(a, a.r < b.r ? 'bottom' : 'top', r);
+      d = `M${s.x} ${s.y}V${a.r < b.r ? b.y : b.y + b.h}`;
+    } else {
+      const blk = boxes.get(a.bloque);
+      const x0 = blk.x + PAD + CARD_W; // el pasillo empieza tras la primera columna
+      const width = blk.cols === 2 ? IN_X : blk.side;
+      const n = lanesIn.get(a.bloque);
+      const lane = x0 + ((r.lane + 1) * width) / (n + 1);
+      const s = at(a, r.sideA, r);
+      const t = at(b, r.sideB, r);
+      d = `M${s.x} ${s.y}H${lane}V${t.y}H${t.x}`;
+    }
+    return { d, kind: r.f.tipo, bloque: a.bloque };
+  });
 
   // Reglas de cada bloque: etiquetas al pie.
   const pills = [];

@@ -71,14 +71,18 @@ function draw(map) {
     const flow = a.kind === 'regla' ? '' : `<path class="wf-flow" d="${a.d}"/>`;
     return `<g class="wf-ar k-${a.kind}${cls}"><path class="wf-base" d="${a.d}" ${ends}/>${flow}</g>`;
   };
-  const arrows = L.arrows.map((a) => arrow(a)).join('') + L.inner.map((a) => arrow({ ...a, bi: false }, ' wf-in wf-lod2')).join('');
+  const arrows = L.arrows.map((a) => arrow(a)).join('') + L.inner.map((a) => arrow({ ...a, bi: false }, ' wf-in wf-lod2').replace('<g ', `<g data-b="${esc(a.bloque)}" `)).join('');
   const cards = L.cards.map((c) => {
     // Hasta 4 renglones si abajo van los archivos; 5 si no.
     const lines = [...c.detalle, ...c.reglas.map((r) => `✕ ${r.replace(/^✕\s*/, '')}`), ...c.bucles.map((r) => `↻ ${r.replace(/^↻\s*/, '')}`)].slice(0, c.archivos.length ? 4 : 5);
     const text = lines.map((l, i) => `<text class="wf-cd${l.startsWith('✕') ? ' r' : l.startsWith('↻') ? ' l' : ''}" x="${c.x + 14}" y="${c.y + 62 + i * 11}">${esc(l)}</text>`).join('');
     const files = c.archivos.length ? `<text class="wf-cf" x="${c.x + 14}" y="${c.y + c.h - 9}">${esc(c.archivos.slice(0, 3).join(' · ').slice(0, 52))}</text>` : '';
     const marks = (c.reglas.length ? `<circle cx="${c.x + c.w - 14}" cy="${c.y + 16}" r="5" fill="${COL.regla}"/>` : '') + (c.bucles.length ? `<circle cx="${c.x + c.w - (c.reglas.length ? 28 : 14)}" cy="${c.y + 16}" r="5" fill="${COL.bucle}"/>` : '');
-    return `<g class="wf-card wf-lod2" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}"><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
+    // Al entrar en el bloque, cada pieza sale de su centro y se separa hasta su sitio, una tras otra.
+    const blk = L.blocks.find((b) => b.id === c.bloque);
+    const dx = ((blk.x + blk.w / 2) - (c.x + c.w / 2)) * 0.7;
+    const dy = ((blk.y + blk.h / 2) - (c.y + c.h / 2)) * 0.7;
+    return `<g class="wf-card wf-lod2" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--d:${c.i * 45}ms" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}"><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
   }).join('');
   // Las reglas de cada bloque, al pie, aparecen al acercarse; en la vista general, las de las flechas.
   const labels = L.arrows.filter((a) => a.text).map((a) => chip(a.kind, a.text, a.at)).join('') + L.pills.map((p) => chip('regla', p.text.startsWith('✕') ? p.text : `✕ ${p.text}`, p.at, ' data-pill="1"').replace('class="wf-chip', 'class="wf-lod2 wf-chip')).join('');

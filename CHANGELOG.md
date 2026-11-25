@@ -8,6 +8,8 @@ sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambi
 - Los mapas del «Workflow» hechos con una versión anterior se completan solos al entrar en el proyecto o abrir la ventana, con el modelo rápido y sin rehacerlos desde cero: así aparece el botón «Stack Tecnológico» también en los proyectos que ya tenían mapa.
 - Cada tarea del «Workflow» usa su modelo: el primer mapa y «Rehacer», el de calidad (Codex con razonamiento medio o Sonnet); las actualizaciones, el rápido (Codex con razonamiento bajo o Haiku).
 - Al actualizar un mapa ya no se pierden las reglas y bucles de sus piezas.
+- Al entrar en un bloque del «Workflow», sus piezas salen del centro y se separan hasta su sitio, con un pasillo entre columnas por el que cada conexión interna va por su propio carril: ya no se pisan las líneas.
+- Con Codex, el mapa lo hace gpt-6.2-sol (el más completo en una prueba de 5 modelos y esfuerzos): razonamiento medio para el primero, en segundo plano, y bajo para actualizarlo. Si tu cuenta no tiene ese modelo, usa el de Codex por defecto.
 
 ## 0.28.0 — 2026-11-25
 - El mapa del «Workflow» se prepara solo al entrar en un proyecto (al abrir su pestaña o cambiar a ella): al pulsar «Workflow» ya está, sin esperar. Cada vez que vuelves a entrar se actualiza si el proyecto ha cambiado; con la ventana abierta, cada 5 minutos si hay cambios. Varios proyectos se hacen de uno en uno, sin tocar tu sesión de Claude.

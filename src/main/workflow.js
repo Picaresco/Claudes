@@ -19,12 +19,16 @@ const { command, resultText, jsonIn, createRunner } = require('./haiku');
 const digest = require('./workflow-digest');
 
 const SCHEMA = 2;
+// Codex para el mapa: gpt-6.2-sol. En la prueba del 25-11-2026 (5 pasadas sobre ClaudHome) dio el
+// mapa más completo: razonamiento medio para el primero (≈2 min, en segundo plano) y bajo para
+// actualizar (≈1 min); gpt-6.2-astra fue igual de rápido pero se dejó la mitad de las reglas.
+const CODEX_MODEL = 'gpt-6.2-sol';
 const CHECK_EVERY = Number(process.env.CLAUDES_WORKFLOW_EVERY_MS) > 0 ? Number(process.env.CLAUDES_WORKFLOW_EVERY_MS) : 5 * 60 * 1000;
 const ENTER_EVERY = process.env.CLAUDES_WORKFLOW_ENTER_MS !== undefined ? Number(process.env.CLAUDES_WORKFLOW_ENTER_MS) || 0 : 30 * 1000;
 const TIMEOUT = 8 * 60 * 1000;
 const TYPES = ['persona', 'interfaz', 'nucleo', 'proceso', 'datos', 'externo'];
 const KINDS = ['datos', 'bucle', 'regla'];
-const LIMITS = { blocks: 9, external: 3, modules: 8, arrows: 12, inner: 24, rules: 1, lines: 3, marks: 3, stack: 8 };
+const LIMITS = { blocks: 9, external: 3, modules: 8, arrows: 12, inner: 24, innerPer: 6, rules: 1, lines: 3, marks: 3, stack: 8 };
 
 const SYSTEM = 'Eres un arquitecto de software que explica proyectos a personas no expertas. Describes cómo funciona un proyecto como un mapa. Respondes solo con JSON válido, sin texto alrededor.';
 
@@ -104,6 +108,7 @@ function validate(raw, sources = null, prev = null) {
     const mf = modules.find((m) => m.id === from);
     const mt = modules.find((m) => m.id === to);
     if (!mf || !mt || from === to || mf.bloque !== mt.bloque || inner.length >= LIMITS.inner) continue;
+    if (inner.filter((x) => modules.find((m) => m.id === x.de).bloque === mf.bloque).length >= LIMITS.innerPer) continue; // 6 por bloque
     inner.push({ de: from, a: to, tipo: KINDS.includes(a.tipo) ? a.tipo : 'datos' });
   }
   const rules = [];
@@ -176,7 +181,7 @@ function refreshPrompt({ name, text, map, changes, from = null }) {
 // netlog(): el «Log» · engine: forzar 'codex' o 'claude' (pruebas).
 // planBusy(): el plan de Claude va justo (≥ 80 %): sin Codex, no se rehace solo, para no
 // quitarle margen a la sesión de trabajo.
-function createWorkflow({ codexState, codex, model, findClaude, env = () => process.env, workDir, dir, send = () => {}, log = () => {}, netlog = () => null, engine = null, planBusy = () => false }) {
+function createWorkflow({ codexState, codex, model = CODEX_MODEL, findClaude, env = () => process.env, workDir, dir, send = () => {}, log = () => {}, netlog = () => null, engine = null, planBusy = () => false }) {
   const runner = createRunner({ env, workDir, timeout: TIMEOUT });
   const projects = new Map(); // carpeta → estado
   let stopped = false; // la app se cierra: nada más se comprueba ni se programa
@@ -231,7 +236,13 @@ function createWorkflow({ codexState, codex, model, findClaude, env = () => proc
           if (!(await codex.chatgptLogin())) return { error: 'Codex no tiene la sesión de ChatGPT iniciada.' };
           const cwd = workDir();
           fs.mkdirSync(cwd, { recursive: true });
-          const result = await codex.askCodex({ cwd, prompt: `${SYSTEM}\n\n${prompt}`, model, effort: kind === 'full' ? 'medium' : 'low', signal, timeout: TIMEOUT });
+          const ask = (m) => codex.askCodex({ cwd, prompt: `${SYSTEM}\n\n${prompt}`, model: m, effort: kind === 'full' ? 'medium' : 'low', signal, timeout: TIMEOUT });
+          let result = await ask(model);
+          // Una cuenta sin ese modelo: otra vez con el que tenga Codex por defecto.
+          if (!result.ok && !result.aborted && /model/i.test(`${result.failure || ''} ${result.log || ''}`)) {
+            log(`Workflow: Codex no tiene ${model}; se usa su modelo por defecto`);
+            result = await ask(null);
+          }
           if (result.aborted) return { error: 'cancelado' };
           return result.ok ? { text: result.text } : { error: result.failure || 'Codex no ha contestado.' };
         },

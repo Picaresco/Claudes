@@ -154,6 +154,22 @@ test('el mapa se dibuja sin bloques montados y con cada flecha y tarjeta en su s
   }
   for (const e of L.ext) assert.ok(e.y + e.h < L.band, 'los servicios de internet van en su banda');
   assert.deepEqual(wrap('una frase bastante larga que no cabe en un renglón', 14, 2), ['una frase', 'bastante larga…']);
+  // Las conexiones internas van cada una por su carril del pasillo, dentro de su bloque.
+  const inside = validate({
+    ...big,
+    internas: [
+      { de: 'w1', a: 'w4', tipo: 'datos' }, { de: 'w2', a: 'w5', tipo: 'datos' }, { de: 'w3', a: 'w1', tipo: 'bucle' },
+      { de: 'w1', a: 'w3', tipo: 'datos' }, { de: 'w2', a: 'w4', tipo: 'datos' }, { de: 'w1', a: 'w5', tipo: 'datos' },
+    ],
+  });
+  const L2 = layoutMap(inside);
+  const web = L2.blocks.find((b) => b.id === 'web');
+  const lanes = L2.inner.filter((a) => a.bloque === 'web').map((a) => /H([\d.]+)V/.exec(a.d)).filter(Boolean).map((m) => Number(m[1]));
+  assert.ok(lanes.length >= 3);
+  assert.equal(new Set(lanes).size, lanes.length, 'dos conexiones comparten carril');
+  for (const x of lanes) assert.ok(x > web.x && x < web.x + web.w, 'un carril se sale del bloque');
+  const cardsWeb = L2.cards.filter((c) => c.bloque === 'web');
+  for (const x of lanes) assert.ok(!cardsWeb.some((c) => x > c.x && x < c.x + c.w), 'un carril pasa por encima de una pieza');
 });
 
 test('el mapa se hace al abrir, se guarda, y solo se rehace si el proyecto cambia con la ventana abierta', async (t) => {

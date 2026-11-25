@@ -16,11 +16,12 @@ Para una persona que no conoce el proyecto (o no es programadora) y pulsa «Work
 
 Tú solo devuelves los datos; la app lo dibuja siempre igual. Saber cómo se dibuja te ayuda a elegir bien:
 
-- **Tres niveles de zoom.** De lejos se ven los bloques, sus flechas y las etiquetas de las flechas. Al acercarse aparecen las piezas (módulos) de cada bloque, las flechas entre piezas y la regla del bloque. Más cerca, el detalle de cada pieza: sus frases, sus reglas (✕), sus bucles (↻) y sus archivos.
-- **Columnas por tipo, de izquierda a derecha:** persona → interfaz → núcleo → proceso → datos. Los servicios de internet (tipo externo) van en una banda arriba, sobre el bloque con el que hablan.
+- **Cinco niveles de zoom** (vista general, bloques, piezas, detalle y detalle ampliado; + y − van de uno en uno). De lejos se ven los bloques con su resumen, sus flechas y las etiquetas de las flechas. Al acercarse aparecen las piezas (módulos) de cada bloque y la regla del bloque. Más cerca, el detalle de cada pieza: sus frases, sus reglas (✕), sus bucles (↻) y sus archivos.
+- **Al entrar en un bloque** sus piezas salen del centro y se separan hasta su sitio, en una o dos columnas con un pasillo entre ellas; luego aparecen las flechas internas, cada una por su propio carril del pasillo. Por eso, en «internas» pon solo las conexiones que ayudan a entender el bloque: 6 como mucho por bloque.
+- **Columnas por tipo, de izquierda a derecha:** persona → interfaz → núcleo → proceso → datos, con dos bloques como mucho por columna. Los servicios de internet (tipo externo) van en una banda arriba, sobre el bloque con el que hablan.
 - **Colores:** azul para los datos, ámbar para lo que se repite solo (↻), rojo discontinuo para las reglas que niegan o condicionan (✕).
-- **El stack tecnológico** se abre con su botón, en un recuadro aparte: con qué está hecho el proyecto.
-- **Lo que no cabe se corta.** Respeta las longitudes de cada campo.
+- **El stack tecnológico** se abre con su botón «Stack Tecnológico», en un recuadro aparte: con qué está hecho el proyecto.
+- **Lo que no cabe se corta.** Respeta las longitudes de cada campo. El título y el resumen de cada bloque se ajustan a su tamaño: un nombre corto se lee mejor.
 
 ## Método
 

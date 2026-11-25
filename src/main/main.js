@@ -472,7 +472,7 @@ if (!app.requestSingleInstanceLock()) {
     // «Workflow»: el mapa del proyecto, con Codex si está (no gasta del plan de Claude) o con
     // Claude Code en un proceso aparte. Independiente de la sesión de la pestaña.
     workflow = createWorkflow({
-      codexState, codex, model: review.MODEL,
+      codexState, codex,
       findClaude: sessions.findClaude,
       env: haikuEnv,
       workDir: () => path.join(app.getPath('temp'), 'Claudes-workflow'),
