@@ -46,6 +46,25 @@ function chip(kind, text, [x, y], extra = '') {
   return `<g class="wf-chip k-${kind}" data-x="${x}" data-y="${y}" data-h="${h}"${extra}><rect x="${x - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="${Math.min(14, h / 2)}"/>${rows}</g>`;
 }
 
+// Cada texto, dentro de su caja: se mide ya dibujado (la letra de ancho fijo y las mayúsculas no
+// se pueden estimar por número de letras) y, si no cabe, se corta por una palabra o una letra con «…».
+function fitTexts() {
+  for (const t of svg().querySelectorAll('text[data-w]')) {
+    const max = Number(t.dataset.w);
+    const full = t.textContent;
+    if (!max || t.getComputedTextLength() <= max) continue;
+    let lo = 0;
+    let hi = full.length;
+    while (lo < hi) { // la mayor cantidad de letras que cabe con «…»
+      const mid = Math.ceil((lo + hi) / 2);
+      t.textContent = `${full.slice(0, mid).trimEnd()}…`;
+      if (t.getComputedTextLength() <= max) lo = mid; else hi = mid - 1;
+    }
+    t.textContent = `${full.slice(0, lo).replace(/[\s·,;:]+$/, '')}…`;
+    if (!t.querySelector('title')) { const tip = document.createElementNS('http://www.w3.org/2000/svg', 'title'); tip.textContent = full; t.append(tip); }
+  }
+}
+
 function draw(map) {
   L = layoutMap(map);
   focused = null;
@@ -61,11 +80,11 @@ function draw(map) {
     const lh = sfs * 1.35;
     const lines = wrap(b.resumen, Math.max(10, Math.floor((b.w - 36) / (sfs * 0.53))), Math.max(1, Math.min(4, Math.floor((b.h - 84) / lh))));
     const mid = b.y + 70 + (b.h - 70) / 2;
-    const sum = lines.map((l, i) => `<text class="wf-sum" x="${b.x + b.w / 2}" y="${mid + 10 + (i - (lines.length - 1) / 2) * lh}" text-anchor="middle" style="font-size:${sfs}px">${esc(l)}</text>`).join('');
+    const sum = lines.map((l, i) => `<text class="wf-sum" data-w="${b.w - 28}" x="${b.x + b.w / 2}" y="${mid + 10 + (i - (lines.length - 1) / 2) * lh}" text-anchor="middle" style="font-size:${sfs}px">${esc(l)}</text>`).join('');
     const zoom = b.n ? ` data-zoom="${b.x} ${b.y} ${b.w} ${b.h}"` : '';
-    return `<g class="wf-blk${b.n ? ' wf-zoomable' : ''}" data-id="${esc(b.id)}" data-name="${esc(b.nombre)}"${zoom}><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="${fill}" stroke="${stroke}" stroke-opacity=".6"/><text class="wf-bt" x="${b.x + 18}" y="${b.y + 46}" style="fill:${stroke === '#A9AFB9' ? '#E7E9EC' : stroke};font-size:${tfs}px">${esc(b.nombre)}</text>${b.n ? `<g class="wf-lod1">${sum}</g>` : sum}</g>`; // sin piezas, el resumen se queda a la vista
+    return `<g class="wf-blk${b.n ? ' wf-zoomable' : ''}" data-id="${esc(b.id)}" data-name="${esc(b.nombre)}"${zoom}><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="${fill}" stroke="${stroke}" stroke-opacity=".6"/><text class="wf-bt" data-w="${b.w - 36}" x="${b.x + 18}" y="${b.y + 46}" style="fill:${stroke === '#A9AFB9' ? '#E7E9EC' : stroke};font-size:${tfs}px">${esc(b.nombre)}</text>${b.n ? `<g class="wf-lod1">${sum}</g>` : sum}</g>`; // sin piezas, el resumen se queda a la vista
   }).join('');
-  const ext = L.ext.map((e) => `<g class="wf-blk wf-ext" data-id="${esc(e.id)}"><rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" rx="12"/><text class="wf-et" x="${e.x + 16}" y="${e.y + 42}">${esc(e.nombre)}</text><text class="wf-es" x="${e.x + 16}" y="${e.y + 76}">${esc(wrap(e.resumen, 21, 1)[0] || '')}</text></g>`).join('');
+  const ext = L.ext.map((e) => `<g class="wf-blk wf-ext" data-id="${esc(e.id)}"><rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" rx="12"/><text class="wf-et" data-w="${e.w - 30}" x="${e.x + 16}" y="${e.y + 42}">${esc(e.nombre)}</text><text class="wf-es" data-w="${e.w - 30}" x="${e.x + 16}" y="${e.y + 76}">${esc(e.resumen)}</text></g>`).join('');
   // Cada flecha sabe qué une (data-de, data-a): al pasar el ratón se iluminan las de lo señalado.
   const arrow = (a, cls = '') => {
     const m = `url(#wf-a-${a.kind})`;
@@ -77,8 +96,10 @@ function draw(map) {
   const cards = L.cards.map((c) => {
     // Hasta 4 renglones si abajo van los archivos; 5 si no.
     const lines = [...c.detalle, ...c.reglas.map((r) => `✕ ${r.replace(/^✕\s*/, '')}`), ...c.bucles.map((r) => `↻ ${r.replace(/^↻\s*/, '')}`)].slice(0, c.archivos.length ? 4 : 5);
-    const text = lines.map((l, i) => `<text class="wf-cd${l.startsWith('✕') ? ' r' : l.startsWith('↻') ? ' l' : ''}" x="${c.x + 14}" y="${c.y + 62 + i * 11}">${esc(l)}</text>`).join('');
-    const files = c.archivos.length ? `<text class="wf-cf" x="${c.x + 14}" y="${c.y + c.h - 9}">${esc(c.archivos.slice(0, 3).join(' · ').slice(0, 52))}</text>` : '';
+    // data-w: el ancho que tiene cada texto; lo que no quepa se corta con «…» al dibujarlo (fitTexts).
+    const inner = c.w - 28;
+    const text = lines.map((l, i) => `<text class="wf-cd${l.startsWith('✕') ? ' r' : l.startsWith('↻') ? ' l' : ''}" data-w="${inner}" x="${c.x + 14}" y="${c.y + 62 + i * 11}">${esc(l)}</text>`).join('');
+    const files = c.archivos.length ? `<text class="wf-cf" data-w="${inner}" x="${c.x + 14}" y="${c.y + c.h - 9}">${esc(c.archivos.slice(0, 3).join(' · '))}</text>` : '';
     const marks = (c.reglas.length ? `<circle cx="${c.x + c.w - 14}" cy="${c.y + 16}" r="5" fill="${COL.regla}"/>` : '') + (c.bucles.length ? `<circle cx="${c.x + c.w - (c.reglas.length ? 28 : 14)}" cy="${c.y + 16}" r="5" fill="${COL.bucle}"/>` : '');
     // Al entrar en el bloque, cada pieza sale de su centro y se separa hasta su sitio, una tras otra.
     const blk = L.blocks.find((b) => b.id === c.bloque);
@@ -86,12 +107,13 @@ function draw(map) {
     const dy = ((blk.y + blk.h / 2) - (c.y + c.h / 2)) * 0.7;
     // De cerca, pulsarla muestra su archivo principal en el Explorador.
     const tip = c.archivos.length ? `${c.nombre}: de lejos, pulsa para acercarte; de cerca, para ver ${c.archivos[0]} en el Explorador` : c.nombre;
-    return `<g class="wf-card wf-lod2" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--d:${c.i * 45}ms" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-id="${esc(c.id)}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}" data-file="${esc(c.archivos[0] || '')}"><title>${esc(tip)}</title><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
+    return `<g class="wf-card wf-lod2" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--d:${c.i * 45}ms" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-id="${esc(c.id)}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}" data-file="${esc(c.archivos[0] || '')}"><title>${esc(tip)}</title><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" data-w="${inner - (c.reglas.length || c.bucles.length ? 34 : 0)}" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" data-w="${inner}" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
   }).join('');
   // Las reglas de cada bloque, al pie, aparecen al acercarse; en la vista general, las de las flechas.
   const labels = L.arrows.filter((a) => a.text).map((a) => chip(a.kind, a.text, a.at, ` data-de="${esc(a.de)}" data-a="${esc(a.a)}"`)).join('')
     + L.pills.map((p) => chip('regla', p.text.startsWith('✕') ? p.text : `✕ ${p.text}`, p.at, ` data-pill="1" data-b="${esc(p.bloque)}"`).replace('class="wf-chip', 'class="wf-lod2 wf-chip')).join('');
   svg().innerHTML = defs + band + blocks + ext + arrows + cards + labels;
+  fitTexts();
   chips = [...svg().querySelectorAll('.wf-chip')].map((g) => ({ g, x: Number(g.dataset.x), y: Number(g.dataset.y), w: Number(g.querySelector('rect').getAttribute('width')), h: Number(g.dataset.h) }));
   base = fitBox();
   computeSteps();
