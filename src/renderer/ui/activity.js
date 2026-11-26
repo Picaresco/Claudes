@@ -7,6 +7,7 @@
 import { api, $, el } from './dom.js';
 import { previewAt, hidePreview } from './preview.js';
 import { focusAfterToggle } from './settings.js';
+import { renderPlan, forgetPlan, wirePlan } from './plan.js';
 import { S, byId, applySwatch, toast } from './state.js';
 
 // Un icono por tipo de paso (trazos de 16×16).
@@ -192,6 +193,7 @@ export function renderActivity() {
   painted = keys;
   shownTab = tab.id;
   $('#act-empty').hidden = snap.entries.length > 0;
+  renderPlan(tab.id); // el plan, al pie (quita sitio a la lista: después se baja al final)
   toEnd();
 }
 
@@ -204,6 +206,7 @@ export function setActivity(tabId, snap) {
 // Se olvida lo de una pestaña cerrada (aquí y en el proceso principal).
 export function forgetActivity(tabId) {
   data.delete(tabId);
+  forgetPlan(tabId);
   api.activityForget(tabId);
 }
 
@@ -234,6 +237,8 @@ export function wireActivity() {
   $('#act-toggle').addEventListener('click', () => { toggleActivity(); });
   $('#activity-btn').addEventListener('click', () => { switchActivity(); });
   api.onActivity(setActivity);
+  // El plan de la tarea, al pie: se repinta con la columna si es la pestaña que se ve.
+  wirePlan((tabId) => { if (tabId === S.activeId) renderActivity(); });
   // Cuándo deja de seguir lo último y cuándo vuelve (ver `follow`).
   const list = $('#act-list');
   grows.observe(list); // su alto cambia con la línea de «ahora», la ventana o al mostrarse

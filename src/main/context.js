@@ -232,16 +232,22 @@ function createContext({ app, net, log }) {
     return { text: `${parts.join('\n\n')}\n`, allow, hash: signature(context) };
   }
 
+  // Lo que ClaudHome le pide siempre (`preface`, p. ej. cómo llevar el plan, plan.js) va delante
+  // del contexto del usuario en el mismo archivo. La firma, los permisos y el aviso de cambios
+  // (pendingUpdate) son solo del contexto del usuario.
+  const compose = (preface, text) => [preface, text].filter(Boolean).join('\n\n');
+
   // Al arrancar una sesión: escribe el resumen y devuelve lo que hay que pasarle a Claude.
-  async function prepare(tabId, tabName, context) {
+  async function prepare(tabId, tabName, context, preface = '') {
     const built = await build(tabId, tabName, context);
     let promptFile = null;
-    if (built.text) {
+    const full = compose(preface, built.text);
+    if (full) {
       await fs.promises.mkdir(dirFor(tabId), { recursive: true });
       promptFile = path.join(dirFor(tabId), 'instrucciones.md');
-      await fs.promises.writeFile(promptFile, built.text, 'utf8');
+      await fs.promises.writeFile(promptFile, full, 'utf8');
     }
-    sessions.set(tabId, { delivered: built.hash, current: built.hash, text: built.text });
+    sessions.set(tabId, { delivered: built.hash, current: built.hash, text: built.text, preface });
     return { promptFile, allow: built.allow, text: built.text };
   }
 
@@ -253,9 +259,10 @@ function createContext({ app, net, log }) {
       state.current = built.hash;
       state.text = built.text;
     }
-    if (built.text) {
+    const full = compose(state ? state.preface : '', built.text);
+    if (full) {
       await fs.promises.mkdir(dirFor(tabId), { recursive: true });
-      await fs.promises.writeFile(path.join(dirFor(tabId), 'instrucciones.md'), built.text, 'utf8');
+      await fs.promises.writeFile(path.join(dirFor(tabId), 'instrucciones.md'), full, 'utf8');
     }
     return { allow: built.allow, text: built.text };
   }

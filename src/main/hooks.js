@@ -81,7 +81,8 @@ function narrInput(tool, input) {
     case 'WebSearch': return { query: s(input.query, 200) };
     case 'Bash': case 'PowerShell': return { command: s(input.command, 600), description: s(input.description, 200) };
     case 'Agent': case 'Task': return { agent: s(input.subagent_type, 80), task: s(input.description, 200), background: input.run_in_background === true };
-    case 'TodoWrite': return { todos: Array.isArray(input.todos) ? input.todos.slice(0, 12).map((t) => ({ content: s(t && (t.content || t.activeForm), 120), status: s(t && t.status, 20) })) : [] };
+    // La lista entera (el plan del panel «Actividad», plan.js), hasta 60 pasos.
+    case 'TodoWrite': return { todos: Array.isArray(input.todos) ? input.todos.slice(0, 60).map((t) => ({ content: s(t && (t.content || t.activeForm), 120), status: s(t && t.status, 20) })) : [] };
     case 'TaskCreate': return { subject: s(input.subject || input.description, 150) };
     case 'TaskUpdate': return { status: s(input.status, 20), subject: s(input.subject, 150) };
     case 'Skill': return { skill: s(input.skill || input.command || input.name, 80) };
@@ -94,6 +95,27 @@ function narrInput(tool, input) {
   return { summary };
 }
 
+// Una tarea de la lista de Claude ya apuntada o cambiada (el plan del panel «Actividad»,
+// plan.js): su número (en TaskCreate, el que devuelve Claude Code), el texto y el estado.
+function taskInfo(eventName, payload) {
+  if (eventName !== 'PostToolUse') return null;
+  const input = payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {};
+  const response = payload.tool_response && typeof payload.tool_response === 'object' ? payload.tool_response : {};
+  const id = (v) => (typeof v === 'string' || typeof v === 'number') && /^[\w-]{1,40}$/.test(String(v)) ? String(v) : null;
+  const text = (v) => (typeof v === 'string' ? v.slice(0, 200) : '');
+  if (payload.tool_name === 'TaskCreate') {
+    const task = response.task && typeof response.task === 'object' ? response.task : {};
+    const taskId = id(task.id);
+    return taskId ? { id: taskId, subject: text(task.subject || input.subject || input.description), status: 'pending' } : null;
+  }
+  if (payload.tool_name === 'TaskUpdate') {
+    if (response.success === false) return null; // no se ha cambiado
+    const taskId = id(input.taskId);
+    return taskId ? { id: taskId, subject: text(input.subject), status: text(input.status).slice(0, 20) } : null;
+  }
+  return null;
+}
+
 // Del aviso entero, lo del panel «Actividad»: el paso, de qué agente es (si no es Claude), el
 // registro de la conversación, la última respuesta (al pararse) y el error (si ha fallado).
 // No sale del proceso principal: main.js lo quita antes de pasar el aviso a la interfaz.
@@ -101,6 +123,7 @@ function narration(eventName, payload) {
   const s = (v, max) => (typeof v === 'string' && v ? v.slice(0, max) : null);
   return {
     input: narrInput(payload.tool_name, payload.tool_input),
+    task: taskInfo(eventName, payload),
     agentId: s(payload.agent_id, 100),
     agentType: s(payload.agent_type, 100),
     transcript: s(payload.transcript_path, 4000),

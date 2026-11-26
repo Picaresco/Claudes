@@ -218,7 +218,8 @@ function describe(tool, input, { folder = null, cwd = null, exists = fs.existsSy
     case 'TodoWrite': {
       const said = { pending: 'pendiente', in_progress: 'en curso', completed: 'hecha' };
       const todos = Array.isArray(i.todos) ? i.todos : [];
-      const list = todos.map((t) => `${clip(t.content, 100)} (${said[t.status] || t.status || '¿?'})`).join('; ');
+      // A Haiku, como mucho las 12 primeras (el panel del plan las enseña todas).
+      const list = todos.slice(0, 12).map((t) => `${clip(t.content, 100)} (${said[t.status] || t.status || '¿?'})`).join('; ');
       return step('plan', 'Organizando sus tareas', `Apunta su lista de tareas: ${list || 'vacía'}`);
     }
     case 'TaskCreate': return step('plan', `Apuntando una tarea: ${clip(i.subject, 60)}`, `Se apunta la tarea «${clip(i.subject, 120)}»`);

@@ -37,7 +37,10 @@ contextBridge.exposeInMainWorld('api', {
   pickFolder: (startAt) => ipcRenderer.invoke('dialog:pickFolder', startAt),
   confirm: (options) => ipcRenderer.invoke('dialog:confirm', options),
   choose: (options) => ipcRenderer.invoke('dialog:choose', options),
-  tabMenu: (options) => ipcRenderer.invoke('menu:tab', options),
+  // Tarjeta del proyecto (botón derecho sobre una pestaña): si hay registro de la sesión y la
+  // dirección del proyecto en GitHub (o null).
+  tabCard: (tabId) => ipcRenderer.invoke('tab:card', String(tabId)),
+  tabRepo: (tabId, cwd) => ipcRenderer.invoke('tab:repo', String(tabId), String(cwd || '')),
 
   // Devuelve { files, text, imagePath }: lo que haya que pegar, por ese orden de preferencia.
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
@@ -86,6 +89,9 @@ contextBridge.exposeInMainWorld('api', {
   activitySetOpen: (on) => ipcRenderer.invoke('activity:setOpen', Boolean(on)), // la columna, a la vista u oculta
   activityForget: (tabId) => ipcRenderer.send('activity:forget', String(tabId)),
   onActivity: on('activity:update'), // (tabId, { entries, now, enabled })
+  // El plan de cada pestaña, al pie del panel: { steps: [{ id, text, status }], done, total } o null.
+  planGet: (tabId) => ipcRenderer.invoke('plan:get', String(tabId)),
+  onPlan: on('plan:update'), // (tabId, plan)
 
   // Actualización desde GitHub: estado, generar la versión nueva y reiniciar para instalarla.
   updateGet: () => ipcRenderer.invoke('update:get'),

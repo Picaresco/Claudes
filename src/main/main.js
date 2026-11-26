@@ -29,6 +29,8 @@ const { createOptimizeHints } = require('./optimize-hint');
 const { createChecker } = require('./optimize-check');
 const { createNarrator } = require('./narrator');
 const { createWorkflow } = require('./workflow');
+const { createPlanTracker, PLAN_NOTE } = require('./plan');
+const { compactTarget, compactEnv } = require('./project-card');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
 const { gitBash, shellList, shellCommand, childEnv, quoteForCmd } = require('./shells');
@@ -61,6 +63,7 @@ let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
 let optimizeChecker = null; // la segunda mirada de Haiku (optimize-check.js)
 let narrator = null; // panel «Actividad»: lo que hace Claude, contado por Haiku (narrator.js)
 let workflow = null; // botón «Workflow»: el mapa del proyecto (workflow.js)
+let planTracker = null; // el plan de cada pestaña, al pie del panel «Actividad» (plan.js)
 // Avisos tras una edición: el hook espera 2 s; cada aviso tiene 1,5 s para decidir (si se
 // pasa, no anota nada) y a los 1,7 s se contesta con lo que haya.
 const NOTICE_BUDGET = 1500;
@@ -179,10 +182,15 @@ async function createPty(o) {
     return { ok: false, error: 'No encuentro Claude Code en este equipo (el comando «claude» no está instalado o no está en el PATH).' };
   }
   const chosen = sessions.plan({ cwd: o.cwd, sessionId: o.sessionId, mode: o.mode, exclude: o.exclude });
-  // Contexto del proyecto de la pestaña: resumen para Claude y permiso para leer sus documentos.
+  // Plan del panel «Actividad» (plan.js): la lista de tareas de Claude Code, que viene apagada
+  // con los modelos nuevos. Si el usuario la ha apagado él mismo, se respeta y no se le pide.
+  const ownTodo = process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS;
+  const planOn = ownTodo === undefined || /^(1|true|yes|on)$/i.test(ownTodo.trim());
+  // Contexto del proyecto de la pestaña: resumen para Claude y permiso para leer sus documentos
+  // (delante, cómo llevar el plan).
   let ctx = { promptFile: null, allow: [] };
   try {
-    ctx = await contexts.prepare(o.id, o.name, o.context);
+    ctx = await contexts.prepare(o.id, o.name, o.context, planOn ? PLAN_NOTE : '');
   } catch (err) {
     appLog(`contexto de ${tabLabel(o.id)}: no se pudo preparar (${err.message})`);
   }
@@ -199,6 +207,14 @@ async function createPty(o) {
   for (const plugin of plugins) args.push('--plugin-dir', plugin.dir);
   style.started(o.id, plugins);
   const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
+  if (ownTodo === undefined) extraEnv.CLAUDE_CODE_ENABLE_TODO_TOOLS = '1';
+  // Autocompactar (tarjeta del proyecto): al llegar la conversación a ese % del contexto, Claude
+  // Code la resume sola. 85 % de serie; cada pestaña puede tener el suyo. Claude Code lo lee al
+  // arrancar: un cambio con la sesión abierta se aplica al reiniciarla. Si el usuario ya tiene
+  // la variable puesta, manda la suya.
+  const compact = compactTarget(o.compact);
+  const ownCompact = process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE !== undefined;
+  if (!ownCompact) extraEnv.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = compactEnv(compact, Number(o.ctxSize));
 
   // Con Codex instalado, la sesión arranca con las herramientas de la app: «segunda_opinion»
   // (que se niega si no hay sesión de ChatGPT o el asesor está apagado: así sirve aunque se
@@ -223,7 +239,8 @@ async function createPty(o) {
     tab.log = logFile;
   }
   appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
-    + `${withMcp ? ` · con Codex (segunda opinión${withCodex ? ' e imágenes' : ''})` : ''}${ctx.promptFile ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
+    + `${withMcp ? ` · con Codex (segunda opinión${withCodex ? ' e imágenes' : ''})` : ''}${ctx.text ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
+    + `${planOn ? ' · con lista de tareas' : ''} · autocompactar ${ownCompact ? 'con la variable del usuario' : `al ${compact} %`}`
     + `${o.model || o.effort ? ` · modelo ${o.model || 'predeterminado'}${o.effort ? `, esfuerzo ${o.effort}` : ''}` : ''}`
     + `${plugins.length ? ` · plugins: ${plugins.map((p) => p.name).join(', ')}` : ''}`
     + `${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
@@ -236,7 +253,8 @@ async function createPty(o) {
     ptys.spawn(o.id, exe, args, { ...base, env });
   }
   if (optimizeHints) optimizeHints.refresh(o.id); // si conviene optimizar este proyecto
-  return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex };
+  // compact: el autocompactar con el que arranca (null si manda la variable del usuario).
+  return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex, compact: ownCompact ? null : compact };
 }
 
 // ── Arranque ───────────────────────────────────────────────────────
@@ -310,6 +328,7 @@ if (!app.requestSingleInstanceLock()) {
       workDir: () => path.join(app.getPath('temp'), 'Claudes-haiku'),
       enabled: store.get('activityEnabled', true) !== false,
     });
+    planTracker = createPlanTracker({ send });
     hookServer = new HookServer(path.join(app.getPath('userData'), 'hooks'), (tabId, event) => {
       if (DEV && process.env.CLAUDES_LOG_HOOKS) console.log('[hook]', event.event, event.prompt ? `«${event.prompt}»` : '');
       appLog(`hook de ${tabLabel(tabId)}: ${event.event}${event.toolName ? ` ${event.toolName}` : ''}${event.notificationType ? ` ${event.notificationType}` : ''}`);
@@ -355,6 +374,8 @@ if (!app.requestSingleInstanceLock()) {
       // en el orden de llegada, con lo que ya se sabe de Stop (pruebas, revisión).
       const forActivity = { ...event };
       setImmediate(() => narrator.event(tabId, forActivity));
+      if (planTracker) planTracker.event(tabId, forActivity); // el plan, al pie del panel
+
       delete event.narr; // solo para el panel «Actividad»
       send('hook', tabId, event);
     });
@@ -492,7 +513,7 @@ if (!app.requestSingleInstanceLock()) {
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
       sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow,
+      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker,
     });
     wm.create();
     limits.start();

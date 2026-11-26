@@ -240,7 +240,7 @@ export function renderStatusbar() {
   if (model) {
     const effort = model.effort ? EFFORTS[model.effort] || model.effort : null;
     setPieces(modelEl, [{ text: model.name }, effort ? { kind: 'extra', text: ` · esfuerzo ${effort}` } : null, model.fast ? { kind: 'extra', text: ' · rápido' } : null]);
-    modelEl.title = `Modelo de esta pestaña: ${model.name}${model.id ? ` (${model.id})` : ''}.${effort ? `\nEsfuerzo de razonamiento: ${effort}${effort !== model.effort ? ` (${model.effort})` : ''}.` : ''}${model.fast ? '\nModo rápido activado.' : ''}\nPulsa para cambiarlos.`;
+    modelEl.title = `Modelo de esta pestaña: ${model.name}${model.id ? ` (${model.id})` : ''}.${effort ? `\nEsfuerzo de razonamiento: ${effort}${effort !== model.effort ? ` (${model.effort})` : ''}.` : ''}${model.fast ? '\nModo rápido activado.' : ''}\nSe cambian con el botón derecho sobre la pestaña.`;
   }
   // La conversación de cada pestaña ya se ve en su barrita (y sus tokens, al pasar el ratón):
   // la barra inferior solo lleva el uso semanal de Claude y de Codex.

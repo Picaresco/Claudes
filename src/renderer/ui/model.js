@@ -1,89 +1,25 @@
-// ── Modelo y esfuerzo de una pestaña (barra inferior) ────────────
-// Pulsar «Opus 5.5 · esfuerzo muy alto» abre un panel para elegir el modelo y el esfuerzo.
-// Sin la casilla, solo cambia esta pestaña: ClaudHome reinicia su sesión con --model y
-// --effort y retoma la misma conversación (y lo recuerda para las próximas veces). Con la
-// casilla, además se guarda como predeterminado de Claude Code para las sesiones nuevas
+// ── Modelo, esfuerzo y autocompactar de una pestaña ──────────────
+// Se eligen en la tarjeta del proyecto (botón derecho sobre la pestaña, ui/tabcard.js); la barra
+// inferior solo enseña el modelo y el esfuerzo de la pestaña activa.
+// Sin la casilla, el modelo y el esfuerzo solo cambian esa pestaña: ClaudHome reinicia su sesión
+// con --model y --effort y retoma la misma conversación (y lo recuerda para las próximas veces).
+// Con la casilla, además se guardan como predeterminados de Claude Code para las sesiones nuevas
 // (~/.claude/settings.json, como hace /model), y la pestaña sigue ese predeterminado.
+// El autocompactar (85 % de serie) también se aplica al arrancar Claude: va en el mismo reinicio.
 // Si Claude está trabajando, se aplica cuando termine.
 import { MODELS, EFFORT_LEVELS } from './constants.js';
-import { api, $, el } from './dom.js';
+import { api } from './dom.js';
 import { restartSession } from './sessions.js';
-import { S, views, byId, save, toast } from './state.js';
-import { focusTerminal } from './views.js';
+import { views, byId, save, toast } from './state.js';
 
-const BUSY = ['working', 'reviewing', 'planreview', 'consulting', 'needs', 'starting'];
-let choice = null; // { model, effort } mientras el panel está abierto
-let defaults = { model: null, effort: null }; // el predeterminado de Claude Code (settings.json)
+export const BUSY = ['working', 'reviewing', 'planreview', 'consulting', 'needs', 'starting'];
+export const DEFAULT_COMPACT = 85; // el de todos los proyectos (src/main/project-card.js)
 
-const modelName = (id) => (MODELS.find((m) => m.id === id) || { name: id }).name;
-const effortName = (level) => (EFFORT_LEVELS.find((e) => e.level === level) || { label: level }).label;
-// ¿La pestaña sigue el predeterminado que se guardó desde este panel? (la casilla, marcada)
-const followsDefault = (tab) => Boolean(tab && tab.modelDefault && !tab.model && !tab.effort);
-
-const activeView = () => views.get(S.activeId);
-
-function paint() {
-  const view = activeView();
-  if (!view || !choice) return;
-  const current = view.model || {};
-  $('#model-tab').textContent = `Para la pestaña «${view.tab.name}»`;
-  const list = MODELS.slice();
-  // El de la sesión, aunque no esté en la lista (otro modelo o una versión anterior).
-  if (current.id && !list.some((m) => m.id === current.id)) list.push({ id: current.id, name: current.name || current.id, desc: 'El que usa ahora esta sesión' });
-  $('#model-list').replaceChildren(...list.map((m) => {
-    const row = el('button', 'mm-opt');
-    row.type = 'button';
-    row.setAttribute('role', 'radio');
-    row.setAttribute('aria-checked', String(choice.model === m.id));
-    row.append(el('span', 'mm-radio'));
-    const label = el('span', 'mm-label');
-    label.append(el('span', 'mm-name', m.name), el('span', 'mm-desc', m.desc));
-    row.append(label);
-    row.append(current.id === m.id ? el('span', 'mm-now', 'ahora') : el('span'));
-    row.addEventListener('click', () => { choice.model = m.id; paint(); });
-    return row;
-  }));
-  $('#model-efforts').replaceChildren(...EFFORT_LEVELS.map((e) => {
-    const b = el('button', 'mm-effort', e.label);
-    b.type = 'button';
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(choice.effort === e.level));
-    b.addEventListener('click', () => { choice.effort = e.level; paint(); });
-    return b;
-  }));
-  const effort = EFFORT_LEVELS.find((e) => e.level === choice.effort);
-  $('#model-hint').textContent = effort ? `${effort.label[0].toUpperCase()}${effort.label.slice(1)}: ${effort.desc}` : '';
-  // El predeterminado de Claude Code, para saber qué se usa en las sesiones nuevas.
-  $('#model-default-now').textContent = defaults.model
-    ? `Ahora, en las sesiones nuevas: ${modelName(defaults.model)}${defaults.effort ? ` · esfuerzo ${effortName(defaults.effort)}` : ''}.`
-    : 'Ahora, las sesiones nuevas usan el modelo de Claude Code por defecto.';
-  // Sin nada que cambiar, «Aplicar» no hace nada.
-  const same = choice.model === current.id && choice.effort === current.effort && $('#model-default').checked === followsDefault(view.tab);
-  $('#model-apply').disabled = same;
-}
-
-function openMenu() {
-  const view = activeView();
-  if (!view) return;
-  const current = view.model || {};
-  choice = { model: current.id || MODELS[0].id, effort: current.effort || 'high' };
-  // Marcada si la pestaña sigue el predeterminado que se guardó desde aquí.
-  $('#model-default').checked = followsDefault(view.tab);
-  $('#model-menu').hidden = false;
-  $('#sb-model').setAttribute('aria-expanded', 'true');
-  paint();
-  api.modelGetDefault().then((d) => { defaults = d || defaults; if (choice) paint(); }).catch(() => { /* sin dato */ });
-  const selected = $('#model-list [aria-checked="true"]');
-  if (selected) selected.focus();
-}
-
-export function closeModelMenu() {
-  if ($('#model-menu').hidden) return false;
-  $('#model-menu').hidden = true;
-  $('#sb-model').setAttribute('aria-expanded', 'false');
-  choice = null;
-  return true;
-}
+export const modelName = (id) => (MODELS.find((m) => m.id === id) || { name: id }).name;
+export const effortName = (level) => (EFFORT_LEVELS.find((e) => e.level === level) || { label: level }).label;
+// ¿La pestaña sigue el predeterminado que se guardó desde la tarjeta? (la casilla, marcada)
+export const followsDefault = (tab) => Boolean(tab && tab.modelDefault && !tab.model && !tab.effort);
+export const compactOf = (tab) => (tab && Number.isFinite(tab.compact) ? tab.compact : DEFAULT_COMPACT);
 
 // Reinicia la sesión de la pestaña con lo elegido (retoma su conversación).
 function restartWith(view) {
@@ -96,47 +32,41 @@ export function applyPendingModel(view) {
   if (view && view.pendingModel && views.has(view.tab.id)) restartWith(view);
 }
 
-async function apply() {
-  const view = activeView();
-  if (!view || !choice) return;
-  const tab = byId(view.tab.id);
-  const picked = { ...choice };
-  const saveDefault = $('#model-default').checked;
-  closeModelMenu();
-  const name = (MODELS.find((m) => m.id === picked.model) || { name: picked.model }).name;
-  const effort = (EFFORT_LEVELS.find((e) => e.level === picked.effort) || { label: picked.effort }).label;
-  if (saveDefault) {
-    const res = await api.modelSaveDefault(picked);
-    if (!res || !res.ok) { toast(`No se ha podido guardar como predeterminado: ${(res && res.error) || 'error desconocido'}.`); return; }
-    // La pestaña sigue el predeterminado (ya es lo elegido), y la casilla se queda marcada.
-    tab.model = null;
-    tab.effort = null;
-    tab.modelDefault = true;
-    defaults = { model: picked.model, effort: picked.effort };
-  } else {
-    tab.model = picked.model;
-    tab.effort = picked.effort;
-    tab.modelDefault = false;
+// Aplica a la pestaña lo elegido en su tarjeta. `picked`: { model, effort, saveDefault, compact };
+// `changed`: { model, compact } (qué ha cambiado de verdad). Un solo reinicio para todo.
+export async function applyTabChoices(tabId, picked, changed) {
+  const tab = byId(tabId);
+  const view = views.get(tabId);
+  if (!tab || !view) return;
+  const what = [];
+  if (changed.model) {
+    if (picked.saveDefault) {
+      const res = await api.modelSaveDefault({ model: picked.model, effort: picked.effort });
+      if (!res || !res.ok) { toast(`No se ha podido guardar como predeterminado: ${(res && res.error) || 'error desconocido'}.`); return; }
+      // La pestaña sigue el predeterminado (ya es lo elegido), y la casilla se queda marcada.
+      tab.model = null;
+      tab.effort = null;
+      tab.modelDefault = true;
+    } else {
+      tab.model = picked.model;
+      tab.effort = picked.effort;
+      tab.modelDefault = false;
+    }
+    what.push(`${modelName(picked.model)} con esfuerzo ${effortName(picked.effort)}`);
+  }
+  if (changed.compact) {
+    tab.compact = picked.compact === DEFAULT_COMPACT ? null : picked.compact;
+    what.push(`autocompactar al ${picked.compact} %`);
   }
   save();
-  const what = `${name} con esfuerzo ${effort}`;
-  if (!view.started || view.exited) { toast(`«${tab.name}» usará ${what} al abrirse.`); return; }
+  if (!what.length) return;
+  const text = what.join(' y ');
+  if (!view.started || view.exited) { toast(`«${tab.name}» usará ${text} al abrirse.`); return; }
   if (BUSY.includes(view.status)) {
     view.pendingModel = true;
-    toast(`«${tab.name}» pasará a ${what} cuando Claude termine lo que está haciendo.`);
+    toast(`«${tab.name}» pasará a ${text} cuando Claude termine lo que está haciendo.`);
     return;
   }
-  toast(`«${tab.name}» pasa a ${what}: se reinicia y sigue con la misma conversación.${saveDefault ? ' También queda como predeterminado para las sesiones nuevas.' : ''}`);
+  toast(`«${tab.name}» pasa a ${text}: se reinicia y sigue con la misma conversación.${changed.model && picked.saveDefault ? ' El modelo también queda como predeterminado para las sesiones nuevas.' : ''}`);
   restartWith(view);
-}
-
-export function wireModel() {
-  $('#sb-model').addEventListener('click', () => { if (!closeModelMenu()) openMenu(); else focusTerminal(); });
-  $('#model-cancel').addEventListener('click', () => { closeModelMenu(); focusTerminal(); });
-  $('#model-apply').addEventListener('click', () => { apply().catch((err) => api.log(`modelo: ${err.message}`)); });
-  $('#model-default').addEventListener('change', paint);
-  document.addEventListener('mousedown', (e) => { if (!e.target.closest('.model-wrap')) closeModelMenu(); }, true);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && closeModelMenu()) { focusTerminal(); e.preventDefault(); e.stopPropagation(); }
-  }, true);
 }

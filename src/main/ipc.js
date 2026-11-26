@@ -6,12 +6,13 @@ const os = require('os');
 const path = require('path');
 const { checkProject } = require('./optimize');
 const { saveDefaultModel, defaultModel } = require('./claude-config');
+const { repoUrl } = require('./project-card');
 
 function registerIpc({
-  electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
+  electron: { app, ipcMain, dialog, Notification, clipboard, shell },
   DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
   sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow,
+  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker,
 }) {
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
@@ -152,7 +153,24 @@ function registerIpc({
   const activityState = () => ({ enabled: narrator.isEnabled(), open: store.get('activityOpen', true) !== false });
   ipcMain.handle('activity:get', (_e, tabId) => (typeof tabId === 'string' ? narrator.get(tabId) : activityState()));
   // Al cerrar la pestaña (no al dormirla: dormida conserva lo contado).
-  ipcMain.on('activity:forget', (_e, tabId) => { if (typeof tabId === 'string') narrator.forget(tabId); });
+  ipcMain.on('activity:forget', (_e, tabId) => {
+    if (typeof tabId !== 'string') return;
+    narrator.forget(tabId);
+    planTracker.forget(tabId);
+  });
+  // El plan de la pestaña (plan.js), al pie del panel: lo que haya al abrirlo o cambiar de pestaña.
+  ipcMain.handle('plan:get', (_e, tabId) => (typeof tabId === 'string' ? planTracker.get(tabId) : null));
+  // Tarjeta del proyecto: la dirección del proyecto en GitHub, para compartirla (project-card.js).
+  // La carpeta de la sesión de la pestaña o, si aún no ha arrancado, la que dice la interfaz
+  // (solo si es una carpeta que existe).
+  ipcMain.handle('tab:repo', async (_e, tabId, cwd) => {
+    const tab = typeof tabId === 'string' ? tabs.get(tabId) : null;
+    let folder = tab && tab.folder;
+    if (!folder && typeof cwd === 'string' && cwd) {
+      try { if (fs.statSync(cwd).isDirectory()) folder = cwd; } catch { /* no existe */ }
+    }
+    return folder ? repoUrl(folder) : null;
+  });
   ipcMain.handle('activity:setEnabled', (_e, on) => {
     store.set('activityEnabled', narrator.setEnabled(on));
     return activityState();
@@ -266,33 +284,11 @@ function registerIpc({
     return result.response === 0;
   });
 
-  ipcMain.handle('menu:tab', (_e, o) => new Promise((resolve) => {
-    let settled = false;
-    const pick = (value) => () => { settled = true; resolve(value); };
-    const menu = Menu.buildFromTemplate([
-      { label: 'Cambiar nombre', accelerator: 'F2', registerAccelerator: false, click: pick('rename') },
-      {
-        label: 'Color',
-        submenu: (o.colors || []).map((c) => ({
-          label: c.name, type: 'radio', checked: c.key === o.color, click: pick(`color:${c.key}`),
-        })),
-      },
-      { type: 'separator' },
-      { label: 'Nueva conversación', click: pick('newconv') },
-      { label: 'Abrir carpeta en el Explorador', click: pick('folder') },
-      { type: 'separator' },
-      {
-        label: 'Ver el registro de depuración de esta sesión',
-        enabled: Boolean((tabs.get(o.id) || {}).log && fs.existsSync(tabs.get(o.id).log)),
-        click: pick('log'),
-      },
-      { label: 'Abrir la carpeta de registros', click: pick('logs') },
-      { type: 'separator' },
-      { label: 'Cerrar pestaña', accelerator: 'Ctrl+Shift+W', registerAccelerator: false, click: pick('close') },
-    ]);
-    // El aviso de cierre del menú puede llegar antes que el de la opción elegida.
-    menu.popup({ window: wm.win, callback: () => setTimeout(() => { if (!settled) resolve(null); }, 150) });
-  }));
+  // Tarjeta del proyecto (botón derecho sobre una pestaña): lo que solo sabe el proceso principal.
+  ipcMain.handle('tab:card', (_e, tabId) => {
+    const tab = typeof tabId === 'string' ? tabs.get(tabId) : null;
+    return { hasLog: Boolean(tab && tab.log && fs.existsSync(tab.log)) };
+  });
 
   ipcMain.handle('dialog:choose', async (_e, o) => {
     if (DEV && process.env.CLAUDES_AUTO_CONFIRM) return 0; // solo para pruebas automáticas

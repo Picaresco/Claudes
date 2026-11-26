@@ -165,6 +165,17 @@
     <span id="act-now-text" class="act-now-text"></span>
     <span id="act-now-time" class="act-now-time"></span>
   </div>
+  <!-- El plan de la tarea (ui/plan.js): los pasos de la lista de Claude y su estado. Solo si hay. -->
+  <section id="act-plan" class="act-plan" aria-label="Plan de la tarea" hidden>
+    <button id="plan-head" class="plan-head" type="button" aria-expanded="true" aria-controls="plan-list">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 4h7.5M6 8h7.5M6 12h7.5M2.5 4h.01M2.5 8h.01M2.5 12h.01"/></svg>
+      <span class="plan-title">Plan</span>
+      <span id="plan-count" class="plan-count"></span>
+      <svg class="plan-chev" aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 5 3.5l3 3"/></svg>
+    </button>
+    <div class="plan-bar" aria-hidden="true"><i id="plan-fill"></i></div>
+    <ol id="plan-list" class="plan-list"></ol>
+  </section>
 </aside>
 </div>
 
@@ -178,24 +189,9 @@
     <span id="sb-sleeping" class="sb-item" hidden></span>
   </div>
   <div class="sb-right">
-    <!-- El modelo y el esfuerzo de la pestaña activa (de su línea de estado). -->
-    <div class="model-wrap">
-      <button id="sb-model" class="sb-item sb-model" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="model-menu" hidden></button>
-      <!-- Elegir el modelo y el esfuerzo de la pestaña (ui/model.js). -->
-      <div id="model-menu" class="popover model-menu" role="dialog" aria-labelledby="model-title" hidden>
-        <h3 id="model-title" class="mm-title">Modelo y esfuerzo</h3>
-        <p id="model-tab" class="mm-sub"></p>
-        <div class="mm-section">Modelo</div>
-        <div id="model-list" class="mm-list" role="radiogroup" aria-label="Modelo"></div>
-        <div class="mm-section">Esfuerzo</div>
-        <div id="model-efforts" class="mm-seg" role="radiogroup" aria-label="Esfuerzo"></div>
-        <p id="model-hint" class="mm-hint"></p>
-        <label class="mm-check"><input id="model-default" type="checkbox"> <span>Usar también en las sesiones nuevas (lo guarda como tu configuración de Claude Code)</span></label>
-        <p id="model-default-now" class="mm-default"></p>
-        <div class="mm-btns"><button id="model-cancel" type="button" class="btn">Cancelar</button><button id="model-apply" type="button" class="btn btn-primary">Aplicar</button></div>
-        <p class="mm-foot">Si Claude está trabajando, se aplica cuando termine. La conversación sigue igual.</p>
-      </div>
-    </div>
+    <!-- El modelo y el esfuerzo de la pestaña activa (de su línea de estado). Solo informa: se
+         cambian en la tarjeta del proyecto (botón derecho sobre la pestaña, ui/tabcard.js). -->
+    <span id="sb-model" class="sb-item sb-model" hidden></span>
     <!-- Gasto semanal: un recuadro del color de cada uno (Claude terracota, Codex verde agua). -->
     <span id="sb-plan" class="sb-usage sb-chip" data-who="claude" hidden><span class="sb-who">Claude</span><span class="sb-meter" aria-hidden="true"><i id="sb-plan-fill"></i></span><span id="sb-plan-text"></span></span>
     <span id="sb-codex" class="sb-usage sb-chip" data-who="codex" hidden><span class="sb-who">Codex</span><span class="sb-meter" aria-hidden="true"><i id="sb-codex-fill"></i></span><span id="sb-codex-text"></span></span>

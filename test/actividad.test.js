@@ -231,7 +231,7 @@ test('el aviso trae lo del panel: el agente, el registro, la respuesta final y e
     transcript_path: 'C:\\x\\conv.jsonl', error: 'Exit code 1', is_interrupt: false,
   });
   assert.deepEqual(n, {
-    input: { command: 'npm test', description: 'Run tests' }, agentId: 'a1', agentType: 'Explore', transcript: 'C:\\x\\conv.jsonl', last: null, error: 'Exit code 1', interrupted: false,
+    input: { command: 'npm test', description: 'Run tests' }, task: null, agentId: 'a1', agentType: 'Explore', transcript: 'C:\\x\\conv.jsonl', last: null, error: 'Exit code 1', interrupted: false,
   });
   assert.equal(narration('Stop', { last_assistant_message: 'Hecho.' }).last, 'Hecho.');
   assert.equal(narration('PostToolUse', { error: 'x' }).error, null);

@@ -2,7 +2,7 @@
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
 import { wireActivity } from './ui/activity.js';
 import { wireZoom } from './ui/zoom.js';
-import { wireModel } from './ui/model.js';
+import { wireTabCard } from './ui/tabcard.js';
 import { EFFORT_LEVELS } from './ui/constants.js';
 import { renderCodex, codexInfo } from './ui/codex.js';
 import { setOptimizeHint } from './ui/optimize.js';
@@ -20,7 +20,7 @@ import { renderTabs, renderStatusbar, layout } from './ui/render.js';
 import { onHook, onPtyExit, onReviewResult } from './ui/session-events.js';
 import { createView } from './ui/sessions.js';
 import { sleepAfterMs, setSleepAfterMs, sleepIdleSessions } from './ui/sleep.js';
-import { S, views, terms, info, setInfo, byId, clamp, touchMru, toast } from './ui/state.js';
+import { S, views, terms, info, setInfo, byId, clamp, touchMru, toast, save } from './ui/state.js';
 import { setStatus, wrapUp, gracefulExit } from './ui/status.js';
 import { activate } from './ui/tabs.js';
 import { pasteClip } from './ui/terminals.js';
@@ -151,7 +151,7 @@ async function init() {
   wireWorkflow();
   wireActivity();
   wireZoom();
-  wireModel();
+  wireTabCard();
   wireTabs();
   wireDialog();
   wireKeyboard();
@@ -163,6 +163,8 @@ async function init() {
     const view = views.get(tabId);
     if (!view) return;
     view.usage = usage;
+    // El tamaño del contexto, para el autocompactar del próximo arranque (tarjeta del proyecto).
+    if (usage && Number(usage.size) > 0 && view.tab.ctxSize !== usage.size) { view.tab.ctxSize = usage.size; save(); }
     renderTabs();
     renderStatusbar();
   });

@@ -1,6 +1,6 @@
 // ── Acciones sobre pestañas ──────────────────────────────────────
 import { forgetActivity } from './activity.js';
-import { COLORS, MAX_RECENTS, MAX_TABS } from './constants.js';
+import { MAX_RECENTS, MAX_TABS } from './constants.js';
 import { cleanContext } from './context.js';
 import { api, $, el } from './dom.js';
 import { renderAll, layout } from './render.js';
@@ -136,7 +136,7 @@ function removeTab(id) {
   save();
 }
 
-async function newConversation(id = S.activeId) {
+export async function newConversation(id = S.activeId) {
   const view = views.get(id);
   if (!view) return;
   const ok = await api.confirm({
@@ -189,24 +189,6 @@ export function startRename(id) {
     else if (e.key === 'Escape') finish(false);
   });
   input.addEventListener('blur', () => finish(true));
-}
-
-export async function tabMenu(id) {
-  const tab = byId(id);
-  if (!tab) return;
-  const action = await api.tabMenu({ id, color: tab.color || '', colors: COLORS.map(({ key, name }) => ({ key, name })) });
-  if (!action || !byId(id)) return;
-  if (action === 'log') api.openLog(id);
-  else if (action === 'logs') api.openLog(null);
-  else if (action === 'rename') startRename(id);
-  else if (action === 'newconv') newConversation(id);
-  else if (action === 'folder') api.openPath(tab.cwd);
-  else if (action === 'close') closeTab(id);
-  else if (action.startsWith('color:')) {
-    tab.color = action.slice('color:'.length);
-    renderAll();
-    save();
-  }
 }
 
 export function moveTab(id, targetId, before) {

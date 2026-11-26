@@ -17,7 +17,8 @@ import {
   S, views, info, setWinFocused, renamingId, setDraggingId, panes, byId, clamp, dialogOpen, save, swatch,
   startDrag,
 } from './state.js';
-import { activate, cycle, closeTab, startRename, tabMenu, moveTab } from './tabs.js';
+import { activate, cycle, closeTab, startRename, moveTab } from './tabs.js';
+import { openTabCard } from './tabcard.js';
 import { closeSettings, toggleSettings } from './settings.js';
 import { toggleBrief, toggleReview, toggleVoice } from './toggles.js';
 import { clickUpdate } from './update.js';
@@ -47,7 +48,7 @@ export function wireTabs() {
     const node = tabOf(e);
     if (!node) return;
     e.preventDefault();
-    tabMenu(node.dataset.id);
+    openTabCard(node.dataset.id, e.clientX, e.clientY); // la tarjeta del proyecto (ui/tabcard.js)
   });
   // La rueda del ratón desplaza la fila cuando no caben todas.
   strip.addEventListener('wheel', (e) => {
