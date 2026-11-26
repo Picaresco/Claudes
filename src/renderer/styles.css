@@ -566,10 +566,12 @@ body.dragging #workspace * { pointer-events: none; }
 .tc-color[aria-checked="true"] { box-shadow: 0 0 0 2px var(--bg2), 0 0 0 4px var(--txt); }
 .tc-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
-/* Plan de la tarea, al pie del panel «Actividad» (ui/plan.js): el cuarto de abajo. */
-.act-plan { display: flex; flex-direction: column; flex: 0 0 25%; min-height: 130px; border-top: 1px solid var(--line); background: var(--bg1); }
+/* Plan de la tarea, al pie del panel «Actividad» (ui/plan.js): como poco el cuarto de abajo; con
+   más pasos crece hasta enseñarlos todos, sin pasar de tres cuartos de la columna (para que se
+   siga viendo la actividad; más allá, la lista del plan se desplaza). */
+.act-plan { display: flex; flex-direction: column; flex: 0 0 auto; min-height: max(130px, 25%); max-height: 75%; border-top: 1px solid var(--line); background: var(--bg1); }
 .act-plan[hidden] { display: none; }
-.act-plan.folded { flex: none; min-height: 0; }
+.act-plan.folded { min-height: 0; }
 .plan-head { display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 14px 6px; color: var(--dim); text-align: left; }
 .plan-head:hover { color: var(--txt); }
 .plan-title { font-size: 12px; font-weight: 600; color: var(--txt); letter-spacing: 0.02em; }
@@ -580,7 +582,7 @@ body.dragging #workspace * { pointer-events: none; }
 .plan-bar { flex: none; height: 4px; margin: 0 14px 6px; overflow: hidden; border-radius: 2px; background: var(--bg2); }
 .plan-bar i { display: block; height: 100%; border-radius: 2px; background: var(--ok); transition: width 0.3s ease-out; }
 .act-plan.folded .plan-bar { margin-bottom: 8px; }
-.plan-list { flex: 1 1 0; min-height: 0; overflow-y: auto; margin: 0; padding: 0 10px 8px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.plan-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; padding: 0 10px 8px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
 .act-plan.folded .plan-list { display: none; }
 .plan-step { display: grid; grid-template-columns: 18px 16px 1fr auto; align-items: center; column-gap: 7px; padding: 3px 4px; border-radius: 6px; font-size: 12px; line-height: 1.35; color: var(--txt); }
 .plan-n { font-size: 11px; color: var(--mute); text-align: right; font-variant-numeric: tabular-nums; }
