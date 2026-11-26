@@ -37,9 +37,7 @@ contextBridge.exposeInMainWorld('api', {
   pickFolder: (startAt) => ipcRenderer.invoke('dialog:pickFolder', startAt),
   confirm: (options) => ipcRenderer.invoke('dialog:confirm', options),
   choose: (options) => ipcRenderer.invoke('dialog:choose', options),
-  // Tarjeta del proyecto (botón derecho sobre una pestaña): si hay registro de la sesión y la
-  // dirección del proyecto en GitHub (o null).
-  tabCard: (tabId) => ipcRenderer.invoke('tab:card', String(tabId)),
+  // Tarjeta del proyecto (botón derecho sobre una pestaña): la dirección del proyecto en GitHub (o null).
   tabRepo: (tabId, cwd) => ipcRenderer.invoke('tab:repo', String(tabId), String(cwd || '')),
 
   // Devuelve { files, text, imagePath }: lo que haya que pegar, por ese orden de preferencia.
@@ -113,10 +111,9 @@ contextBridge.exposeInMainWorld('api', {
   voiceGet: () => ipcRenderer.invoke('voice:get'),
   voiceSet: (on) => ipcRenderer.invoke('voice:set', Boolean(on)),
 
-  // Registro de depuración: interruptor, acceso a los archivos y anotaciones de la interfaz.
+  // Registro de depuración: interruptor y anotaciones de la interfaz.
   debugGet: () => ipcRenderer.invoke('debug:get'),
   debugSet: (on) => ipcRenderer.invoke('debug:set', Boolean(on)),
-  openLog: (tabId) => ipcRenderer.send('debug:open', tabId || null),
   log: (text) => ipcRenderer.send('log', String(text)),
 
   // Cierre de la app con sesiones trabajando.

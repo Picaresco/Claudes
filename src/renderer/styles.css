@@ -542,7 +542,7 @@ body.dragging #workspace * { pointer-events: none; }
 .tc-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--focus), 0 2px 8px rgba(0, 0, 0, 0.5); }
 .tc-legend { display: flex; justify-content: space-between; margin-top: 2px; font-size: 11px; color: var(--mute); }
 .tc-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
-.tc-preset { padding: 5px 0; border: 1px solid var(--line); border-radius: 7px; background: var(--bg0); font-size: 12px; color: var(--dim); }
+.tc-preset { padding: 5px 0; border: 1px solid var(--line); border-radius: 7px; background: var(--bg0); font-size: 12px; color: var(--dim); text-align: center; }
 .tc-preset small { font-size: 10px; color: var(--mute); }
 .tc-preset:hover { color: var(--txt); }
 .tc-preset.on { border-color: var(--claude); background: var(--claude); color: #16181c; font-weight: 700; }

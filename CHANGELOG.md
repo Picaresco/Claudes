@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.31.2 — 2026-11-26
+- Tarjeta del proyecto: los porcentajes rápidos del autocompactar, centrados; fuera «Ver el registro de esta sesión» y «Abrir la carpeta de registros»; cuatro colores más para las pestañas (violeta, rojo, turquesa y lima).
+
 ## 0.31.1 — 2026-11-26
 - El texto de la conversación ya no sale montado (el final de una línea pegado al principio de la siguiente), ni al abrir la app ni al subir con la rueda y volver a bajar. Al abrir una pestaña, su terminal cambia de ancho mientras arranca Claude (por ejemplo, al aparecer la columna «Actividad»), y ese cambio se perdía: Claude Code se quedaba creyendo que la terminal era más ancha. Ahora el último tamaño se guarda y se usa al lanzarlo.
 

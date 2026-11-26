@@ -1,7 +1,7 @@
 // ── Tarjeta del proyecto (botón derecho sobre una pestaña) ───────
 // Sustituye al menú de antes: quién es (nombre, carpeta, estado, compartir la dirección en
 // GitHub), cuánto lleva, el modelo y el esfuerzo, cuándo se compacta la conversación y las
-// acciones de siempre (renombrar, color, nueva conversación, carpeta, registros, cerrar).
+// acciones de siempre (renombrar, color, nueva conversación, carpeta, cerrar).
 // El modelo, el esfuerzo y el autocompactar se aplican juntos con «Aplicar» (un solo reinicio,
 // ui/model.js). La tarjeta queda fijada a la pestaña pulsada aunque cambie la activa.
 import { COLORS, MODELS, EFFORT_LEVELS, STATUS, colorHex } from './constants.js';
@@ -24,8 +24,6 @@ const ICON = {
   rename: '<path d="M11 2.5 13.5 5 6 12.5 2.8 13.2l.7-3.2z"/>',
   newconv: '<circle cx="8" cy="8" r="6"/><path d="M8 5v6M5 8h6"/>',
   folder: '<path d="M2 5h5l1.5-2H14v10H2z"/>',
-  log: '<path d="M4 2h8v12H4z"/><path d="M6 5h4M6 8h4M6 11h2"/>',
-  logs: '<path d="M2 4h4l1.2-1.5H14V13H2z"/><path d="M5 7.5h6M5 10h4"/>',
   close: '<path d="M4 4l8 8M12 4l-8 8"/>',
 };
 const clampPct = (v) => Math.min(MAX, Math.max(MIN, Math.round(Number(v) || DEFAULT_COMPACT)));
@@ -146,8 +144,6 @@ function build(id) {
       <button class="tc-row" data-act="rename" type="button">${ico(ICON.rename)}Cambiar nombre<kbd>F2</kbd></button>
       <button class="tc-row" data-act="newconv" type="button">${ico(ICON.newconv)}Nueva conversación</button>
       <button class="tc-row" data-act="folder" type="button">${ico(ICON.folder)}Abrir la carpeta en el Explorador</button>
-      <button class="tc-row" data-act="log" type="button" disabled>${ico(ICON.log)}Ver el registro de esta sesión</button>
-      <button class="tc-row" data-act="logs" type="button">${ico(ICON.logs)}Abrir la carpeta de registros</button>
       <div class="tc-colors" role="radiogroup" aria-label="Color de la pestaña"><span>Color</span></div>
       <div class="tc-sep"></div>
       <button class="tc-row danger" data-act="close" type="button">${ico(ICON.close)}Cerrar la pestaña<kbd>Ctrl+Mayús+W</kbd></button>
@@ -194,8 +190,6 @@ function act(what) {
   if (what === 'rename') startRename(id);
   else if (what === 'newconv') newConversation(id);
   else if (what === 'folder') api.openPath(tab.cwd);
-  else if (what === 'log') api.openLog(id);
-  else if (what === 'logs') api.openLog(null);
   else if (what === 'close') closeTab(id);
 }
 
@@ -236,10 +230,7 @@ export function openTabCard(id, x, y) {
     applyTabChoices(id, picked, changed).catch((err) => api.log(`tarjeta: ${err.message}`));
   });
   for (const b of node.querySelectorAll('.tc-row[data-act]')) b.addEventListener('click', () => act(b.dataset.act));
-  // Lo que solo sabe el proceso principal: si hay registro y la dirección en GitHub.
-  api.tabCard(id).then((info) => {
-    if (card && card.id === id && info && info.hasLog) node.querySelector('[data-act="log"]').disabled = false;
-  }).catch(() => { /* sin registro */ });
+  // La dirección en GitHub la sabe el proceso principal (git).
   const share = node.querySelector('.tc-share');
   share.title = 'Buscando la dirección del proyecto en GitHub…';
   api.tabRepo(id, tab.cwd).then((url) => {

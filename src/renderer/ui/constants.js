@@ -6,6 +6,10 @@ export const COLORS = [
   { key: 'amber', name: 'Ámbar', hex: '#F2B866' },
   { key: 'pink', name: 'Rosa', hex: '#E88DBA' },
   { key: 'green', name: 'Verde', hex: '#7FD4A0' },
+  { key: 'violet', name: 'Violeta', hex: '#B39AF5' },
+  { key: 'red', name: 'Rojo', hex: '#F2877C' },
+  { key: 'teal', name: 'Turquesa', hex: '#5FC8CC' },
+  { key: 'lime', name: 'Lima', hex: '#BBD96C' },
 ];
 export const colorHex = (key) => (COLORS.find((c) => c.key === key) || COLORS[0]).hex;
 

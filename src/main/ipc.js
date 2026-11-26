@@ -63,13 +63,6 @@ function registerIpc({
     if (logger.enabled) appLog('registro de depuración activado');
     return debugInfo();
   });
-  // Abre el registro de Claude de una pestaña; sin pestaña (o sin registro), la carpeta.
-  ipcMain.on('debug:open', (_e, tabId) => {
-    const file = typeof tabId === 'string' ? (tabs.get(tabId) || {}).log : null;
-    if (file && fs.existsSync(file)) { shell.openPath(file); return; }
-    fs.mkdirSync(logsDir(), { recursive: true });
-    shell.openPath(logsDir());
-  });
   ipcMain.on('log', (_e, text) => appLog(`interfaz: ${String(text).slice(0, 600)}`));
 
   // Codex: cómo está (como mucho una comprobación por minuto, salvo que se pida) y el
@@ -284,11 +277,6 @@ function registerIpc({
     return result.response === 0;
   });
 
-  // Tarjeta del proyecto (botón derecho sobre una pestaña): lo que solo sabe el proceso principal.
-  ipcMain.handle('tab:card', (_e, tabId) => {
-    const tab = typeof tabId === 'string' ? tabs.get(tabId) : null;
-    return { hasLog: Boolean(tab && tab.log && fs.existsSync(tab.log)) };
-  });
 
   ipcMain.handle('dialog:choose', async (_e, o) => {
     if (DEV && process.env.CLAUDES_AUTO_CONFIRM) return 0; // solo para pruebas automáticas
