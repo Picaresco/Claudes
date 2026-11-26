@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.31.1 — 2026-11-26
+- El texto de la conversación ya no sale montado (el final de una línea pegado al principio de la siguiente), ni al abrir la app ni al subir con la rueda y volver a bajar. Al abrir una pestaña, su terminal cambia de ancho mientras arranca Claude (por ejemplo, al aparecer la columna «Actividad»), y ese cambio se perdía: Claude Code se quedaba creyendo que la terminal era más ancha. Ahora el último tamaño se guarda y se usa al lanzarlo.
+
 ## 0.31.0 — 2026-11-26
 - El panel «Actividad» enseña el plan de la tarea abajo, en un cuarto de la columna o más si tiene más pasos (hasta tres cuartos, para que se vean todos): cada paso con su estado (Terminado, Trabajando o Pendiente) y una barra de avance; el paso en curso siempre a la vista. Al terminar se pliega a su cabecera. ClaudHome enciende la lista de tareas de Claude Code (que viene apagada con los modelos nuevos) y le pide a Claude que la use en los trabajos de tres pasos o más.
 - El botón derecho sobre una pestaña abre la tarjeta del proyecto: nombre, carpeta y estado; un botón para copiar la dirección del proyecto en GitHub y compartirla; lo que ocupa y lo gastado en la conversación; el modelo y el esfuerzo; el autocompactar, y las acciones de siempre (cambiar nombre, color, nueva conversación, carpeta, registros y cerrar).

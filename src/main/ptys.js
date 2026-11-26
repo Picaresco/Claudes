@@ -4,12 +4,19 @@
 // de la app; label(id) da el nombre de la pestaña para ese registro.
 function createPtys({ pty, send, log, label }) {
   const ptys = new Map(); // id → { proc, killed, waiters, buffer, timer }
+  // El tamaño que pide la interfaz mientras el proceso aún no existe o se está cerrando (al abrir
+  // una pestaña, la app tarda un poco en lanzarlo y la terminal puede cambiar de ancho entretanto,
+  // p. ej. al aparecer la columna «Actividad»). Se usa al lanzarlo: si se perdiera, Claude Code
+  // creería que la terminal es más ancha (o más estrecha) de lo que es y su texto saldría montado.
+  const pending = new Map(); // id → { cols, rows }
 
   function spawn(id, file, args, options) {
+    const size = pending.get(id) || options;
+    pending.delete(id);
     const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
-      cols: Math.max(options.cols | 0, 20),
-      rows: Math.max(options.rows | 0, 5),
+      cols: Math.max(size.cols | 0, 20),
+      rows: Math.max(size.rows | 0, 5),
       cwd: options.cwd,
       env: options.env,
     });
@@ -66,8 +73,14 @@ function createPtys({ pty, send, log, label }) {
   }
 
   function resize(id, cols, rows) {
+    if (!(cols >= 2) || !(rows >= 1)) return;
     const entry = ptys.get(id);
-    if (!entry || !(cols >= 2) || !(rows >= 1)) return;
+    // Sin proceso, o con uno que se cierra para dar paso a otro: para el siguiente.
+    if (!entry || entry.killed) {
+      pending.set(id, { cols: cols | 0, rows: rows | 0 });
+      if (pending.size > 50) pending.delete(pending.keys().next().value);
+      return;
+    }
     try { entry.proc.resize(cols | 0, rows | 0); } catch { /* el proceso acaba de salir */ }
   }
 

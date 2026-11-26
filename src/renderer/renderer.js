@@ -101,6 +101,20 @@ async function init() {
         const view = views.get(S.activeId);
         return view ? addLinks(view, urls) : false;
       },
+      // Columnas y filas de la terminal de la pestaña activa (para compararlas con las del proceso).
+      termSize: () => {
+        const view = views.get(S.activeId);
+        return view ? { cols: view.term.cols, rows: view.term.rows } : null;
+      },
+      // Todo el texto de la terminal de la pestaña activa (historial incluido), fila a fila.
+      termLines: () => {
+        const view = views.get(S.activeId);
+        if (!view) return [];
+        const buffer = view.term.buffer.active;
+        const lines = [];
+        for (let i = 0; i < buffer.length; i += 1) lines.push(buffer.getLine(i).translateToString(true));
+        return lines;
+      },
       // Pone el indicador de Codex como si su estado fuera otro (los campos que se den).
       showCodex: (fields) => renderCodex({ ...(codexInfo || {}), ...fields }),
       // Pone una pestaña en un estado, para ver cómo se pinta.

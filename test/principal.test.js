@@ -194,6 +194,26 @@ test('los procesos de terminal agrupan la salida, avisan al salir y se cierran',
   await ptys.kill('no-existe'); // no falla
 });
 
+test('el tamaño pedido mientras el proceso arranca o se cierra no se pierde', async () => {
+  const pty = fakePty();
+  const ptys = createPtys({ pty, send: () => {}, log: () => {}, label: (id) => id });
+  // La terminal cambia de ancho antes de que exista el proceso (p. ej. aparece «Actividad»).
+  ptys.resize('t1', 96, 30);
+  ptys.spawn('t1', 'claude.exe', [], { cols: 140, rows: 30, cwd: 'C:\\x', env: {} });
+  assert.deepEqual([pty.procs[0].options.cols, pty.procs[0].options.rows], [96, 30]);
+  // Al reiniciar: lo que llega mientras se cierra el anterior es para el nuevo.
+  const closing = ptys.kill('t1');
+  ptys.resize('t1', 110, 32);
+  await closing;
+  assert.equal(pty.procs[0].resized, null);
+  ptys.spawn('t1', 'claude.exe', [], { cols: 96, rows: 30, cwd: 'C:\\x', env: {} });
+  assert.deepEqual([pty.procs[1].options.cols, pty.procs[1].options.rows], [110, 32]);
+  // Ya usado: el siguiente arranque, con lo que pida la interfaz.
+  await ptys.kill('t1');
+  ptys.spawn('t1', 'claude.exe', [], { cols: 120, rows: 40, cwd: 'C:\\x', env: {} });
+  assert.deepEqual([pty.procs[2].options.cols, pty.procs[2].options.rows], [120, 40]);
+});
+
 test('usageFrom calcula el llenado de la conversación', () => {
   assert.equal(usageFrom({}), null);
   assert.equal(usageFrom({ context_window: { context_window_size: 0 } }), null);
