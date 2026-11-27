@@ -255,6 +255,16 @@ h1, p { margin: 0; }
 @keyframes cx-beat { 0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 currentColor; } 50% { opacity: 0.35; transform: scale(1.35); box-shadow: 0 0 6px 2px currentColor; } }
 @keyframes cx-glow { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .codex-status[data-working="true"] .cx-dot, .codex-status[data-working="true"] .cx-name { animation: none; } }
+/* Vuelo de datos hacia Codex (ui/codex-flight.js): un paquete de 5×3 caracteres que cambian en cada
+   fotograma, con una estela que cae; al llegar, un destello alrededor del indicador. */
+.codex-status { position: relative; }
+.codex-status.cx-hit::after { content: ''; position: absolute; inset: 2px -2px; border: 2px solid var(--codex); border-radius: 10px; pointer-events: none; animation: cx-ring 0.6s ease-out forwards; }
+@keyframes cx-ring { from { opacity: 1; transform: scale(0.9); } to { opacity: 0; transform: scale(1.3); } }
+.cx-packet { position: fixed; left: 0; top: 0; z-index: 200; display: grid; grid-template-columns: repeat(5, 9px); gap: 0 1px; padding: 4px 5px; border-radius: 6px; font: 700 12px/13px 'MS Gothic', var(--mono); color: var(--codex); text-shadow: 0 0 6px rgba(111, 195, 168, 0.9); background: rgba(12, 14, 17, 0.55); box-shadow: 0 0 18px rgba(111, 195, 168, 0.35), inset 0 0 0 1px rgba(111, 195, 168, 0.35); pointer-events: none; will-change: transform; }
+.cx-packet span:nth-child(5n+1) { color: #D9FFF2; text-shadow: 0 0 8px #fff; }
+.cx-packet.back { color: #BFF5E2; box-shadow: 0 0 14px rgba(191, 245, 226, 0.4), inset 0 0 0 1px rgba(191, 245, 226, 0.4); }
+.cx-drop { position: fixed; z-index: 199; font: 700 11px 'MS Gothic', var(--mono); color: var(--codex); text-shadow: 0 0 6px rgba(111, 195, 168, 0.8); pointer-events: none; animation: cx-fall 0.7s ease-in forwards; }
+@keyframes cx-fall { from { opacity: 0.9; transform: translateY(0); } to { opacity: 0; transform: translateY(26px); } }
 /* Cerca del límite de uso de Codex (o agotado), el nombre lo avisa con su porcentaje. */
 .codex-status[data-state="ready"][data-limit="high"] { color: var(--warn); }
 .codex-status[data-state="ready"][data-limit="reached"] { color: var(--alert); }

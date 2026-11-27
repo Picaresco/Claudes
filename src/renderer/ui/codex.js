@@ -1,4 +1,5 @@
 // ── Codex ────────────────────────────────────────────────────────
+import { codexFlights } from './codex-flight.js';
 import { api, $ } from './dom.js';
 import { renderCodexLimits } from './limits.js';
 import { renderToolbar } from './render.js';
@@ -47,6 +48,7 @@ export function renderCodex(info) {
   renderCodexStatus();
   renderToolbar();
   renderCodexLimits(codexInfo); // detección y uso de Codex, en la barra inferior
+  if (info) codexFlights(codexInfo); // lo que se le pide vuela hasta él, y la respuesta vuelve
 }
 
 // El indicador «Codex» de la barra superior, junto a la rueda: de un vistazo, si hay Codex

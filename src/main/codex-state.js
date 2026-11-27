@@ -26,7 +26,8 @@ function createCodexState({ codex, tabs, send = () => {}, log = () => {}, persis
   function info() {
     const { installed, loggedIn, mode, enabled, advisor, limits } = state;
     // Para la interfaz: qué hace, para qué proyecto y desde cuándo.
-    const jobs = state.jobs.map((job) => ({ kind: job.kind, what: job.what, icon: job.icon, tab: (tabs.get(job.tabId) || {}).name || null, startedAt: job.startedAt }));
+    // tabId: de qué pestaña sale la petición (el vuelo de datos hacia Codex, ui/codex-flight.js).
+    const jobs = state.jobs.map((job) => ({ kind: job.kind, what: job.what, icon: job.icon, tabId: job.tabId, tab: (tabs.get(job.tabId) || {}).name || null, startedAt: job.startedAt }));
     return {
       installed, loggedIn, mode, enabled, jobs, busy: jobs.length,
       advising: jobs.filter((job) => job.kind === 'advise').length, drawing: jobs.filter((job) => job.kind === 'draw').length,

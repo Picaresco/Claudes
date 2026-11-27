@@ -4,6 +4,9 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.31.4 — 2026-11-27
+- Cuando Claude le pide algo a Codex (una segunda opinión, la crítica de un plan, una revisión o una imagen), un paquete de datos sale del final de la línea en la terminal y vuela hasta el indicador «Codex» de la barra superior, que destella al recibirlo. Al responder, vuelve uno más pequeño. El mapa del «Workflow» no lo lanza, y si Windows tiene las animaciones desactivadas no se ve.
+
 ## 0.31.3 — 2026-11-27
 - Las pestañas ya no llevan la × de cerrar: se cierran desde sus opciones (botón derecho sobre la pestaña → «Cerrar la pestaña»), con `Ctrl+Mayús+W` o con el botón central del ratón. Al pasar el ratón por la pestaña se recuerda.
 - La columna «Actividad» se ensancha o se estrecha arrastrando su borde izquierdo (hasta un 20 % en cada sentido; con doble clic vuelve a su tamaño). El texto se recoloca solo y el ancho se recuerda.
