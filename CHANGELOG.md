@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.31.5 — 2026-11-28
+- Arreglado: el «Log» ya no guarda en memoria lo que ha salido de su lista (con mucha actividad, la memoria crecía sin límite).
+- Arreglado: las respuestas de Codex (segundas opiniones, planes, revisiones, imágenes y el mapa del «Workflow») se leen línea a línea y ya no se guardan enteras en memoria; del registro de Codex solo se conserva lo último.
+
 ## 0.31.4 — 2026-11-27
 - Cuando Claude le pide algo a Codex (una segunda opinión, la crítica de un plan, una revisión o una imagen), un paquete de datos sale del final de la línea en la terminal y vuela hasta el indicador «Codex» de la barra superior, que destella al recibirlo. Al responder, vuelve uno más pequeño. El mapa del «Workflow» no lo lanza, y si Windows tiene las animaciones desactivadas no se ve.
 

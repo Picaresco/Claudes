@@ -89,23 +89,82 @@ function sandboxConfigured() {
 // { blocked: no ha funcionado ninguno y alguno se ha denegado; partial: unos sí y otros no,
 // que es habitual: Codex prueba otra vía y lee el proyecto igual }.
 const DENIED = /blocked by policy|Access to the path [^\n]{0,400}? is denied|Acceso denegado|access is denied/i;
-function accessReport(stdout, stderr) {
+// El recuento, línea a línea mientras Codex trabaja: así no hace falta guardar toda su salida.
+function accessCounter() {
   let failed = 0;
   let succeeded = 0;
-  for (const line of String(stderr || '').split(/\r?\n/)) {
-    if (/\bERROR\b.*exec_command failed/.test(line) && DENIED.test(line)) failed += 1;
-    else if (/^\s*succeeded in \d+/.test(line)) succeeded += 1;
-  }
+  return {
+    logLine(line) {
+      if (/\bERROR\b.*exec_command failed/.test(line) && DENIED.test(line)) failed += 1;
+      else if (/^\s*succeeded in \d+/.test(line)) succeeded += 1;
+    },
+    event(event) {
+      const item = event && event.type === 'item.completed' && event.item;
+      if (!item || item.type !== 'command_execution') return;
+      if (item.exit_code === 0) succeeded += 1;
+      else if (DENIED.test(String(item.aggregated_output || ''))) failed += 1;
+    },
+    report: () => ({ blocked: failed > 0 && succeeded === 0, partial: failed > 0 && succeeded > 0 }),
+  };
+}
+// Un evento del registro JSON de `codex exec --json` (una línea), o null.
+function jsonEvent(line) {
+  const text = String(line).trim();
+  if (!text.startsWith('{')) return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+function accessReport(stdout, stderr) {
+  const count = accessCounter();
+  for (const line of String(stderr || '').split(/\r?\n/)) count.logLine(line);
   for (const line of String(stdout || '').split(/\r?\n/)) {
-    if (!line.startsWith('{')) continue;
-    let event;
-    try { event = JSON.parse(line); } catch { continue; }
-    const item = event && event.type === 'item.completed' && event.item;
-    if (!item || item.type !== 'command_execution') continue;
-    if (item.exit_code === 0) succeeded += 1;
-    else if (DENIED.test(String(item.aggregated_output || ''))) failed += 1;
+    const event = jsonEvent(line);
+    if (event) count.event(event);
   }
-  return { blocked: failed > 0 && succeeded === 0, partial: failed > 0 && succeeded > 0 };
+  return count.report();
+}
+
+// La salida de Codex no se guarda entera: un comando suyo puede volcar megas de texto.
+const MAX_LINE = 8 * 1024 * 1024; // una línea más larga (una salida enorme) se salta entera
+const MAX_TEXT = 4 * 1024 * 1024; // texto de una revisión: como mucho, lo último
+const MAX_LOG = 256 * 1024; // registro de errores y progreso: solo lo último
+const keepTail = (text, max) => (text.length > max ? text.slice(-max) : text);
+
+// Va pasando las líneas completas de una salida a `onLine` sin acumularla.
+function lineReader(onLine) {
+  let rest = '';
+  let skipping = false;
+  return {
+    push(chunk) {
+      rest += chunk;
+      let start = 0;
+      let at;
+      while ((at = rest.indexOf('\n', start)) >= 0) {
+        if (skipping) skipping = false;
+        else onLine(rest.slice(start, at).replace(/\r$/, ''));
+        start = at + 1;
+      }
+      rest = rest.slice(start);
+      if (rest.length > MAX_LINE) { rest = ''; skipping = true; }
+    },
+    end() {
+      if (rest && !skipping) onLine(rest.replace(/\r$/, ''));
+      rest = '';
+      skipping = false;
+    },
+  };
+}
+
+// El último mensaje de Codex y su error, evento a evento.
+function messageTracker() {
+  let message = '';
+  let failure = '';
+  return {
+    event(event) {
+      if (event.type === 'item.completed' && event.item && event.item.type === 'agent_message') message = String(event.item.text || '');
+      if (event.type === 'error' || event.type === 'turn.failed') failure = String(event.message || (event.error && event.error.message) || failure);
+    },
+    result: () => ({ message: message.trim(), failure }),
+  };
 }
 
 const configPath = () => path.join(codexHome(), 'config.toml');
@@ -202,8 +261,10 @@ function generateImage({ description, shape, transparent, file, cwd, workDir }) 
     const l = launcher(exe);
     const child = spawn(l.command, [...l.prefix, ...args], { cwd: workDir, env: reviewEnv(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: l.shell });
 
-    let stdout = '';
-    let stderr = '';
+    // Su salida se lee evento a evento, sin guardarla: interesan el último mensaje y los errores.
+    const tracker = messageTracker();
+    const out = lineReader((line) => { const event = jsonEvent(line); if (event) tracker.event(event); });
+    let stderr = ''; // solo lo último
     let settled = false;
     const finish = (fn, value) => { if (!settled) { settled = true; clearTimeout(timer); fn(value); } };
     const timer = setTimeout(() => {
@@ -211,25 +272,18 @@ function generateImage({ description, shape, transparent, file, cwd, workDir }) 
       finish(reject, new Error('Codex ha tardado más de 5 minutos y se ha cancelado la petición.'));
     }, GENERATE_TIMEOUT);
 
-    child.stdout.on('data', (chunk) => { stdout += chunk; });
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => out.push(chunk));
+    child.stderr.on('data', (chunk) => { stderr = keepTail(stderr + chunk, MAX_LOG); });
     child.on('error', (err) => finish(reject, new Error(`No se pudo ejecutar Codex: ${err.message}`)));
     child.on('close', (code) => {
-      // Cada línea es un evento JSON; interesan el último mensaje de Codex y los errores.
-      let lastMessage = '';
-      let failure = '';
-      for (const line of stdout.split(/\r?\n/)) {
-        if (!line.trim()) continue;
-        let event;
-        try { event = JSON.parse(line); } catch { continue; }
-        if (event.type === 'item.completed' && event.item && event.item.type === 'agent_message') lastMessage = String(event.item.text || '');
-        if (event.type === 'error' || event.type === 'turn.failed') failure = String(event.message || (event.error && event.error.message) || failure);
-      }
-
-      const named = lastMessage.trim().replace(/^["'`]+|["'`]+$/g, '');
+      out.end();
+      const { message: lastMessage, failure } = tracker.result();
+      const named = lastMessage.replace(/^["'`]+|["'`]+$/g, '');
       const source = IMAGE_FILE.test(named) && fs.existsSync(named) ? named : newestGeneratedImage(started);
       if (!source) {
-        const reason = failure || lastMessage.trim() || stderr.trim().split(/\r?\n/).slice(-3).join(' ') || `Codex terminó con el código ${code}.`;
+        const reason = failure || lastMessage || stderr.trim().split(/\r?\n/).slice(-3).join(' ') || `Codex terminó con el código ${code}.`;
         finish(reject, new Error(`Codex no ha generado ninguna imagen. ${reason}`.slice(0, 800)));
         return;
       }
@@ -344,8 +398,10 @@ function isolation() {
 // Lanza Codex con estos argumentos y, si se da, este texto por la entrada estándar.
 // Siempre sin claves de API del entorno; se para con `signal`, al pasar `timeout` o al
 // cerrar la app (stopReviews). Devuelve { ok, code, text (salida), log (errores y
-// progreso), seconds, aborted }.
-function runCodex({ args, cwd, stdin = null, signal = null, timeout }) {
+// progreso, solo lo último), seconds, aborted, blocked, partial }. Con `json` (codex exec --json)
+// la salida se lee evento a evento y no se guarda: `text` queda vacío y se devuelven `message`
+// (el último mensaje de Codex) y `failure` (su error).
+function runCodex({ args, cwd, stdin = null, signal = null, timeout, json = false }) {
   return new Promise((resolve) => {
     const start = Date.now();
     const exe = findCodex();
@@ -367,13 +423,22 @@ function runCodex({ args, cwd, stdin = null, signal = null, timeout }) {
         else child.kill();
       } catch { /* ya había salido */ }
     };
+    const access = accessCounter();
+    const tracker = json ? messageTracker() : null;
+    const out = lineReader((line) => {
+      const event = jsonEvent(line);
+      if (event) { tracker.event(event); access.event(event); }
+    });
+    const err = lineReader((line) => access.logLine(line));
     const finish = (result) => {
       if (settled) return;
       settled = true;
       activeRuns.delete(stop);
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onAbort);
-      resolve({ ...result, seconds: Math.round((Date.now() - start) / 1000), aborted });
+      if (json) out.end();
+      err.end();
+      resolve({ ...result, ...(tracker ? tracker.result() : {}), ...access.report(), seconds: Math.round((Date.now() - start) / 1000), aborted });
     };
     const onAbort = () => { aborted = true; kill(); };
     const stop = () => onAbort();
@@ -382,9 +447,17 @@ function runCodex({ args, cwd, stdin = null, signal = null, timeout }) {
     if (signal) {
       if (signal.aborted) { onAbort(); } else signal.addEventListener('abort', onAbort);
     }
-    child.stdout.on('data', (chunk) => { text += chunk; });
-    child.stderr.on('data', (chunk) => { log += chunk; });
-    child.on('error', (err) => finish({ ok: false, code: null, text, log: `${log}\nNo se pudo ejecutar Codex: ${err.message}` }));
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      if (json) out.push(chunk);
+      else text = keepTail(text + chunk, MAX_TEXT);
+    });
+    child.stderr.on('data', (chunk) => {
+      err.push(chunk);
+      log = keepTail(log + chunk, MAX_LOG);
+    });
+    child.on('error', (error) => finish({ ok: false, code: null, text, log: `${log}\nNo se pudo ejecutar Codex: ${error.message}` }));
     child.on('close', (code) => finish({ ok: code === 0 && !aborted, code, text, log }));
     if (stdin !== null) {
       child.stdin.on('error', () => { /* Codex cerró la entrada antes de tiempo */ });
@@ -399,8 +472,7 @@ async function reviewChanges({ cwd, model, effort, signal, timeout = REVIEW_TIME
   // review_model manda sobre model en las revisiones: se fijan los dos.
   if (model) args.push('-c', `model="${model}"`, '-c', `review_model="${model}"`);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
-  const result = await runCodex({ args, cwd, signal, timeout });
-  return { ...result, ...accessReport('', result.log) };
+  return runCodex({ args, cwd, signal, timeout }); // ya trae blocked y partial (de su registro)
 }
 
 // ── Límites de uso de la cuenta ──────────────────────────────────────
@@ -538,16 +610,12 @@ function planPrompt({ request, plan }) {
 
 // Del registro de eventos de `codex exec --json`: el último mensaje de Codex y el error, si lo hubo.
 function lastAgentMessage(stdout) {
-  let message = '';
-  let failure = '';
+  const tracker = messageTracker();
   for (const line of String(stdout || '').split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    let event;
-    try { event = JSON.parse(line); } catch { continue; }
-    if (event.type === 'item.completed' && event.item && event.item.type === 'agent_message') message = String(event.item.text || '');
-    if (event.type === 'error' || event.type === 'turn.failed') failure = String(event.message || (event.error && event.error.message) || failure);
+    const event = jsonEvent(line);
+    if (event) tracker.event(event);
   }
-  return { message: message.trim(), failure };
+  return tracker.result();
 }
 
 // Pide a Codex una respuesta en solo lectura, en la carpeta del proyecto. Devuelve lo de
@@ -560,10 +628,9 @@ async function askCodex({ cwd, prompt, model, effort, signal, timeout = OPINION_
   if (model) args.push('-c', `model="${model}"`);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
   args.push('-'); // la petición, por la entrada estándar: sin límites ni comillas que escapar
-  const result = await runCodex({ args, cwd, stdin: prompt, signal, timeout });
-  const { message, failure } = lastAgentMessage(result.text);
-  // Las salidas de sus comandos van en el registro JSON (stdout): ahí se ven los bloqueos.
-  return { ...result, ok: result.ok && Boolean(message), text: message, failure, ...accessReport(result.text, result.log) };
+  // Las salidas de sus comandos van en el registro JSON (stdout): runCodex cuenta ahí los bloqueos.
+  const result = await runCodex({ args, cwd, stdin: prompt, signal, timeout, json: true });
+  return { ...result, ok: result.ok && Boolean(result.message), text: result.message };
 }
 
 // La herramienta tal como la ve Claude en sus sesiones.
@@ -626,6 +693,6 @@ function parseReview(text) {
 
 module.exports = {
   detect, generateImage, IMAGE_TOOL, reviewChanges, parseReview, stopReviews, chatgptLogin,
-  askCodex, opinionPrompt, planPrompt, lastAgentMessage, OPINION_TOOL, SCOPES, ISOLATED, launcher, userSetting,
+  askCodex, opinionPrompt, planPrompt, lastAgentMessage, lineReader, OPINION_TOOL, SCOPES, ISOLATED, launcher, userSetting,
   readLimits, limitsFrom, authStamp, accessReport, sandboxConfigured, configPath,
 };

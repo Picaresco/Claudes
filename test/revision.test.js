@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createReview, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
-const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting, limitsFrom, accessReport, sandboxConfigured } = require('../src/main/codex');
+const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, lineReader, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting, limitsFrom, accessReport, sandboxConfigured } = require('../src/main/codex');
 const { Tabs } = require('../src/main/tabs');
 const { tempDir } = require('./helpers');
 
@@ -448,6 +448,23 @@ test('del registro de Codex se saca su último mensaje o su error', () => {
   ].join('\n');
   assert.deepEqual(lastAgentMessage(out), { message: 'Mi opinión final.', failure: '' });
   assert.deepEqual(lastAgentMessage(JSON.stringify({ type: 'turn.failed', error: { message: 'límite de uso' } })), { message: '', failure: 'límite de uso' });
+});
+
+test('la salida de Codex se lee por líneas sin guardarla entera', () => {
+  const lines = [];
+  const reader = lineReader((line) => lines.push(line));
+  reader.push('{"a":1}\r\n{"b"');
+  reader.push(':2}\nsin final');
+  reader.end();
+  assert.deepEqual(lines, ['{"a":1}', '{"b":2}', 'sin final']);
+  // Una línea enorme (la salida de un comando que vuelca megas) se salta entera, y se sigue.
+  const big = [];
+  const r2 = lineReader((line) => big.push(line.length > 20 ? 'ENORME' : line));
+  r2.push('antes\n');
+  for (let i = 0; i < 9; i += 1) r2.push('x'.repeat(1024 * 1024));
+  r2.push('resto de la enorme\ndespués\n');
+  r2.end();
+  assert.deepEqual(big, ['antes', 'después']);
 });
 
 // Una pestaña con un turno empezado, en una carpeta de verdad.

@@ -77,6 +77,18 @@ test('NetLog apunta la herramienta con la carpeta del proyecto y agrupa las repe
   assert.ok(fs.readdirSync(dir).length === 1);
 });
 
+test('NetLog no retiene en memoria las entradas que ya han salido de la lista', (t) => {
+  const { log } = makeLog(t);
+  log.writeFile = () => {}; // sin escribir 5 000 líneas en disco
+  for (let i = 0; i < 5000; i += 1) log.record({ tabId: 't1', kind: 'web', target: `https://ejemplo${i}.com/`, dest: 'Internet', external: true });
+  assert.equal(log.entries().length, 3000);
+  assert.equal(log.groups.size, 3000); // antes se quedaban las 5 000
+  // Una repetición reciente se sigue agrupando.
+  log.record({ tabId: 't1', kind: 'web', target: 'https://ejemplo4999.com/', dest: 'Internet', external: true });
+  assert.equal(log.entries().length, 3000);
+  assert.equal(log.entries().at(-1).count, 2);
+});
+
 test('NetLog marca lo que sale a internet y tapa los secretos', (t) => {
   const { log } = makeLog(t);
   log.fromHook('t1', { event: 'PostToolUse', toolName: 'Bash', toolInput: { command: 'curl -u ana:clave https://api.github.com/x' } });

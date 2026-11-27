@@ -166,7 +166,13 @@ class NetLog {
     };
     this.groups.set(key, entry);
     this.list.push(entry);
-    if (this.list.length > MAX_ENTRIES) this.list.splice(0, this.list.length - MAX_ENTRIES);
+    if (this.list.length > MAX_ENTRIES) {
+      // Lo que sale de la lista sale también de las agrupaciones: si no, se quedaría en memoria.
+      for (const old of this.list.splice(0, this.list.length - MAX_ENTRIES)) {
+        const oldKey = `${old.tabId}|${old.kind}|${old.target}`;
+        if (this.groups.get(oldKey) === old) this.groups.delete(oldKey);
+      }
+    }
     this.writeFile(entry);
     this.send('netlog:entry', entry);
     return entry;
