@@ -54,6 +54,9 @@ function restore(saved) {
       model: typeof raw.model === 'string' && /^[\w.[\]-]{2,60}$/.test(raw.model) ? raw.model : null,
       effort: EFFORT_LEVELS.some((e) => e.level === raw.effort) ? raw.effort : null,
       modelDefault: raw.modelDefault === true, // sigue el predeterminado que se guardó desde aquí
+      // Autocompactar de la pestaña (null: el 85 % de serie) y el tamaño de su contexto.
+      compact: Number.isInteger(raw.compact) && raw.compact >= 30 && raw.compact <= 95 ? raw.compact : null,
+      ctxSize: Number(raw.ctxSize) > 0 ? Number(raw.ctxSize) : null,
     });
   }
   for (const raw of Array.isArray(saved.recents) ? saved.recents : []) {
@@ -72,6 +75,7 @@ function restore(saved) {
   S.activeId = typeof saved.activeId === 'string' ? saved.activeId : null;
   S.focusSide = saved.focusSide === 'right' ? 'right' : 'left';
   S.lastShell = validShell(saved.lastShell);
+  S.actScale = clamp(Number(saved.actScale) || 1, 0.8, 1.2);
   if (saved.split && typeof saved.split === 'object') {
     S.split = { left: saved.split.left, right: saved.split.right, ratio: clamp(Number(saved.split.ratio) || 0.5, 0.2, 0.8) };
   }

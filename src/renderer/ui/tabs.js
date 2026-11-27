@@ -40,7 +40,7 @@ export function roomForTab() {
   if (S.tabs.length < MAX_TABS) return true;
   api.choose({
     message: `Ya tienes ${S.tabs.length} proyectos abiertos`,
-    detail: `El máximo es ${MAX_TABS}, para no saturar la barra superior. Cierra alguno (con la × de su pestaña) y vuelve a intentarlo: queda en «Recientes» con su conversación, y lo puedes reabrir cuando quieras.`,
+    detail: `El máximo es ${MAX_TABS}, para no saturar la barra superior. Cierra alguno (botón derecho sobre su pestaña → «Cerrar la pestaña») y vuelve a intentarlo: queda en «Recientes» con su conversación, y lo puedes reabrir cuando quieras.`,
     buttons: ['Entendido'],
   }).catch(() => { /* sin diálogo */ });
   return false;

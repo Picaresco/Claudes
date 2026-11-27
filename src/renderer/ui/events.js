@@ -31,10 +31,9 @@ export function wireTabs() {
   strip.addEventListener('click', (e) => {
     const node = tabOf(e);
     if (!node) return;
-    if (e.target.closest('.tab-close')) closeTab(node.dataset.id);
     // Con el ratón, la pestaña se activa al soltar el botón (ver más abajo);
     // aquí solo llega la activación por teclado (Intro o Espacio).
-    else if (e.detail === 0 && e.target.closest('.tab-main')) activate(node.dataset.id);
+    if (e.detail === 0 && e.target.closest('.tab-main')) activate(node.dataset.id);
   });
   strip.addEventListener('dblclick', (e) => {
     const node = tabOf(e);
@@ -128,7 +127,7 @@ export function wireTabs() {
   strip.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || renamingId) return;
     const node = tabOf(e);
-    if (!node || e.target.closest('.tab-close')) return;
+    if (!node) return;
     drag = { id: node.dataset.id, x: e.clientX, y: e.clientY, active: false, drop: null };
     window.addEventListener('mousemove', onMove, true);
     window.addEventListener('mouseup', onUp, true);

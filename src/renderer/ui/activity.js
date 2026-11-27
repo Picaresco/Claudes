@@ -8,7 +8,8 @@ import { api, $, el } from './dom.js';
 import { previewAt, hidePreview } from './preview.js';
 import { focusAfterToggle } from './settings.js';
 import { renderPlan, forgetPlan, wirePlan } from './plan.js';
-import { S, byId, applySwatch, toast } from './state.js';
+import { S, byId, applySwatch, toast, save, clamp, startDrag } from './state.js';
+import { queueFit } from './views.js';
 
 // Un icono por tipo de paso (trazos de 16×16).
 const ICONS = {
@@ -233,7 +234,46 @@ async function switchActivity() {
   focusAfterToggle($('#activity-btn'));
 }
 
+// El ancho de la columna: arrastrando su borde izquierdo, del 80 % al 120 % del normal (el texto
+// se recoloca solo). Con las flechas, de 5 en 5 %; doble clic, el normal. Se recuerda (state.json).
+const MIN_SCALE = 0.8;
+const MAX_SCALE = 1.2;
+export function applyActivityWidth() {
+  $('#activity').style.setProperty('--act-scale', String(S.actScale || 1));
+  const handle = $('#act-resize');
+  handle.setAttribute('aria-valuenow', String(Math.round((S.actScale || 1) * 100)));
+  handle.setAttribute('aria-valuemin', String(MIN_SCALE * 100));
+  handle.setAttribute('aria-valuemax', String(MAX_SCALE * 100));
+}
+function setScale(value) {
+  const next = Math.round(clamp(value, MIN_SCALE, MAX_SCALE) * 100) / 100;
+  if (next === S.actScale) return;
+  S.actScale = next;
+  applyActivityWidth();
+  queueFit(); // la terminal, al hueco que queda
+}
+function wireResize() {
+  const handle = $('#act-resize');
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const aside = $('#activity');
+    const startX = e.clientX;
+    const startScale = S.actScale || 1;
+    const normal = aside.getBoundingClientRect().width / startScale; // el ancho al 100 %
+    if (!normal) return; // la columna no se ve
+    startDrag(e, 'col-resize', (ev) => setScale(startScale + (startX - ev.clientX) / normal), () => save());
+  });
+  handle.addEventListener('dblclick', () => { setScale(1); save(); });
+  handle.addEventListener('keydown', (e) => {
+    const step = { ArrowLeft: 0.05, ArrowRight: -0.05 }[e.key];
+    if (step) { e.preventDefault(); setScale((S.actScale || 1) + step); save(); }
+    else if (e.key === 'Home' || e.key === 'Enter') { e.preventDefault(); setScale(1); save(); }
+  });
+  applyActivityWidth();
+}
+
 export function wireActivity() {
+  wireResize();
   $('#act-toggle').addEventListener('click', () => { toggleActivity(); });
   $('#activity-btn').addEventListener('click', () => { switchActivity(); });
   api.onActivity(setActivity);

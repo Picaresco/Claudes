@@ -153,6 +153,8 @@
 <!-- Panel «Actividad» (ui/activity.js): lo que va haciendo Claude en la pestaña activa, contado
      en palabras sencillas. Cerrado, Haiku no cuenta nada. -->
 <aside id="activity" aria-labelledby="act-title" hidden>
+  <!-- Borde para arrastrar: la columna, del 80 % al 120 % de su ancho (ui/activity.js). -->
+  <div id="act-resize" class="act-resize" role="separator" aria-orientation="vertical" aria-label="Ancho de la columna Actividad" tabindex="0" title="Arrastra para hacer la columna más ancha o más estrecha · doble clic: tamaño normal"></div>
   <div class="act-head">
     <h2 id="act-title">Actividad</h2>
     <span id="act-swatch" class="swatch" aria-hidden="true"></span>
@@ -240,8 +242,10 @@
 
     <fieldset>
       <legend>Al abrir la pestaña</legend>
-      <label class="radio"><input type="radio" name="mode" value="continue" checked> Continuar la última conversación de esa carpeta</label>
-      <label class="radio"><input type="radio" name="mode" value="new"> Empezar una conversación nueva</label>
+      <div class="radios">
+        <label class="radio"><input type="radio" name="mode" value="continue" checked> Continuar la última conversación</label>
+        <label class="radio"><input type="radio" name="mode" value="new"> Empezar una conversación nueva</label>
+      </div>
     </fieldset>
 
     <div class="field">

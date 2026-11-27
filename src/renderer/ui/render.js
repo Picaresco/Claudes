@@ -35,20 +35,16 @@ function tabElement(tab, shown) {
   const usage = view && view.usage && view.usage.pct !== null ? view.usage : null;
   main.setAttribute('aria-label', `${tab.name}, ${st.label.toLowerCase()}${usage ? `, conversación al ${usage.pct} %` : ''}`);
   const spent = limitsSnap.conversations[tab.id];
-  main.title = `${tab.name} · ${st.label}\n${tab.cwd}${usage ? `\n${usageText(usage)}` : ''}${spent ? `\nTokens usados en esta conversación: ${nf.format(spent.total)} (${tokensBreakdown(spent)}).` : ''}`;
+  main.title = `${tab.name} · ${st.label}\n${tab.cwd}${usage ? `\n${usageText(usage)}` : ''}${spent ? `\nTokens usados en esta conversación: ${nf.format(spent.total)} (${tokensBreakdown(spent)}).` : ''}\nBotón derecho: sus opciones (cerrar, cambiar nombre, color…)`;
   main.innerHTML = SVG[st.icon];
   // Los puntos de «te necesita» y «ha terminado» parpadean. La fase sale del reloj
   // para que no vuelva a empezar cada vez que se repintan las pestañas.
   const attnDot = main.querySelector('.dot-attn');
   if (attnDot) attnDot.style.animationDelay = `-${Date.now() % 1200}ms`;
   main.append(el('span', 'tab-name', tab.name));
-
-  const close = el('button', 'tab-close');
-  close.setAttribute('aria-label', `Cerrar la pestaña ${tab.name}`);
-  close.title = 'Cerrar pestaña (Ctrl+Mayús+W)';
-  close.innerHTML = SVG.close;
-
-  node.append(main, close);
+  // Sin × en la pestaña: se cierra desde sus opciones (botón derecho, ui/tabcard.js), con
+  // Ctrl+Mayús+W o con el botón central del ratón.
+  node.append(main);
   // Barrita de llenado de la conversación, en la parte de abajo de la pestaña.
   if (usage) {
     const bar = el('span', 'tab-usage');

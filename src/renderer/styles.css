@@ -20,6 +20,10 @@
 }
 
 * { box-sizing: border-box; }
+/* Barras de desplazamiento finas y del color de la app (nada de la gris clara de Windows). Las que
+   se ocultan a propósito (pestañas, terminal) lo siguen haciendo: su regla es más concreta. */
+:root { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex;
@@ -153,13 +157,9 @@ h1, p { margin: 0; }
 /* El gasto semanal de Claude y de Codex, bien visible. */
 .sb-meter { width: 110px; height: 9px; overflow: hidden; border-radius: 5px; background: var(--line2); }
 .sb-usage[data-level="high"] { color: var(--attn); }
-.tab-main { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 2px 0 12px; }
+.tab-main { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; padding: 0 12px; }
 .tab-main svg { flex: none; }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-close { display: flex; align-items: center; justify-content: center; flex: none; width: 28px; color: var(--dim); visibility: hidden; border-radius: 0 8px 0 0; }
-.tab-close:hover { color: var(--txt); background: rgba(255, 255, 255, 0.08); }
-.tab.shown .tab-close, .tab:hover .tab-close, .tab-close:focus-visible { visibility: visible; }
-.tab:not(.shown) .tab-close { position: absolute; top: 0; right: 0; bottom: 0; background: linear-gradient(to right, transparent, var(--bg0) 40%); }
 .tab-edit { width: 150px; height: 26px; padding: 0 6px; background: var(--bg0); border: 1px solid var(--focus); border-radius: 4px; color: var(--txt); font: inherit; }
 .tab.dragged { opacity: 0.45; }
 .tab.drop-before::before, .tab.drop-after::after { content: ''; position: absolute; top: 6px; bottom: 6px; width: 2px; background: var(--txt); }
@@ -415,7 +415,12 @@ body.dragging #workspace * { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .act-toggle-dot { animation: none; } }
 
 /* ── Panel «Actividad» ─────────────────────────────────────────── */
-#activity { display: flex; flex-direction: column; flex: none; width: clamp(300px, 27vw, 420px); min-height: 0; background: var(--bg0); border-left: 1px solid var(--line); }
+/* --act-scale: lo que el usuario la ha ensanchado o estrechado con su borde (0,8 a 1,2). */
+#activity { position: relative; display: flex; flex-direction: column; flex: none; width: calc(clamp(300px, 27vw, 420px) * var(--act-scale, 1)); min-height: 0; background: var(--bg0); border-left: 1px solid var(--line); }
+.act-resize { position: absolute; top: 0; bottom: 0; left: -4px; z-index: 5; width: 8px; cursor: col-resize; }
+.act-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 0.15s; }
+.act-resize:hover::after, .act-resize:focus-visible::after, body.dragging .act-resize::after { background: var(--focus); }
+.act-resize:focus-visible { outline: none; }
 .act-head { display: flex; align-items: center; gap: 8px; flex: none; padding: 4px 4px 4px 14px; border-bottom: 1px solid var(--line); }
 #act-title { margin: 0; font-size: 13px; font-weight: 600; }
 .act-tab { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dim); }
@@ -788,7 +793,7 @@ dialog {
   color: var(--txt);
 }
 dialog::backdrop { background: rgba(5, 6, 8, 0.72); }
-#form-new { display: flex; flex-direction: column; gap: 18px; padding: 24px; }
+#form-new { display: flex; flex-direction: column; gap: 13px; padding: 18px 22px; }
 .dlg-head { display: flex; flex-direction: column; gap: 4px; }
 .dlg-head h1 { font-size: 18px; font-weight: 600; }
 .dlg-head p { font-size: 13px; color: var(--dim); }
@@ -799,7 +804,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .row input { flex: 1 1 240px; min-width: 0; }
 input[type="text"], select {
-  height: 44px;
+  height: 38px;
   padding: 0 12px;
   background: var(--bg0);
   border: 1px solid var(--line2);
@@ -811,14 +816,15 @@ input[type="text"], select {
 }
 input.mono { font-family: var(--mono); font-size: 13px; }
 input::placeholder { color: var(--mute); opacity: 1; }
-dialog .btn { height: 44px; padding: 0 16px; background: var(--bg1); }
+dialog .btn { height: 38px; padding: 0 16px; background: var(--bg1); }
 dialog .btn-primary { background: var(--txt); }
 .error { font-size: 13px; color: var(--attn); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 8px; font-size: 13px; cursor: pointer; }
+.chip { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 9px; border: 1px solid var(--line2); border-radius: 8px; font-size: 13px; cursor: pointer; }
 .chip:has(input:checked) { background: var(--bg1); border-color: var(--txt); font-weight: 600; }
 .chip input, .radio input { margin: 0; accent-color: var(--txt); }
-.radio { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 13px; cursor: pointer; }
+.radio { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: 13px; cursor: pointer; }
+.radios { display: flex; flex-wrap: wrap; gap: 0 22px; }
 .dlg-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 
 /* ── Workflow: el mapa del proyecto ─────────────────────────────── */

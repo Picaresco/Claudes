@@ -4,7 +4,8 @@ import { api, $, el } from './dom.js';
 
 // Lo que se guarda en disco. Cada pestaña: { id, name, cwd, color, shell,
 // sessionId, zoom, extraOpen, extraHeight }.
-export const S = { tabs: [], activeId: null, split: null, focusSide: 'left', recents: [], lastShell: 'powershell' };
+// actScale: el ancho de la columna «Actividad», del 80 % al 120 % del normal (su borde).
+export const S = { tabs: [], activeId: null, split: null, focusSide: 'left', recents: [], lastShell: 'powershell', actScale: 1 };
 
 export const views = new Map(); // id de pestaña → vista (terminales y estado en vivo)
 export const terms = new Map(); // id de proceso → terminal que muestra su salida
@@ -51,7 +52,7 @@ export function save() {
   saveTimer = setTimeout(() => {
     api.saveState({
       tabs: S.tabs, activeId: S.activeId, split: S.split, focusSide: S.focusSide,
-      recents: S.recents, lastShell: S.lastShell,
+      recents: S.recents, lastShell: S.lastShell, actScale: S.actScale,
     });
   }, 200);
 }

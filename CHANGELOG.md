@@ -4,6 +4,12 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.31.3 — 2026-11-27
+- Las pestañas ya no llevan la × de cerrar: se cierran desde sus opciones (botón derecho sobre la pestaña → «Cerrar la pestaña»), con `Ctrl+Mayús+W` o con el botón central del ratón. Al pasar el ratón por la pestaña se recuerda.
+- La columna «Actividad» se ensancha o se estrecha arrastrando su borde izquierdo (hasta un 20 % en cada sentido; con doble clic vuelve a su tamaño). El texto se recoloca solo y el ancho se recuerda.
+- Las barras de desplazamiento de las ventanas, finas y del color de la app; «Nueva sesión» más compacta.
+- Arreglado: al reiniciar ClaudHome, cada pestaña recuerda su autocompactar (volvía al 85 %).
+
 ## 0.31.2 — 2026-11-26
 - Tarjeta del proyecto: los porcentajes rápidos del autocompactar, centrados; fuera «Ver el registro de esta sesión» y «Abrir la carpeta de registros»; cuatro colores más para las pestañas (violeta, rojo, turquesa y lima).
 
