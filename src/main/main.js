@@ -4,7 +4,7 @@
 // respuestas y los plugins (style.js), el registro de depuración (applog.js), lo que se
 // sabe de cada pestaña (tabs.js), lo que se sabe de Codex (codex-state.js) y los canales
 // con la interfaz (ipc.js).
-const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen, net, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Notification, Menu, clipboard, shell, screen, net, nativeImage, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const pty = require('node-pty');
@@ -32,6 +32,8 @@ const { createWorkflow } = require('./workflow');
 const { createPlanTracker, PLAN_NOTE } = require('./plan');
 const { isAgentReport } = require('./turns');
 const { createSuperpowers, powerEffort, powerEnv } = require('./superpowers');
+const { createCapture, CAPTURE_TOOL } = require('./capture');
+const { readRule } = require('./context');
 const { compactTarget, compactEnv } = require('./project-card');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
@@ -61,6 +63,8 @@ let review = null; // Codex como segundo revisor del código (review.js)
 let secrets = null; // aviso de claves y contraseñas escritas en los archivos (secrets.js)
 let testcheck = null; // pruebas antes de terminar (testcheck.js)
 let superpowers = null; // SuperPowers por pestaña: pasada final y cómo trabajar (superpowers.js)
+let capture = null; // capturas de pantalla para la revisión visual de SuperPowers (capture.js)
+const capturesDir = () => path.join(app.getPath('userData'), 'capturas');
 let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
 let optimizeChecker = null; // la segunda mirada de Haiku (optimize-check.js)
@@ -200,7 +204,14 @@ async function createPty(o) {
   } catch (err) {
     appLog(`contexto de ${tabLabel(o.id)}: no se pudo preparar (${err.message})`);
   }
-  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, ctx.allow))];
+  // Con SuperPowers: la herramienta de capturas sin preguntar y poder volver a abrir sus imágenes.
+  const allow = [...ctx.allow];
+  if (powers) {
+    allow.push(`mcp__${CODEX_SERVER}__${CAPTURE_TOOL.name}`);
+    const rule = readRule(capturesDir(), true);
+    if (rule) allow.push(rule);
+  }
+  const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, allow))];
   // El modelo y el esfuerzo elegidos para esta pestaña (barra inferior): solo para esta sesión.
   if (typeof o.model === 'string' && /^[\w.[\]-]{2,60}$/.test(o.model)) args.push('--model', o.model);
   // Con SuperPowers, alto como mínimo.
@@ -232,7 +243,7 @@ async function createPty(o) {
   // (que se niega si no hay sesión de ChatGPT o el asesor está apagado: así sirve aunque se
   // inicie sesión después) y «generar_imagen» si las imágenes están activadas.
   if (!codexState.state.checkedAt) await codexState.refresh();
-  const withMcp = Boolean(codexState.state.installed);
+  const withMcp = Boolean(codexState.state.installed) || powers; // con SuperPowers, por la de capturas
   const withCodex = withMcp && codexState.state.enabled; // con la herramienta de imágenes
   tab.folder = o.cwd;
   tab.session = chosen.sessionId;
@@ -317,6 +328,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     testcheck = createTestReminder({ tabs, log: appLog });
     superpowers = createSuperpowers({ tabs, log: appLog });
+    capture = createCapture({ electron: { BrowserWindow, session }, dir: capturesDir, log: appLog });
     optimizer = createOptimizer({ tabs, log: appLog });
     // Antes de recomendar «Optimiza», Haiku lee lo que más ha cambiado y dice si conviene
     // (optimize-check.js). Lo que se le envía queda en el «Log».
@@ -492,9 +504,18 @@ if (!app.requestSingleInstanceLock()) {
     hookServer.mcp = createMcp({
       name: 'claudes-codex',
       version: app.getVersion(),
-      // La segunda opinión siempre; las imágenes, si están activadas.
-      tools: codexState.tools,
-      callTool: (tabId, name, args, signal) => (name === codex.OPINION_TOOL.name ? review.secondOpinion(tabId, args, signal) : codexState.drawImage(tabId, args)),
+      // La segunda opinión siempre; las imágenes, si están activadas; las capturas de pantalla,
+      // solo en las pestañas con SuperPowers (también al llamarla: mcp.js mira la lista).
+      tools: (tabId) => [...codexState.tools(), ...(superpowers && superpowers.on(tabId) ? [CAPTURE_TOOL] : [])],
+      callTool: (tabId, name, args, signal) => {
+        if (name === CAPTURE_TOOL.name) {
+          const tab = tabs.get(tabId) || {};
+          // Las páginas de la carpeta en la que trabaja (puede ser otra copia del repositorio) y la del proyecto.
+          const roots = [tab.cwd, tab.folder].filter(Boolean);
+          return capture.take(tabId, args, { roots, signal });
+        }
+        return name === codex.OPINION_TOOL.name ? review.secondOpinion(tabId, args, signal) : codexState.drawImage(tabId, args);
+      },
     });
     const innerMcp = hookServer.mcp;
     hookServer.mcp = (tabId, body, signal) => {

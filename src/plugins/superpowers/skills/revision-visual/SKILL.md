@@ -18,9 +18,12 @@ gráficos, correos, la ventana de una app. También al revisar una interfaz que 
 1. **Captura** con la herramienta `capturar_pantalla` de ClaudHome (servidor MCP
    `claudhome-codex`): la página del proyecto (un archivo `.html` de la carpeta o una dirección
    `http://localhost:…` de su servidor de desarrollo) a tres anchos: **390** (móvil), **1024**
-   (tableta) y **1440** (escritorio). Si la página necesita que su servidor esté en marcha,
-   arráncalo antes.
-2. **Mira cada imagen** con Read. Busca, en este orden:
+   (tableta) y **1440** (escritorio), que son los anchos por defecto. Si la página necesita que
+   su servidor esté en marcha, arráncalo antes en segundo plano. Con `pagina_completa: true` ves
+   también lo de debajo (hasta tres pantallas). Lo que la página pida a internet (fuentes, CDN) no
+   se carga: la herramienta te lo dice, y también los desbordes y los errores de la consola.
+2. **Mira cada imagen**: te llegan con la respuesta de la herramienta (y quedan guardadas: puedes
+   volver a abrirlas con Read). Lee también sus avisos. Busca, en este orden:
    - cosas que se **pisan** (textos, botones, etiquetas, menús);
    - **textos cortados** o que se salen de su caja;
    - **scroll horizontal** o elementos que se salen de la pantalla;
