@@ -241,6 +241,8 @@ async function createPty(o) {
   if (['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) args.push('--effort', effort);
   // Solo al ejecutar desde el código: arrancar en un modo de permisos (p. ej. «plan»), para las pruebas.
   if (DEV && process.env.CLAUDES_TEST_PERMISSION_MODE) args.push('--permission-mode', process.env.CLAUDES_TEST_PERMISSION_MODE);
+  // …y sin Claude in Chrome (el navegador real del usuario), para que una sesión de prueba no lo use.
+  if (DEV && process.env.CLAUDES_TEST_NO_CHROME) args.push('--no-chrome');
   tab.usage = null;
   if (review) review.sessionStarted(o.id); // con su primer mensaje sabrá cuándo pedir la segunda opinión
   if (superpowers) superpowers.sessionStarted(o.id); // y cómo trabajar con SuperPowers
