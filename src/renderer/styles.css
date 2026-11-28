@@ -851,6 +851,10 @@ dialog .btn-primary { background: var(--txt); }
 .wf-sw { width: 18px; border-top: 2.5px solid var(--accent); }
 .wf-sw[data-k="bucle"] { border-top-color: var(--warn); }
 .wf-sw[data-k="regla"] { border-top-color: var(--alert); border-top-style: dashed; }
+/* Lo que pide una credencial (sesión, token, clave): turquesa y con llave, no rojo (no es un error). */
+.wf-sw[data-k="credencial"] { border-top-color: #5FC8D6; border-top-style: dashed; }
+.wf-keyi { color: #5FC8D6; }
+.wf-legend .wf-key { width: 13px; height: 13px; margin-right: -2px; color: #5FC8D6; }
 .wf-tools { display: flex; align-items: center; gap: 6px; }
 #dlg-workflow .wf-tools .btn { height: 34px; min-width: 34px; padding: 0 10px; justify-content: center; }
 .wf-tools .icon-btn { width: 36px; height: 36px; }
@@ -913,6 +917,7 @@ dialog .btn-primary { background: var(--txt); }
 .wf-cs { font-family: var(--mono) !important; font-size: 11.5px; fill: var(--mute) !important; }
 .wf-cd { font-size: 8.2px; fill: var(--dim) !important; }
 .wf-cd.r { fill: var(--alert) !important; }
+.wf-cd.k { fill: #5FC8D6 !important; }
 .wf-cd.l { fill: var(--warn) !important; }
 .wf-cf { font-family: var(--mono) !important; font-size: 7px; fill: var(--mute) !important; }
 .wf-ar path { fill: none; vector-effect: non-scaling-stroke; }
@@ -920,6 +925,7 @@ dialog .btn-primary { background: var(--txt); }
 .wf-ar.k-datos .wf-base { stroke: var(--accent); }
 .wf-ar.k-bucle .wf-base { stroke: var(--warn); }
 .wf-ar.k-regla .wf-base { stroke: var(--alert); stroke-dasharray: 6 5; }
+.wf-ar.k-credencial .wf-base { stroke: #5FC8D6; stroke-dasharray: 6 5; }
 .wf-ar.wf-in .wf-base { stroke-width: 1.4; opacity: 0.8; }
 .wf-flow { stroke-width: 3.6; stroke-linecap: round; stroke-dasharray: 0.1 18; animation: wf-run 1.4s linear infinite; }
 .wf-ar.k-datos .wf-flow { stroke: #C4DBFF; }
@@ -933,6 +939,8 @@ dialog .btn-primary { background: var(--txt); }
 .wf-chip.k-bucle text { fill: var(--warn) !important; }
 .wf-chip.k-regla rect { stroke: var(--alert); }
 .wf-chip.k-regla text { fill: #FFB4B4 !important; }
+.wf-chip.k-credencial rect { stroke: #5FC8D6; }
+.wf-chip.k-credencial text { fill: #BFEFF5 !important; }
 .wf-lod1, .wf-lod2, .wf-lod3 { transition: opacity 0.3s; }
 .wf-lod2, .wf-lod3 { opacity: 0; pointer-events: none; }
 #wf-map[data-lod="2"] .wf-lod2, #wf-map[data-lod="3"] .wf-lod2, #wf-map[data-lod="3"] .wf-lod3 { opacity: 1; pointer-events: auto; }

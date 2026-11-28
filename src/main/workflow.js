@@ -27,7 +27,16 @@ const CHECK_EVERY = Number(process.env.CLAUDES_WORKFLOW_EVERY_MS) > 0 ? Number(p
 const ENTER_EVERY = process.env.CLAUDES_WORKFLOW_ENTER_MS !== undefined ? Number(process.env.CLAUDES_WORKFLOW_ENTER_MS) || 0 : 30 * 1000;
 const TIMEOUT = 8 * 60 * 1000;
 const TYPES = ['persona', 'interfaz', 'nucleo', 'proceso', 'datos', 'externo'];
-const KINDS = ['datos', 'bucle', 'regla'];
+// credencial (🔑): pide una sesión, un token o una clave; regla (✕): bloquea o prohíbe.
+const KINDS = ['datos', 'bucle', 'credencial', 'regla'];
+// El tipo de una flecha: el que diga el modelo, salvo que su texto diga otra cosa («🔑» o «✕»).
+const kindOf = (a) => {
+  const kind = KINDS.includes(a && a.tipo) ? a.tipo : 'datos';
+  const text = String((a && a.texto) || '').trim();
+  if (text.startsWith('🔑')) return 'credencial';
+  if (text.startsWith('✕') && kind === 'credencial') return 'regla';
+  return kind;
+};
 const LIMITS = { blocks: 9, external: 3, modules: 8, arrows: 12, inner: 24, innerPer: 6, rules: 1, lines: 3, marks: 3, stack: 8 };
 
 const SYSTEM = 'Eres un arquitecto de software que explica proyectos a personas no expertas. Describes cómo funciona un proyecto como un mapa. Respondes solo con JSON válido, sin texto alrededor.';
@@ -48,7 +57,10 @@ const list = (value) => (Array.isArray(value) ? value : []);
 function validate(raw, sources = null, prev = null) {
   if (!raw || typeof raw !== 'object') return null;
   const known = sources ? new Set([...sources].map((s) => s.toLowerCase())) : null;
-  const kept = new Set((prev && Array.isArray(prev.modulos) ? prev.modulos : []).flatMap((m) => [...list(m.reglas), ...list(m.bucles)]));
+  // Lo ya comprobado, sin su signo delante: una regla que pasa de «✕» a «🔑» (guía 3) se conserva.
+  const bare = (text) => clip(text, 36).replace(/^(✕|🔑|↻)\s*/u, '');
+  const kept = new Set((prev && Array.isArray(prev.modulos) ? prev.modulos : []).flatMap((m) => [...list(m.reglas), ...list(m.bucles)]).map(bare));
+  const keptBlock = new Set(list(prev && prev.reglas).map((r) => bare(r && r.texto)));
   const cited = (src) => {
     if (!known) return true;
     const s = String(src || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/:\d+.*$/, '').toLowerCase();
@@ -79,7 +91,7 @@ function validate(raw, sources = null, prev = null) {
     if (perBlock[block] > LIMITS.modules) continue;
     modIds.add(id);
     // { texto, fuente } del modelo, o el texto solo si viene de un mapa ya comprobado (sources null).
-    const marks = (items) => list(items).filter((r) => r && (typeof r === 'string' ? !known || kept.has(clip(r, 36)) : cited(r.fuente))).slice(0, LIMITS.marks).map((r) => clip(typeof r === 'string' ? r : r.texto, 36)).filter(Boolean);
+    const marks = (items) => list(items).filter((r) => r && (typeof r === 'string' ? !known || kept.has(bare(r)) : cited(r.fuente) || kept.has(bare(r.texto)))).slice(0, LIMITS.marks).map((r) => clip(typeof r === 'string' ? r : r.texto, 36)).filter(Boolean);
     modules.push({
       id, bloque: block, nombre: clip(m.nombre || id, 22), sub: clip(m.sub || list(m.archivos)[0] || '', 28),
       detalle: list(m.detalle).map((l) => clip(l, 40)).filter(Boolean).slice(0, LIMITS.lines),
@@ -92,7 +104,7 @@ function validate(raw, sources = null, prev = null) {
   for (const a of list(raw.flechas)) {
     const from = ident(a && a.de);
     const to = ident(a && a.a);
-    const kind = KINDS.includes(a && a.tipo) ? a.tipo : 'datos';
+    const kind = kindOf(a);
     if (!ids.has(from) || !ids.has(to) || from === to || seen.has(`${from}>${to}>${kind}`)) continue;
     // La vuelta de una flecha que ya está: la misma, de doble sentido (menos ruido en el mapa).
     const back = arrows.find((x) => x.de === to && x.a === from && x.tipo === kind);
@@ -109,13 +121,14 @@ function validate(raw, sources = null, prev = null) {
     const mt = modules.find((m) => m.id === to);
     if (!mf || !mt || from === to || mf.bloque !== mt.bloque || inner.length >= LIMITS.inner) continue;
     if (inner.filter((x) => modules.find((m) => m.id === x.de).bloque === mf.bloque).length >= LIMITS.innerPer) continue; // 6 por bloque
-    inner.push({ de: from, a: to, tipo: KINDS.includes(a.tipo) ? a.tipo : 'datos' });
+    inner.push({ de: from, a: to, tipo: kindOf(a) });
   }
   const rules = [];
   const rulesPer = {};
   for (const r of list(raw.reglas)) {
     const block = ident(r && r.bloque);
-    if (!ids.has(block) || !cited(r.fuente)) continue;
+    // Con su archivo, o una del mapa anterior (ya comprobada) que el modelo devuelve tal cual.
+    if (!ids.has(block) || !(cited(r.fuente) || keptBlock.has(bare(r.texto)))) continue;
     rulesPer[block] = (rulesPer[block] || 0) + 1;
     if (rulesPer[block] > LIMITS.rules) continue;
     const text = clip(r.texto, 36);
@@ -168,7 +181,7 @@ function refreshPrompt({ name, text, map, changes, from = null }) {
   return [
     `Sigue esta guía de ClaudHome («${GUIDE.name}», versión ${GUIDE.version}):`, '', GUIDE.body, '', '---', '',
     `Este es el mapa actual de cómo funciona el proyecto «${name}».${touched.length || changes.removed.length ? ` Desde que se hizo han cambiado estos archivos: ${touched.slice(0, 60).join(', ') || 'ninguno'}${changes.removed.length ? `; se han borrado: ${changes.removed.slice(0, 40).join(', ')}` : ''}.` : ''}`,
-    ...(from ? [`Se hizo con la versión ${from} de la guía y ahora es la ${GUIDE.version}: complétalo para que cumpla la guía de arriba (por ejemplo, el stack tecnológico si falta, sacado de los manifiestos), sin rehacer lo demás.`] : []),
+    ...(from ? [`Se hizo con la versión ${from} de la guía y ahora es la ${GUIDE.version}: complétalo para que cumpla la guía de arriba (por ejemplo, el stack tecnológico si falta, sacado de los manifiestos, o las reglas y flechas que solo piden una credencial, que ahora van con «🔑» y tipo «credencial» en vez de «✕»), sin rehacer lo demás.`] : []),
     'Actualiza el mapa con lo que muestran los archivos de abajo. Cambia solo lo necesario y conserva los mismos id; las reglas y bucles que no cambien, devuélvelos tal cual. Si lo esencial no cambia, devuelve el mismo mapa.',
     '', 'Mapa actual:', JSON.stringify(map), '', 'Archivos (extractos; los manifiestos siempre van):', '', text,
   ].join('\n');

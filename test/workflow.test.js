@@ -261,6 +261,26 @@ test('al actualizar se conservan las reglas y bucles ya comprobados; uno nuevo s
   assert.deepEqual(again.modulos[0].reglas, ['Solo pedidos válidos']);
 });
 
+test('lo que pide una credencial va con llave (🔑) y tipo «credencial»; lo que bloquea, con ✕', () => {
+  const map = validate({
+    ...MAP,
+    flechas: [
+      { de: 'cliente', a: 'api', tipo: 'datos', texto: 'pide' },
+      { de: 'api', a: 'pago', tipo: 'credencial', texto: '🔑 con token' },
+      { de: 'api', a: 'bd', tipo: 'regla', texto: '🔑 con usuario y clave' }, // el texto manda
+      { de: 'bd', a: 'api', tipo: 'credencial', texto: '✕ solo lectura' },
+    ],
+  });
+  assert.deepEqual(map.flechas.map((a) => a.tipo), ['datos', 'credencial', 'credencial', 'regla']);
+  // Un mapa de la guía anterior, al actualizarlo: la regla que pasa de «✕» a «🔑» se conserva,
+  // aunque vuelva sin su archivo; y también la del bloque.
+  const prev = validate({ ...MAP, modulos: [{ ...MAP.modulos[0], reglas: [{ texto: '✕ Requiere sesión', fuente: 'src/index.js' }] }], reglas: [{ bloque: 'api', texto: '✕ Requiere token', fuente: 'src/index.js' }] }, new Set(['src/index.js']));
+  const echoed = { ...MAP, modulos: [{ ...MAP.modulos[0], reglas: ['🔑 Requiere sesión'] }], reglas: [{ bloque: 'api', texto: '🔑 Requiere token' }] };
+  const again = validate(echoed, new Set(['src/db.js']), prev);
+  assert.deepEqual(again.modulos[0].reglas, ['🔑 Requiere sesión']);
+  assert.deepEqual(again.reglas, [{ bloque: 'api', texto: '🔑 Requiere token' }]);
+});
+
 test('al entrar en un proyecto el mapa se prepara solo, de uno en uno y como mucho una vez cada poco', async (t) => {
   const one = project(t);
   const two = project(t);

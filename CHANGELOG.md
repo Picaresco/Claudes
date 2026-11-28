@@ -4,6 +4,10 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.31.6 — 2026-11-28
+- Workflow: lo que pide una credencial (una sesión iniciada, un token, una clave) se dibuja con una llave y en turquesa, no con una ✕ roja: es un requisito, no un error. La ✕ roja queda para lo que bloquea o prohíbe (solo lectura, cortafuegos, accesos denegados). Los mapas ya hechos se ponen al día solos la próxima vez que entres en cada proyecto.
+- Arreglado: al actualizar un mapa del Workflow, las reglas de los bloques ya no se pierden.
+
 ## 0.31.5 — 2026-11-28
 - Arreglado: el «Log» ya no guarda en memoria lo que ha salido de su lista (con mucha actividad, la memoria crecía sin límite).
 - Arreglado: las respuestas de Codex (segundas opiniones, planes, revisiones, imágenes y el mapa del «Workflow») se leen línea a línea y ya no se guardan enteras en memoria; del registro de Codex solo se conserva lo último.

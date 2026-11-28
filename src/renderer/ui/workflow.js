@@ -3,7 +3,8 @@
 // la pestaña; aquí se enseña con tres niveles de detalle según lo cerca que se mire:
 //   1. vista general: los bloques y cómo se conectan;
 //   2. módulos: las piezas de cada bloque;
-//   3. detalle: qué hace cada pieza, sus reglas (✕) y lo que se repite solo (↻).
+//   3. detalle: qué hace cada pieza, lo que pide una credencial (🔑), lo que bloquea o prohíbe (✕)
+//      y lo que se repite solo (↻).
 // Rueda o pellizco para acercar, arrastrar para moverse, pulsar un bloque o una pieza para
 // entrar, doble clic o «Ver todo» para volver. Con la ventana abierta, el mapa se revisa
 // cada 5 minutos y solo se rehace si el proyecto ha cambiado.
@@ -12,7 +13,13 @@ import { S, byId } from './state.js';
 import { focusTerminal } from './views.js';
 import { layoutMap, wrap } from './workflow-layout.js';
 
-const COL = { datos: '#6AA5F8', bucle: '#F2B866', regla: '#F26B6B' };
+// credencial: pide una sesión, un token o una clave (no es un aviso); regla: bloquea o prohíbe.
+const COL = { datos: '#6AA5F8', bucle: '#F2B866', credencial: '#5FC8D6', regla: '#F26B6B' };
+const KEY = '🔑';
+const isKey = (text) => String(text).trim().startsWith(KEY);
+const unmark = (text) => String(text).trim().replace(/^(✕|🔑|↻)\s*/u, '');
+// La llave, dibujada (el emoji saldría en color y de otro tamaño que el texto).
+const KEY_SYMBOL = '<symbol id="wf-key" viewBox="0 0 16 16"><circle cx="5" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.2 8h6.3M12 8v2.6M14.2 8v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>';
 const BLOCK = { persona: ['#A9AFB9', 'rgba(169,175,185,.05)'], interfaz: ['#6AA5F8', 'rgba(106,165,248,.07)'], nucleo: ['#7FD4A0', 'rgba(127,212,160,.06)'], proceso: ['#F2B866', 'rgba(242,184,102,.06)'], datos: ['#A9AFB9', 'rgba(169,175,185,.05)'] };
 // Cinco niveles de zoom: + y − van de uno en uno, y la rueda y el pellizco no salen de ellos.
 // Cada nivel enseña lo que se lee a ese tamaño (LOD_OF: 1 bloques, 2 piezas, 3 detalle).
@@ -38,12 +45,17 @@ const stage = () => $('#wf-stage');
 // ── Dibujo ─────────────────────────────────────────────────────────────
 
 // Etiqueta de una flecha: en dos renglones si es larga, para que quepa en el hueco entre bloques.
+// Las de credencial llevan la llave dibujada delante, en vez del «🔑» escrito.
 function chip(kind, text, [x, y], extra = '') {
-  const lines = [...text].length > 15 ? wrap(text, 15, 2) : [text];
-  const w = Math.max(40, Math.max(...lines.map((l) => [...l].length)) * 8.4 + 24);
+  const key = kind === 'credencial';
+  const shown = key ? unmark(text) : text;
+  const lines = [...shown].length > 15 ? wrap(shown, 15, 2) : [shown];
+  const icon = key ? 18 : 0;
+  const w = Math.max(40, Math.max(...lines.map((l) => [...l].length)) * 8.4 + 24 + icon);
   const h = lines.length * 18 + 10;
-  const rows = lines.map((l, i) => `<text x="${x}" y="${y + 1 + (i - (lines.length - 1) / 2) * 18}">${esc(l)}</text>`).join('');
-  return `<g class="wf-chip k-${kind}" data-x="${x}" data-y="${y}" data-h="${h}"${extra}><rect x="${x - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="${Math.min(14, h / 2)}"/>${rows}</g>`;
+  const rows = lines.map((l, i) => `<text x="${x + icon / 2}" y="${y + 1 + (i - (lines.length - 1) / 2) * 18}">${esc(l)}</text>`).join('');
+  const mark = key ? `<use href="#wf-key" class="wf-keyi" x="${x - w / 2 + 10}" y="${y - 7}" width="14" height="14"/>` : '';
+  return `<g class="wf-chip k-${kind}" data-x="${x}" data-y="${y}" data-h="${h}"${extra}><rect x="${x - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="${Math.min(14, h / 2)}"/>${mark}${rows}</g>`;
 }
 
 // Cada texto, dentro de su caja: se mide ya dibujado (la letra de ancho fijo y las mayúsculas no
@@ -69,7 +81,7 @@ function draw(map) {
   L = layoutMap(map);
   focused = null;
   const marker = (k) => `<marker id="wf-a-${k}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="${COL[k]}"/></marker>`;
-  const defs = `<defs>${Object.keys(COL).map(marker).join('')}</defs>`;
+  const defs = `<defs>${KEY_SYMBOL}${Object.keys(COL).map(marker).join('')}</defs>`;
   const band = L.band ? `<line class="wf-edge" x1="0" y1="${L.band - 10}" x2="${L.W}" y2="${L.band - 10}"/><text class="wf-band" x="20" y="${L.band - 22}">internet</text><text class="wf-band" x="20" y="${L.band + 10}">tu equipo</text>` : '';
   const blocks = L.blocks.map((b) => {
     const [stroke, fill] = BLOCK[b.tipo] || BLOCK.nucleo;
@@ -89,29 +101,41 @@ function draw(map) {
   const arrow = (a, cls = '') => {
     const m = `url(#wf-a-${a.kind})`;
     const ends = `marker-end="${m}"${a.bi ? ` marker-start="${m}"` : ''}`;
-    const flow = a.kind === 'regla' ? '' : `<path class="wf-flow" d="${a.d}"/>`;
+    const flow = a.kind === 'regla' || a.kind === 'credencial' ? '' : `<path class="wf-flow" d="${a.d}"/>`;
     return `<g class="wf-ar k-${a.kind}${cls}" data-de="${esc(a.de)}" data-a="${esc(a.a)}"${a.bloque ? ` data-b="${esc(a.bloque)}"` : ''}><path class="wf-base" d="${a.d}" ${ends}/>${flow}</g>`;
   };
   const arrows = L.arrows.map((a) => arrow(a)).join('') + L.inner.map((a) => arrow({ ...a, bi: false }, ' wf-in wf-lod2')).join('');
   const cards = L.cards.map((c) => {
     // Hasta 4 renglones si abajo van los archivos; 5 si no.
-    const lines = [...c.detalle, ...c.reglas.map((r) => `✕ ${r.replace(/^✕\s*/, '')}`), ...c.bucles.map((r) => `↻ ${r.replace(/^↻\s*/, '')}`)].slice(0, c.archivos.length ? 4 : 5);
+    const rules = c.reglas.map((r) => (isKey(r) ? `${KEY} ${unmark(r)}` : `✕ ${unmark(r)}`));
+    const lines = [...c.detalle, ...rules, ...c.bucles.map((r) => `↻ ${unmark(r)}`)].slice(0, c.archivos.length ? 4 : 5);
     // data-w: el ancho que tiene cada texto; lo que no quepa se corta con «…» al dibujarlo (fitTexts).
     const inner = c.w - 28;
-    const text = lines.map((l, i) => `<text class="wf-cd${l.startsWith('✕') ? ' r' : l.startsWith('↻') ? ' l' : ''}" data-w="${inner}" x="${c.x + 14}" y="${c.y + 62 + i * 11}">${esc(l)}</text>`).join('');
+    const text = lines.map((l, i) => {
+      const y = c.y + 62 + i * 11;
+      if (l.startsWith(KEY)) return `<use href="#wf-key" class="wf-keyi" x="${c.x + 13}" y="${y - 7.5}" width="9" height="9"/><text class="wf-cd k" data-w="${inner - 12}" x="${c.x + 25}" y="${y}">${esc(unmark(l))}</text>`;
+      return `<text class="wf-cd${l.startsWith('✕') ? ' r' : l.startsWith('↻') ? ' l' : ''}" data-w="${inner}" x="${c.x + 14}" y="${y}">${esc(l)}</text>`;
+    }).join('');
     const files = c.archivos.length ? `<text class="wf-cf" data-w="${inner}" x="${c.x + 14}" y="${c.y + c.h - 9}">${esc(c.archivos.slice(0, 3).join(' · '))}</text>` : '';
-    const marks = (c.reglas.length ? `<circle cx="${c.x + c.w - 14}" cy="${c.y + 16}" r="5" fill="${COL.regla}"/>` : '') + (c.bucles.length ? `<circle cx="${c.x + c.w - (c.reglas.length ? 28 : 14)}" cy="${c.y + 16}" r="5" fill="${COL.bucle}"/>` : '');
+    // Un punto por clase: rojo si bloquea algo, turquesa si pide credencial, ámbar si se repite.
+    const keys = c.reglas.filter(isKey).length;
+    const dots = [c.reglas.length > keys && COL.regla, keys && COL.credencial, c.bucles.length && COL.bucle].filter(Boolean);
+    const marks = dots.map((fill, i) => `<circle cx="${c.x + c.w - 14 - i * 14}" cy="${c.y + 16}" r="5" fill="${fill}"/>`).join('');
     // Al entrar en el bloque, cada pieza sale de su centro y se separa hasta su sitio, una tras otra.
     const blk = L.blocks.find((b) => b.id === c.bloque);
     const dx = ((blk.x + blk.w / 2) - (c.x + c.w / 2)) * 0.7;
     const dy = ((blk.y + blk.h / 2) - (c.y + c.h / 2)) * 0.7;
     // De cerca, pulsarla muestra su archivo principal en el Explorador.
     const tip = c.archivos.length ? `${c.nombre}: de lejos, pulsa para acercarte; de cerca, para ver ${c.archivos[0]} en el Explorador` : c.nombre;
-    return `<g class="wf-card wf-lod2" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--d:${c.i * 45}ms" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-id="${esc(c.id)}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}" data-file="${esc(c.archivos[0] || '')}"><title>${esc(tip)}</title><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" data-w="${inner - (c.reglas.length || c.bucles.length ? 34 : 0)}" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" data-w="${inner}" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
+    return `<g class="wf-card wf-lod2" style="--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--d:${c.i * 45}ms" data-zoom="${c.x} ${c.y} ${c.w} ${c.h}" data-id="${esc(c.id)}" data-name="${esc(c.nombre)}" data-b="${esc(c.bloque)}" data-file="${esc(c.archivos[0] || '')}"><title>${esc(tip)}</title><rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="10"/>${marks}<text class="wf-ct" data-w="${inner - (dots.length ? 20 + dots.length * 14 : 0)}" x="${c.x + 14}" y="${c.y + 27}">${esc(c.nombre)}</text><text class="wf-cs" data-w="${inner}" x="${c.x + 14}" y="${c.y + 44}">${esc(c.sub)}</text><g class="wf-lod3">${text}${files}</g></g>`;
   }).join('');
   // Las reglas de cada bloque, al pie, aparecen al acercarse; en la vista general, las de las flechas.
   const labels = L.arrows.filter((a) => a.text).map((a) => chip(a.kind, a.text, a.at, ` data-de="${esc(a.de)}" data-a="${esc(a.a)}"`)).join('')
-    + L.pills.map((p) => chip('regla', p.text.startsWith('✕') ? p.text : `✕ ${p.text}`, p.at, ` data-pill="1" data-b="${esc(p.bloque)}"`).replace('class="wf-chip', 'class="wf-lod2 wf-chip')).join('');
+    + L.pills.map((p) => {
+      const kind = isKey(p.text) ? 'credencial' : 'regla';
+      const text = kind === 'regla' ? `✕ ${unmark(p.text)}` : p.text;
+      return chip(kind, text, p.at, ` data-pill="1" data-b="${esc(p.bloque)}"`).replace('class="wf-chip', 'class="wf-lod2 wf-chip');
+    }).join('');
   svg().innerHTML = defs + band + blocks + ext + arrows + cards + labels;
   fitTexts();
   chips = [...svg().querySelectorAll('.wf-chip')].map((g) => ({ g, x: Number(g.dataset.x), y: Number(g.dataset.y), w: Number(g.querySelector('rect').getAttribute('width')), h: Number(g.dataset.h) }));
