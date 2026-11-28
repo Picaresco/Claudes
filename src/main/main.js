@@ -96,6 +96,12 @@ const logsDir = () => path.join(app.getPath('userData'), 'logs');
 const logger = createAppLog(logsDir); // registro de depuración (applog.js)
 const appLog = logger.log;
 const tabs = new Tabs(); // lo que se sabe de cada pestaña (tabs.js)
+// Lo que una captura de pantalla ha descargado de CDN públicos (estilos, fuentes…) queda en el «Log».
+function logCdn(tabId, shot) {
+  if (!netlog || !shot || !Array.isArray(shot.cdn) || !shot.cdn.length) return;
+  netlog.record({ tabId, kind: 'web', target: shot.cdn.join(', '), detail: 'Captura de pantalla: estilos, fuentes o guiones de CDN públicos (solo descargas)', dest: shot.cdn.join(', '), external: true });
+}
+
 const tabLabel = (id) => tabs.label(id);
 
 // Avisa a la interfaz por un canal (cuando ya hay ventana).
@@ -383,6 +389,7 @@ if (!app.requestSingleInstanceLock()) {
       // La captura de «ahora» de una idea visual, para la tarjeta.
       capture: async (tabId, card, folder) => {
         const shot = await capture.take(tabId, { objetivo: card.page, anchos: [card.width] }, { roots: [folder] });
+        logCdn(tabId, shot);
         return shot.files[0] ? { file: shot.files[0], width: card.width } : null;
       },
     });
@@ -432,7 +439,7 @@ if (!app.requestSingleInstanceLock()) {
       }
       if (event.event === 'PostToolUse') {
         review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
-        superpowers.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file);
+        superpowers.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
       }
       // ¿Conviene optimizar? Cada cambio de código cuenta (se cuenta después de contestar).
       if (newTurn) optimizeHints.turnStarted(tabId);
@@ -457,7 +464,8 @@ if (!app.requestSingleInstanceLock()) {
       // en ella pasa las pruebas, así que el recordatorio de pruebas llega después solo si no lo hizo.
       if (event.event === 'Stop') {
         event.superAsk = superpowers.willAsk(tabId);
-        event.testsAsk = !event.superAsk && testcheck.willAsk(tabId);
+        // Tras la pasada final (que ya pide las pruebas), no se le vuelve a pedir pasarlas.
+        event.testsAsk = !event.superAsk && !(tabs.get(tabId) || {}).superAsked && testcheck.willAsk(tabId);
         event.reviewing = !event.superAsk && !event.testsAsk && review.willReview(tabId, event);
         event.testsFailing = event.superAsk || event.testsAsk ? null : testcheck.failing(tabId);
         // El resumen de la pasada (panel «Actividad»): cuando ya no queda nada que pedirle.
@@ -582,6 +590,7 @@ if (!app.requestSingleInstanceLock()) {
             const base = tab.cwd && inside(tab.cwd, roots) ? tab.cwd : tab.folder;
             const shot = await capture.take(tabId, args, { roots, base, signal });
             superpowers.captured(tabId, shot.images); // la pasada final sabe que ha mirado la pantalla
+            logCdn(tabId, shot);
             return shot;
           });
         }

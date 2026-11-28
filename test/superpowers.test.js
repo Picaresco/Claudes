@@ -221,3 +221,75 @@ test('lo que aporta en el proyecto: con y sin, medias, correcciones, pruebas y C
   assert.deepEqual(got.without, { turns: 1, minutes: 1, fixed: 0, tested: 1, green: 0 });
   assert.equal(got.codex, 2);
 });
+
+test('pasada proporcional: ligera en un cambio pequeño del proyecto, completa en uno grande', () => {
+  const { sp, tabs } = make();
+  const path = require('path');
+  const dir = path.resolve('proyecto-de-prueba');
+  const tmp = path.resolve('temporal-de-claude');
+  tabs.get('t1').folder = dir;
+  // Pequeño y solo de vista: sin pruebas nuevas ni vistas previas aparte, una ronda de capturas.
+  sp.turnStarted('t1', 'p', 'Pon el título arriba');
+  sp.toolUsed('t1', 'Edit', path.join(dir, 'templates', 'login.html'));
+  sp.toolUsed('t1', 'Write', path.join(tmp, 'vista-previa.html')); // fuera del proyecto: no cuenta
+  sp.toolUsed('t1', 'Write', path.join(tmp, 'banco.py'));
+  sp.willAsk('t1');
+  let reason = sp.answer('t1').reason;
+  assert.match(reason, /pasada ligera/);
+  assert.match(reason, /No hace falta escribir pruebas nuevas/);
+  assert.match(reason, /una ronda con capturar_pantalla/);
+  assert.match(reason, /Sin montar páginas de vista previa/);
+  assert.match(reason, /daría por hecho aunque no lo haya dicho/);
+  assert.doesNotMatch(reason, /reparte la comprobación/);
+  assert.doesNotMatch(reason, /por separado/); // sin ejemplos que apunten a un caso concreto
+
+  // Pequeño con lógica: las pruebas que ya tenga, sin archivo nuevo.
+  sp.turnStarted('t1', 'p', 'Corrige la suma');
+  sp.toolUsed('t1', 'Edit', 'calc.py', dir); // relativa a la carpeta de trabajo
+  sp.willAsk('t1');
+  reason = sp.answer('t1').reason;
+  assert.match(reason, /pasada ligera/);
+  assert.match(reason, /no hace falta un archivo de pruebas nuevo/);
+
+  // Grande: la suite completa, pruebas para la lógica y reparto.
+  sp.turnStarted('t1', 'p', 'Añade los filtros');
+  for (const f of ['api.py', 'logs.py', 'trace.js', 'trace.html']) sp.toolUsed('t1', 'Edit', path.join(dir, f));
+  sp.willAsk('t1');
+  reason = sp.answer('t1').reason;
+  assert.doesNotMatch(reason, /pasada ligera/);
+  assert.match(reason, /suite de pruebas completa/);
+  assert.match(reason, /añade las pruebas que falten para la lógica/);
+  assert.match(reason, /reparte la comprobación/);
+  assert.match(reason, /daría por hecho/);
+
+  // Muchas ediciones de un mismo archivo también cuentan como cambio grande.
+  sp.turnStarted('t1', 'p', 'Rehaz la hoja de estilos');
+  for (let i = 0; i < 7; i += 1) sp.toolUsed('t1', 'Edit', path.join(dir, 'estilo.css'));
+  sp.willAsk('t1');
+  reason = sp.answer('t1').reason;
+  assert.doesNotMatch(reason, /pasada ligera/);
+  assert.doesNotMatch(reason, /añade las pruebas que falten/); // solo vista: sin pruebas nuevas
+});
+
+test('lo que Claude deja fuera del proyecto no impide la revisión de Codex («varios repositorios»)', async () => {
+  const { tabs } = make();
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { execFileSync } = require('child_process');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'claudhome-sp-repo-'));
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'claudhome-sp-tmp-'));
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    const review = createReview({ tabs, store: { get: (_k, d) => d }, usable: () => true, codex: {}, send: () => {}, log: () => {}, logsDir: () => '.', extraFor: () => true });
+    tabs.ensure('t9').folder = repo;
+    review.turnStarted('t9', 'Cambia el panel');
+    review.toolUsed('t9', 'Edit', path.join(repo, 'app.py'));
+    review.toolUsed('t9', 'Write', path.join(scratch, 'banco.py')); // fuera y sin repositorio: no cuenta
+    assert.ok(tabs.get('t9').reviewRepo, 'se queda con el repositorio del proyecto');
+    assert.equal(tabs.get('t9').edited, true);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});

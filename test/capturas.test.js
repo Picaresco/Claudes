@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { resolveTarget, allowRequest, widthsFrom, report, CAPTURE_TOOL } = require('../src/main/capture');
+const { resolveTarget, allowRequest, allowCdn, widthsFrom, report, CAPTURE_TOOL } = require('../src/main/capture');
 const { createMcp } = require('../src/main/mcp');
 const { tempDir } = require('./helpers');
 
@@ -127,4 +127,28 @@ test('el MCP de la app: cada pestaña ve sus herramientas y no puede llamar a la
   assert.deepEqual(shot.content.map((c) => c.type), ['text', 'image']);
   assert.equal(shot.isError, false);
   assert.deepEqual((await call('sin', 'otra')).json.result.content, [{ type: 'text', text: 'texto' }]);
+});
+
+test('de CDN públicos conocidos se descargan estilos, fuentes, guiones e imágenes; nada más', () => {
+  const get = (url, resourceType = 'stylesheet', method = 'GET') => allowCdn({ url, resourceType, method });
+  assert.equal(get('https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css'), true);
+  assert.equal(get('https://fonts.gstatic.com/s/inter/v13/x.woff2', 'font'), true);
+  assert.equal(get('https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js', 'script'), true);
+  assert.equal(get('https://unpkg.com/icono.svg', 'image'), true);
+  assert.equal(get('http://cdn.jsdelivr.net/x.css'), false); // solo https
+  assert.equal(get('https://cdn.jsdelivr.net/x.css', 'stylesheet', 'POST'), false); // solo descargas
+  assert.equal(get('https://cdn.jsdelivr.net/x', 'xhr'), false); // ni peticiones de datos
+  assert.equal(get('https://cdn.jsdelivr.net/x', 'mainFrame'), false); // ni navegar
+  assert.equal(get('https://cdn.jsdelivr.net.ejemplo.com/x.css'), false);
+  assert.equal(get('https://evil.com/cdn.jsdelivr.net/x.css'), false);
+  assert.equal(get('https://user:pw@cdn.jsdelivr.net/x.css'), false);
+  assert.equal(get('https://cdn.jsdelivr.net:8443/x.css'), false);
+  assert.equal(get('https://api.ejemplo.com/datos.css'), false);
+  assert.equal(allowCdn(null), false);
+  assert.equal(allowCdn({ url: 'no es una url', resourceType: 'script', method: 'GET' }), false);
+  // La comprobación de las navegaciones (allowRequest) sigue sin dejar salir a internet.
+  assert.equal(allowRequest('https://cdn.jsdelivr.net/x.css', [process.cwd()]), false);
+  // Y el texto para Claude lo dice.
+  const text = report({ target: { label: 'login.html' }, full: false, blocked: [], cdn: ['cdn.jsdelivr.net'], shots: [{ width: 390, file: 'a.png', overflow: 0, errors: [] }] });
+  assert.match(text, /CDN públicos \(cdn\.jsdelivr\.net\)/);
 });

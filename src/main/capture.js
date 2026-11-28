@@ -114,6 +114,25 @@ function allowRequest(url, roots) {
   }
 }
 
+// CDN públicos conocidos: de ellos sí se cargan estilos, fuentes, guiones e imágenes (solo
+// descargas por https), para que la captura se parezca a lo que verá el usuario. Nada más.
+const CDN_HOSTS = new Set([
+  'cdn.jsdelivr.net', 'fastly.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com',
+  'fonts.googleapis.com', 'fonts.gstatic.com', 'ajax.googleapis.com',
+  'stackpath.bootstrapcdn.com', 'maxcdn.bootstrapcdn.com', 'netdna.bootstrapcdn.com',
+  'code.jquery.com', 'cdn.tailwindcss.com', 'use.fontawesome.com', 'kit.fontawesome.com',
+  'ka-f.fontawesome.com', 'cdn.datatables.net', 'cdn.plot.ly', 'esm.sh', 'cdn.skypack.dev',
+  'rsms.me', 'fonts.bunny.net', 'use.typekit.net', 'p.typekit.net',
+]);
+const CDN_TYPES = new Set(['stylesheet', 'font', 'script', 'image']);
+function allowCdn(details) {
+  if (!details || details.method !== 'GET' || !CDN_TYPES.has(details.resourceType)) return false;
+  let parsed;
+  try { parsed = new URL(details.url); } catch { return false; }
+  return parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.port
+    && CDN_HOSTS.has(parsed.hostname.toLowerCase());
+}
+
 // Qué se va a capturar: { url, label }. Lanza un error con un mensaje para Claude si no se puede.
 // roots: las carpetas del proyecto (y sus copias de trabajo de git); base: desde dónde se leen las
 // rutas relativas (la carpeta en la que trabaja la sesión, si es una de ellas).
@@ -169,7 +188,7 @@ const stamp = (d = new Date()) => `${d.getFullYear()}${two(d.getMonth() + 1)}${t
 const hostOf = (url) => { try { const u = new URL(url); return u.host || u.protocol; } catch { return 'otra dirección'; } };
 
 // El texto para Claude que acompaña a las imágenes.
-function report({ target, shots, blocked, full }) {
+function report({ target, shots, blocked, full, cdn = [] }) {
   const widths = shots.map((s) => s.width);
   const lines = [
     `Capturas de «${target.label}» a ${widths.join(', ')} px (${full ? 'página completa, hasta tres pantallas de alto' : 'lo que se ve sin desplazar'}), en ese orden. Guardadas en:`,
@@ -179,10 +198,11 @@ function report({ target, shots, blocked, full }) {
   for (const s of shots) {
     if (s.overflow > 0) warn.push(`a ${s.width} px la página es más ancha que la pantalla (desborde horizontal de ${s.overflow} px)`);
   }
-  if (blocked.length) warn.push(`se ha bloqueado lo que pedía a internet (${blocked.slice(0, 5).join(', ')}${blocked.length > 5 ? '…' : ''}): con conexión puede verse algo distinto (fuentes, estilos de un CDN)`);
+  if (blocked.length) warn.push(`se ha bloqueado lo que pedía a internet (${blocked.slice(0, 5).join(', ')}${blocked.length > 5 ? '…' : ''}): con conexión puede verse algo distinto`);
   const errors = [...new Set(shots.flatMap((s) => s.errors))].slice(0, 5);
   if (errors.length) warn.push(`errores en la consola de la página: ${errors.map((e) => `«${e}»`).join('; ')}`);
   if (warn.length) lines.push('', `Avisos: ${warn.join('; ')}.`);
+  if (cdn.length) lines.push('', `Se han cargado estilos, fuentes o guiones de CDN públicos (${cdn.slice(0, 5).join(', ')}${cdn.length > 5 ? '…' : ''}), como en la página real.`);
   lines.push('', 'Míralas con atención (solapes, textos cortados o que se salen, desbordes, contraste, lo que falta), arregla lo que veas y vuelve a capturar para comprobarlo.');
   return lines.join('\n');
 }
@@ -305,8 +325,10 @@ function createCapture({ electron, dir, log = () => {} }) {
       fs.mkdirSync(outDir, { recursive: true });
       const ses = electron.session.fromPartition(`capturas-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`); // en memoria
       const blocked = new Set();
+      const cdn = new Set();
       ses.webRequest.onBeforeRequest((details, callback) => {
-        const ok = allowRequest(details.url, roots);
+        let ok = allowRequest(details.url, roots);
+        if (!ok && allowCdn(details)) { ok = true; cdn.add(hostOf(details.url)); }
         if (!ok) blocked.add(hostOf(details.url));
         callback({ cancel: !ok });
       });
@@ -326,14 +348,15 @@ function createCapture({ electron, dir, log = () => {} }) {
         ses.webRequest.onBeforeRequest(null);
         ses.clearStorageData().catch(() => {});
       }
-      log(`capturas de pantalla: ${target.label} a ${widths.join(', ')} px${blocked.size ? ` (bloqueado: ${[...blocked].slice(0, 5).join(', ')})` : ''}`);
+      log(`capturas de pantalla: ${target.label} a ${widths.join(', ')} px${cdn.size ? ` (CDN: ${[...cdn].slice(0, 5).join(', ')})` : ''}${blocked.size ? ` (bloqueado: ${[...blocked].slice(0, 5).join(', ')})` : ''}`);
       return {
         content: [
-          { type: 'text', text: report({ target, shots, blocked: [...blocked], full }) },
+          { type: 'text', text: report({ target, shots, blocked: [...blocked], full, cdn: [...cdn] }) },
           ...shots.map((s) => ({ type: 'image', data: s.png.toString('base64'), mimeType: 'image/png' })),
         ],
         files: shots.map((s) => s.file),
         images: shots.length,
+        cdn: [...cdn],
       };
     };
     const next = chain.then(run, run);
@@ -359,4 +382,4 @@ function worktreeRoots(folder, git) {
   });
 }
 
-module.exports = { worktreeRoots, tabDir, inside, createCapture, CAPTURE_TOOL, resolveTarget, allowRequest, widthsFrom, report, DEFAULT_WIDTHS };
+module.exports = { worktreeRoots, tabDir, inside, createCapture, CAPTURE_TOOL, resolveTarget, allowRequest, allowCdn, CDN_HOSTS, widthsFrom, report, DEFAULT_WIDTHS };

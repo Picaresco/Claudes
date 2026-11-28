@@ -207,6 +207,13 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (!base && !(known && path.isAbsolute(file))) return; // no se sabe dónde está
     const full = known ? path.resolve(base || '', file) : path.join(base, '.');
     const repo = repoRoot(known ? path.dirname(full) : full) || '';
+    // Un archivo fuera del proyecto y de cualquier repositorio (los guiones o vistas previas que
+    // Claude deja en su carpeta temporal) no cuenta: si no, la revisión creería que hay «varios
+    // repositorios» y no se haría.
+    if (!repo && known && tab.folder) {
+      const rel = path.relative(tab.folder, full);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) return;
+    }
     if (tab.reviewRepo === undefined) tab.reviewRepo = repo;
     else if (tab.reviewRepo === null || !sameRepo(tab.reviewRepo, repo)) tab.reviewRepo = null; // de varios sitios
     tab.edited = true;

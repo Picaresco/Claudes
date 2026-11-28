@@ -15,6 +15,9 @@ const CAPTURE_TOOL = 'mcp__claudhome-codex__capturar_pantalla';
 // Lo que se ve: si cambia, la pasada pide revisarlo con capturas.
 const VISUAL = /\.(html?|css|scss|sass|less|vue|svelte|jsx|tsx|svg|astro|hbs|ejs|njk|liquid)$/i;
 const NOTE_EVERY = 30; // mensajes: se le recuerda cómo trabajar (como «Codex asesora»)
+// Cambio pequeño (pasada ligera): como mucho 2 archivos del proyecto y 6 ediciones.
+const SMALL_FILES = 2;
+const SMALL_EDITS = 6;
 const WRAPUP = 'Voy a cerrar esta sesión ahora.'; // el turno de cerrar la sesión no tiene pasada
 const clip = (text, max) => {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
@@ -26,6 +29,7 @@ const NOTE_ON = [
   '- Habilidades (plugin claudhome-superpowers): verification-before-completion antes de afirmar que algo funciona; systematic-debugging ante cualquier fallo (la causa antes que el arreglo); pruebas-primero para lógica nueva y para cada fallo que arregles (nunca borres código que funciona); revision-visual si cambias algo que se ve (herramienta capturar_pantalla a 390, 1024 y 1440 px).',
   '- Agentes: tú eres el único que edita. Si puedes seguir avanzando mientras tanto, delega en hasta dos agentes de solo lectura con un encargo concreto (p. ej. pasar la suite y resumir fallos, mirar las capturas, comprobar un módulo) y que te devuelvan pruebas, no opiniones. No delegues tareas pequeñas: explicarlas cuesta más que hacerlas.',
   '- Al terminar habrá una pasada final (te la pedirá ClaudHome): pruebas, lo pedido punto por punto y capturas si hay algo visual. Cierra diciendo qué has comprobado y qué queda pendiente. Si ves mejoras que de verdad merezcan la pena, propón como mucho tres, sin aplicarlas.',
+  '- Proporción: el esfuerzo de comprobar, a la medida del cambio. En un cambio pequeño no montes bancos de pruebas, servidores ni páginas de vista previa aparte, y no escribas pruebas nuevas para algo que solo cambia cómo se ve.',
 ].join('\n');
 const NOTE_OFF = 'ClaudHome · SuperPowers desactivado por el usuario en esta pestaña: vuelve a trabajar como siempre (sin pasada final ni agentes extra).';
 
@@ -64,6 +68,9 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     tab.spSeq = 0; // orden de lo que pasa: ¿hay capturas después del último cambio visual?
     tab.spVisualSeq = 0;
     tab.spCaptureSeq = 0;
+    tab.spFiles = []; // archivos del proyecto cambiados (para saber si el cambio es pequeño)
+    tab.spEdits = 0;
+    tab.spLogic = false; // ¿ha cambiado código que no es solo de vista?
     tab.superAsked = false;
     tab.spAfter = 0; // cambios después de pedirle la pasada final
     tab.spMeasured = false;
@@ -74,12 +81,22 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
   // Lo que cambia Claude (también sus agentes). Que ha cambiado algo se apunta también sin
   // SuperPowers, para comparar (power-stats.js); y si cambia algo después de pedirle la pasada
   // final, es que la pasada ha corregido algo.
-  function toolUsed(tabId, toolName, file = null) {
+  function toolUsed(tabId, toolName, file = null, cwd = null) {
     const tab = tabs.get(tabId);
     if (!tab || !EDIT_TOOLS.has(toolName)) return;
     tab.spEdited = true;
     if (tab.superAsked) tab.spAfter = (tab.spAfter || 0) + 1;
     if (!on(tabId)) return;
+    // El tamaño del cambio: solo lo del proyecto (no los guiones que Claude deja en su carpeta temporal).
+    if (typeof file === 'string' && file) {
+      const full = path.resolve(cwd || tab.folder || '', file);
+      const rel = tab.folder ? path.relative(tab.folder, full) : '';
+      if (tab.folder && rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+        if (!(tab.spFiles || []).includes(rel)) tab.spFiles = [...(tab.spFiles || []), rel].slice(0, 50);
+        tab.spEdits = (tab.spEdits || 0) + 1;
+        if (!VISUAL.test(file) && /\.(js|mjs|cjs|ts|py|rb|go|rs|java|kt|cs|php|swift|c|cc|cpp|h|hpp|lua|dart|sh|ps1|sql)$/i.test(file)) tab.spLogic = true;
+      }
+    }
     if (typeof file === 'string' && VISUAL.test(file)) {
       const name = path.basename(file);
       if (!(tab.spVisual || []).includes(name)) tab.spVisual = [...(tab.spVisual || []), name].slice(0, 12);
@@ -107,20 +124,37 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     return true;
   }
 
-  // La respuesta al Stop: que no termine sin la pasada final.
+  // ¿Es un cambio pequeño? Pocos archivos del proyecto y pocas ediciones: pasada ligera.
+  const isSmall = (tab) => (tab.spFiles || []).length <= SMALL_FILES && (tab.spEdits || 0) <= SMALL_EDITS;
+
+  // La respuesta al Stop: que no termine sin la pasada final, proporcional al cambio.
   function answer(tabId) {
     const tab = tabs.get(tabId) || {};
     const visual = (tab.spPass && tab.spPass.visual) || [];
-    const steps = [
-      '1. Pasa la suite de pruebas completa del proyecto (si no tiene, una comprobación que se pueda repetir de lo que has cambiado) y añade las pruebas que falten para lo cambiado. Que la salida lo demuestre.',
-      `2. Repasa punto por punto lo que pidió el usuario y comprueba cada punto: «${tab.spRequest || 'lo que pidió en este turno'}».`,
-      visual.length
-        ? `3. Has cambiado archivos que se ven (${visual.join(', ')}): revísalos con la herramienta capturar_pantalla a 390, 1024 y 1440 px (habilidad revision-visual), mira las imágenes y arregla solapes, textos cortados o contraste.`
-        : '3. Si algo de lo cambiado se ve en pantalla, revísalo con capturar_pantalla (habilidad revision-visual).',
-      '4. Si puedes, reparte la comprobación: un agente de solo lectura para las pruebas o las capturas mientras tú repasas lo pedido.',
-      '5. Termina con un bloque «Pasada final» breve: lo comprobado (con su prueba: comando y resultado, capturas), lo que queda pendiente y, solo si merecen la pena de verdad, hasta tres mejoras propuestas (sin aplicarlas).',
-    ];
-    return { decision: 'block', reason: `ClaudHome · SuperPowers: antes de terminar, la pasada final.\n${steps.join('\n')}` };
+    const small = isSmall(tab);
+    const asked = `«${tab.spRequest || 'lo que pidió en este turno'}»`;
+    const expected = 'Piensa también en lo que el usuario daría por hecho aunque no lo haya dicho: si es claro y pequeño, hazlo; si no, déjalo anotado como pendiente.';
+    const shots = visual.length
+      ? `Has cambiado archivos que se ven (${visual.join(', ')}): ${small ? 'una ronda' : 'revísalos'} con capturar_pantalla a 390, 1024 y 1440 px después de tu último cambio (habilidad revision-visual); mira las imágenes y arregla solapes, textos cortados o contraste.`
+      : 'Si algo de lo cambiado se ve en pantalla, revísalo con capturar_pantalla (habilidad revision-visual).';
+    const close = 'Termina con un bloque «Pasada final» breve: lo comprobado (con su prueba: comando y resultado, capturas), lo que queda pendiente y, solo si merecen la pena de verdad, hasta tres mejoras propuestas (sin aplicarlas).';
+    const steps = small
+      ? [
+        tab.spLogic
+          ? '1. Pasa las pruebas que tenga el proyecto y que toquen lo cambiado (si no tiene, comprueba lo cambiado de una forma que se pueda repetir). Para un cambio así de pequeño no hace falta un archivo de pruebas nuevo.'
+          : '1. No hace falta escribir pruebas nuevas para un cambio que solo cambia cómo se ve; si el proyecto tiene pruebas de esa parte, pásalas.',
+        `2. Repasa punto por punto lo que pidió el usuario: ${asked}. ${expected}`,
+        `3. ${shots} Sin montar páginas de vista previa ni servidores aparte, salvo que no haya otra forma.`,
+        `4. ${close}`,
+      ]
+      : [
+        `1. Pasa la suite de pruebas completa del proyecto (si no tiene, una comprobación que se pueda repetir de lo que has cambiado)${tab.spLogic ? ' y añade las pruebas que falten para la lógica cambiada (no hacen falta para lo que solo cambia cómo se ve)' : ''}. Que la salida lo demuestre.`,
+        `2. Repasa punto por punto lo que pidió el usuario: ${asked}. ${expected}`,
+        `3. ${shots}`,
+        '4. Si puedes, reparte la comprobación: un agente de solo lectura para las pruebas o las capturas mientras tú repasas lo pedido.',
+        `5. ${close}`,
+      ];
+    return { decision: 'block', reason: `ClaudHome · SuperPowers: antes de terminar, la pasada final${small ? ' (cambio pequeño: pasada ligera)' : ''}.\n${steps.join('\n')}` };
   }
 
   // El resumen de la pasada para la interfaz, con lo que se ha visto (no con lo que diga Claude),
