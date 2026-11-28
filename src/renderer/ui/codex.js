@@ -1,5 +1,6 @@
 // ── Codex ────────────────────────────────────────────────────────
 import { codexFlights } from './codex-flight.js';
+import { setCodexReady } from './sp-ignite.js';
 import { api, $ } from './dom.js';
 import { renderCodexLimits } from './limits.js';
 import { renderToolbar } from './render.js';
@@ -11,6 +12,7 @@ export let codexInfo = null;
 
 export function renderCodex(info) {
   if (info) codexInfo = info;
+  setCodexReady(codexInfo); // con Codex listo, SuperPowers va al máximo (brasas en su botón)
   const chip = $('#codex-chip');
   if (!codexInfo) { chip.hidden = true; return; }
   let state = 'missing';

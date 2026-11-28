@@ -9,7 +9,8 @@ import { $, api } from './dom.js';
 import { BUSY } from './model.js';
 import { renderTabs, renderToolbar } from './render.js';
 import { forgetIdea } from './ideas.js';
-import { restartSession } from './sessions.js';
+import { restartSession, wantGit } from './sessions.js';
+import { codexReady, codexUsable, ignite, stopIgnite } from './sp-ignite.js';
 import { S, views, byId, save, toast } from './state.js';
 
 // Trabajando de verdad (el borde gira): no al esperar al usuario ni al arrancar.
@@ -23,12 +24,20 @@ export function renderPowerButton() {
   if (!button || !tab) return;
   const on = tab.superpowers === true;
   const view = views.get(tab.id);
+  // Al máximo: con Codex listo para revisar lo que hace Claude (el botón lleva brasas verdes). Sin
+  // git en la carpeta, Codex no revisa: no está al máximo (gitRepo null = aún no se sabe).
+  const noGit = Boolean(view && view.gitRepo === false);
+  const max = on && codexReady() && !noGit;
   button.dataset.on = String(on);
+  button.dataset.max = String(max);
+  if (!on) stopIgnite();
   button.dataset.working = String(Boolean(on && view && WORKING.has(view.status)));
   button.setAttribute('aria-expanded', String(!$('#sp-pop').hidden));
-  button.title = on
-    ? 'SuperPowers activado en esta pestaña: Claude trabaja más a fondo y no da nada por terminado sin comprobarlo. Pulsa para ver qué hace o desactivarlo.'
-    : 'SuperPowers: Claude trabaja más a fondo y lo comprueba todo antes de terminar (gasta más y tarda más). Pulsa para ver qué hace.';
+  button.title = max
+    ? 'SuperPowers al máximo en esta pestaña, con Codex: Claude trabaja más a fondo, no da nada por terminado sin comprobarlo y Codex revisa lo que hace. Pulsa para ver qué hace o desactivarlo.'
+    : on
+      ? `SuperPowers activado en esta pestaña: Claude trabaja más a fondo y no da nada por terminado sin comprobarlo.${codexUsable() && noGit ? ' Codex no revisa aquí porque la carpeta no tiene git (al volver a encenderlo, se crea uno si se puede).' : ''} Pulsa para ver qué hace o desactivarlo.`
+      : 'SuperPowers: Claude trabaja más a fondo y lo comprueba todo antes de terminar (gasta más y tarda más). Pulsa para ver qué hace.';
 }
 
 // La ventanita, debajo del botón (sin salirse de la ventana).
@@ -78,8 +87,12 @@ export function setSuperpowers(tabId, on) {
   save();
   api.log(`SuperPowers ${on ? 'activado' : 'desactivado'} en «${tab.name}»`);
   if (!on) forgetIdea(tabId);
+  // Con Codex (aunque ahora tenga el límite agotado): git local si la carpeta no tiene, al reiniciar.
+  wantGit(tabId, on && codexUsable());
   renderTabs();
   renderToolbar();
+  // Con Codex, de sus letras sale el gas verde que enciende el botón (ui/sp-ignite.js).
+  if (on && tabId === S.activeId) ignite();
   const what = on ? 'SuperPowers activado' : 'SuperPowers desactivado';
   const view = views.get(tabId);
   if (!view || !view.started || view.exited) { toast(`«${tab.name}»: ${what}. Se aplica al abrir la sesión.`); return; }

@@ -1,7 +1,8 @@
 // Interfaz de Claudes: pestañas, vista dividida, terminal extra, recientes y avisos.
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
 import { wireActivity, setActivity } from './ui/activity.js';
-import { wireSuperpowers } from './ui/superpowers.js';
+import { wireSuperpowers, setSuperpowers } from './ui/superpowers.js';
+import { ignite } from './ui/sp-ignite.js';
 import { wireIdeas, setIdea } from './ui/ideas.js';
 import { wireZoom } from './ui/zoom.js';
 import { wireTabCard } from './ui/tabcard.js';
@@ -124,6 +125,10 @@ async function init() {
       },
       // Pone el indicador de Codex como si su estado fuera otro (los campos que se den).
       showCodex: (fields) => renderCodex({ ...(codexInfo || {}), ...fields }),
+      // Enciende o apaga SuperPowers en la pestaña activa (con Codex listo, sale el gas verde).
+      setPowers: (on) => setSuperpowers(S.activeId, on),
+      // Repite la animación de encendido con Codex (si SuperPowers está encendido y Codex listo).
+      showIgnite: () => ignite(),
       // Enseña en «Actividad» lo que se le dé (p. ej. la tarjeta de la pasada final de SuperPowers).
       showActivity: (snap) => setActivity(S.activeId, snap),
       // Enseña una idea para el proyecto de SuperPowers en la pestaña activa.

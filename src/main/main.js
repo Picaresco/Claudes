@@ -19,7 +19,8 @@ const { createContext } = require('./context');
 const { NetLog, OWN_MCP } = require('./netlog');
 const { Limits } = require('./limits');
 const { Growth, EDIT_TOOLS } = require('./growth');
-const { createReview } = require('./review');
+const { createReview, isGitRepo } = require('./review');
+const { ensureRepo } = require('./git-init');
 const { Secrets } = require('./secrets');
 const { createTestReminder } = require('./testcheck');
 const { createCodexState } = require('./codex-state');
@@ -267,6 +268,14 @@ async function createPty(o) {
   // (que se niega si no hay sesión de ChatGPT o el asesor está apagado: así sirve aunque se
   // inicie sesión después) y «generar_imagen» si las imágenes están activadas.
   if (!codexState.state.checkedAt) await codexState.refresh();
+  // SuperPowers con Codex, recién encendido con el botón (nunca al abrir una pestaña): si la carpeta
+  // no tiene git, uno local con una foto de partida, para que Codex pueda revisar (git-init.js).
+  let git = null;
+  if (powers && o.initGit === true && codexState.usable()) {
+    git = await ensureRepo(o.cwd, { hooksDir: path.join(app.getPath('userData'), 'git-sin-hooks'), log: appLog });
+    if (git.state === 'skipped' || git.state === 'failed') appLog(`git local de SuperPowers en ${o.cwd}: no se crea (${git.reason})`);
+    git = { state: git.state, reason: git.reason || '', excluded: (git.excluded || []).length };
+  }
   const withMcp = Boolean(codexState.state.installed) || powers; // con SuperPowers, por la de capturas
   const withCodex = withMcp && codexState.state.enabled; // con la herramienta de imágenes
   tab.folder = o.cwd;
@@ -301,8 +310,9 @@ async function createPty(o) {
     ptys.spawn(o.id, exe, args, { ...base, env });
   }
   if (optimizeHints) optimizeHints.refresh(o.id); // si conviene optimizar este proyecto
-  // compact: el autocompactar con el que arranca (null si manda la variable del usuario).
-  return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex, compact: ownCompact ? null : compact };
+  // compact: el autocompactar con el que arranca (null si manda la variable del usuario); repo: con
+  // SuperPowers, si la carpeta tiene git (sin él, Codex no revisa); git: lo hecho al encenderlo.
+  return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex, compact: ownCompact ? null : compact, repo: powers ? isGitRepo(o.cwd) : null, git };
 }
 
 // ── Arranque ───────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { buildContextPanel, syncContextPanel, wireDropChoice } from './context.j
 import { api, el } from './dom.js';
 import { registerPreviewLinks } from './preview.js';
 import { renderToolbar } from './render.js';
-import { S, views, terms, info, clamp, visibleIds, save, startDrag } from './state.js';
+import { S, views, terms, info, clamp, visibleIds, save, startDrag, toast } from './state.js';
 import { setStatus } from './status.js';
 import { makeTerminal, wireKeys, wireHost } from './terminals.js';
 import { queueFit, toggleExtra } from './views.js';
@@ -136,10 +136,12 @@ export async function startClaude(view) {
   setStatus(view, 'starting');
   // Una misma conversación no se abre en dos pestañas a la vez.
   const exclude = S.tabs.filter((t) => t.id !== tab.id && t.sessionId).map((t) => t.sessionId);
+  const initGit = gitWanted.has(tab.id);
   const res = await api.ptyCreate({
     id: tab.id, kind: 'claude', name: tab.name, cwd: tab.cwd, sessionId: tab.sessionId, mode, exclude, context: tab.context,
     model: tab.model || null, effort: tab.effort || null, // los elegidos para la pestaña (su tarjeta)
     superpowers: tab.superpowers === true, // el botón «SuperPowers» de la barra (ui/superpowers.js)
+    initGit, // recién encendido con Codex: git local si la carpeta no tiene (src/main/git-init.js)
     // Autocompactar (null: el 85 % de siempre) y el tamaño del contexto que se vio la última vez.
     compact: Number.isFinite(tab.compact) ? tab.compact : null, ctxSize: tab.ctxSize || null,
     cols: view.term.cols, rows: view.term.rows,
@@ -156,11 +158,26 @@ export async function startClaude(view) {
   view.resumed = Boolean(res.resumed);
   view.codex = Boolean(res.codex); // arrancó con la herramienta de imágenes de Codex
   view.compactApplied = Number.isFinite(res.compact) ? res.compact : null; // con el que arrancó
+  view.gitRepo = typeof res.repo === 'boolean' ? res.repo : null; // con SuperPowers: sin git, Codex no revisa
+  if (initGit) gitWanted.delete(tab.id);
+  if (res.git) gitNotice(tab, res.git);
   tab.sessionId = res.sessionId;
   save();
   if (view.status === 'starting') setStatus(view, 'idle');
   if (tab.superpowers) loadIdea(tab.id); // SuperPowers: una idea para el proyecto que esperaba
   renderToolbar();
+}
+
+// SuperPowers recién encendido con Codex: en el próximo arranque, git local si la carpeta no tiene.
+const gitWanted = new Set();
+export function wantGit(tabId, on) { if (on) gitWanted.add(tabId); else gitWanted.delete(tabId); }
+function gitNotice(tab, git) {
+  if (git.state === 'created') {
+    const out = git.excluded ? ` ${git.excluded === 1 ? 'Un archivo que parece llevar una clave se ha quedado' : `${git.excluded} archivos que parecen llevar una clave se han quedado`} fuera.` : '';
+    toast(`«${tab.name}»: la carpeta no tenía git y he creado uno local con una foto del proyecto tal como está, para que Codex pueda revisar lo que cambie Claude. No tiene remoto: no se sube a ningún sitio.${out}`, 12000);
+  } else if (git.state === 'skipped' || git.state === 'failed') {
+    toast(`«${tab.name}»: Codex no podrá revisar los cambios aquí, porque la carpeta no tiene git y no lo he creado: ${git.reason}.`, 12000);
+  }
 }
 
 // Reinicia Claude en la pestaña conservando su conversación (para que tome

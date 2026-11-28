@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.33.1 — 2026-11-28
+- SuperPowers al máximo, con Codex: al encenderlo con Codex listo, de las letras de «Codex» sale una estela de gas verde que baja hasta el botón y lo envuelve unos segundos. Después, mientras siga encendido con Codex, el botón se queda en brasas: chispas verdes que suben del borde y un brillo que va y viene. Sin Codex se enciende con la luz de siempre, y con «reducir animaciones» no hay estela ni gas.
+- Al encender SuperPowers con Codex en una carpeta sin git, ClaudHome crea un repositorio git local con una foto del proyecto tal como está, para que Codex pueda revisar lo que cambie Claude (Codex compara con lo confirmado). No tiene remoto, así que no se sube a ningún sitio, y no añade ningún `.gitignore` al proyecto: lo pesado (node_modules, dist…), los `.env`, las claves y los archivos que parecen llevar una clave se quedan fuera de la foto.
+- Ese git no se crea en la carpeta del usuario ni en sus carpetas generales (Escritorio, Documentos, Descargas…), en carpetas del sistema, de red o de OneDrive, si dentro hay otro repositorio o si la foto pasaría de 5 000 archivos o 200 MB. En esos casos, un aviso dice por qué Codex no podrá revisar, y el botón no se queda en brasas.
+
 ## 0.33.0 — 2026-11-28
 - SuperPowers: un botón nuevo en la barra de cada sesión para que Claude trabaje más a fondo en esa pestaña. Gasta más de tu plan y tarda más, así que va apagado: al pulsarlo te explica qué hace y lo que cuesta, con «Activar». Encendido, el botón lleva un borde violeta, rosa y oro que gira mientras Claude trabaja, y la pestaña, un rayo. Encender o apagar reinicia la sesión de esa pestaña y sigue con la misma conversación.
 - Con SuperPowers, al empezar una tarea Claude apunta lo que pides y lo que darías por hecho aunque no lo digas (los usos evidentes, los casos límite, las entradas no válidas o malintencionadas) y trabaja contra esa lista.
