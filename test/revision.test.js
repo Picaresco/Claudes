@@ -897,3 +897,25 @@ test('sin hallazgos en la primera ronda pero con cambios en la pasada, se revisa
   assert.equal(other.review.willReview('t1', { event: 'Stop', stopHookActive: true }), false);
   assert.equal(other.calls.length, 1);
 });
+
+test('si la revisión de la pasada acaba antes que Claude, al pararse se repite cómo acabó (no se queda en «revisando»)', async (t) => {
+  const dir = gitRepo(t);
+  const cases = [
+    [{ result: { ok: true, code: 0, text: 'The change looks correct.\n', log: '', seconds: 5, aborted: false } }, 'clean'],
+    [{ checkSecrets: async () => ({ ok: true, files: ['test_x.py'] }) }, 'secret'],
+  ];
+  for (const [opts, state] of cases) {
+    const { review, tabs, sent } = makeReview(t, opts);
+    tabs.ensure('t1').folder = dir;
+    review.turnStarted('t1', 'Cambia a');
+    review.toolUsed('t1', 'Edit');
+    review.startEarly('t1');
+    await waitFor(() => sent.some(([, , r]) => r.state === state)); // acaba mientras Claude hace la pasada
+    const before = sent.length;
+    tabs.get('t1').superAsked = true;
+    assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), true); // la pestaña pasa a «revisando»
+    assert.equal(await review.onStop('t1', { event: 'Stop', cwd: dir }), null);
+    assert.equal(sent.length, before + 1, state);
+    assert.equal(sent[sent.length - 1][2].state, state); // y se le vuelve a decir cómo acabó
+  }
+});

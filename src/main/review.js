@@ -262,7 +262,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   // que ha dado), promise, abort }.
   function launch(tabId, tab, cwd, cap = null) {
     const job = { turn: tab.turn, edits: tab.reviewEdits || 0, state: null };
-    const post = (result) => { job.state = result.state; if (tab.turn === job.turn) send('review:result', tabId, result); };
+    const post = (result) => { job.state = result.state; job.last = result; if (tab.turn === job.turn) send('review:result', tabId, result); };
     const own = new AbortController();
     const link = linked(own.signal);
     job.abort = () => own.abort();
@@ -270,6 +270,13 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       .catch((err) => { log(`revisión de Codex: ha fallado (${(err && err.message) || err})`); post({ state: 'error', seconds: 0 }); return null; })
       .finally(() => link.done());
     return job;
+  }
+
+  // Si la revisión acabó antes de que Claude terminara (sin hallazgos, con claves, con un fallo…),
+  // la interfaz ya lo supo; al pararse Claude la pestaña vuelve a «revisando», así que se le
+  // repite cómo acabó para que no se quede ahí.
+  function repost(tabId, tab, job) {
+    if (job.last && job.last.state !== 'running' && tab.turn === job.turn) send('review:result', tabId, job.last);
   }
 
   // Segunda ronda: el cambio otra vez, con lo que Claude hizo en la pasada final.
@@ -316,7 +323,9 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (follow && follow.turn === tab.turn) {
       tab.reviewFollow = null;
       const result = await awaitEarly(follow, signal);
-      return result && result.reason ? { ...result, reason: `${FOLLOW_NOTE}\n\n${result.reason}` } : result;
+      if (result && result.reason) return { ...result, reason: `${FOLLOW_NOTE}\n\n${result.reason}` };
+      repost(tabId, tab, follow);
+      return result;
     }
     tab.reviewed = true; // la primera ronda, una vez por turno
     tab.edited = false;
@@ -340,6 +349,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
         const second = await awaitEarly(again, signal);
         return second && second.reason ? { ...second, reason: `${FOLLOW_NOTE}\n\n${second.reason}` } : second;
       }
+      repost(tabId, tab, early);
       return result;
     }
     // Lo que llegue cuando el usuario ya ha empezado otro turno no cambia su estado.
