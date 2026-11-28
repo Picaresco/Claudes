@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { createReview, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
+const { createReview, EARLY_NOTE, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
 const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, lineReader, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting, limitsFrom, accessReport, sandboxConfigured } = require('../src/main/codex');
 const { Tabs } = require('../src/main/tabs');
-const { tempDir } = require('./helpers');
+const { tempDir, waitFor } = require('./helpers');
 
 // Lo que escribe `codex review` al final, como en la prueba de concepto.
 const SAMPLE = [
@@ -773,4 +773,64 @@ test('tras el recordatorio de pruebas, Codex revisa en el Stop siguiente', (t) =
   review.toolUsed('t1', 'Edit', 'a.js');
   tabs.get('t1').testsAsked = true; // el primer Stop fue para pedirle las pruebas
   assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), true);
+});
+
+test('con SuperPowers, Codex revisa a la vez que la pasada final y lo encontrado llega al terminarla', async (t) => {
+  const dir = gitRepo(t);
+  let finish;
+  const { review, tabs, calls, logs } = makeReview(t, { reviewChanges: () => new Promise((resolve) => { finish = resolve; }) });
+  tabs.ensure('t1').folder = dir;
+  review.turnStarted('t1', 'Cambia a');
+  review.toolUsed('t1', 'Edit');
+  assert.equal(review.startEarly('t1'), true); // primer Stop: se le pide la pasada y Codex empieza
+  assert.equal(review.startEarly('t1'), false); // una sola vez
+  await waitFor(() => calls.length === 1);
+  assert.ok(logs.some((l) => /a la vez que la pasada final/.test(l)));
+  // Claude acaba la pasada (segundo Stop) antes que Codex: se espera a lo que diga.
+  tabs.get('t1').superAsked = true;
+  assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), true);
+  const pending = review.onStop('t1', { event: 'Stop', cwd: dir }, new AbortController().signal);
+  finish({ ok: true, code: 0, text: SAMPLE, log: '', seconds: 30, aborted: false });
+  const answer = await pending;
+  assert.equal(answer.decision, 'block');
+  assert.ok(answer.reason.startsWith(EARLY_NOTE));
+  assert.match(answer.reason, /\[P1\] Await transcript reads/);
+  assert.equal(calls.length, 1); // no se revisa dos veces
+  assert.equal(await review.onStop('t1', { event: 'Stop', cwd: dir }), null);
+});
+
+test('la revisión lanzada con la pasada no empieza sin motivo y se para si cambia el turno o se interrumpe', async (t) => {
+  const dir = gitRepo(t);
+  const signals = [];
+  const { review, tabs, calls } = makeReview(t, {
+    reviewChanges: (opts) => new Promise((resolve) => {
+      signals.push(opts.signal);
+      opts.signal.addEventListener('abort', () => resolve({ ok: false, aborted: true, code: 1, seconds: 1, text: '', log: '' }));
+    }),
+  });
+  tabs.ensure('t1').folder = dir;
+  review.turnStarted('t1', 'Explícame a');
+  assert.equal(review.startEarly('t1'), false); // sin editar nada, no
+  review.toolUsed('t1', 'Edit');
+  assert.equal(review.startEarly('t1'), true);
+  await waitFor(() => calls.length === 1);
+  review.turnStarted('t1', 'Otra cosa'); // el usuario sigue: la de antes se para
+  assert.equal(signals[0].aborted, true);
+  // Interrumpido mientras se espera lo que diga Codex: se para y Claude termina sin más.
+  review.toolUsed('t1', 'Edit');
+  review.startEarly('t1');
+  await waitFor(() => calls.length === 2);
+  tabs.get('t1').superAsked = true;
+  review.willReview('t1', { event: 'Stop', stopHookActive: true });
+  const stop = new AbortController();
+  const pending = review.onStop('t1', { event: 'Stop', cwd: dir }, stop.signal);
+  stop.abort();
+  assert.equal(await pending, null);
+  assert.equal(signals[1].aborted, true);
+  // Con la revisión apagada, tampoco.
+  const off = makeReview(t, { enabled: false });
+  off.tabs.ensure('t1').folder = dir;
+  off.review.turnStarted('t1', 'Cambia a');
+  off.review.toolUsed('t1', 'Edit');
+  assert.equal(off.review.startEarly('t1'), false);
 });

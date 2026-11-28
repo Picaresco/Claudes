@@ -19,9 +19,12 @@ gráficos, correos, la ventana de una app. También al revisar una interfaz que 
    `claudhome-codex`): la página del proyecto (un archivo `.html` de la carpeta o una dirección
    `http://localhost:…` de su servidor de desarrollo) a tres anchos: **390** (móvil), **1024**
    (tableta) y **1440** (escritorio), que son los anchos por defecto. Si la página necesita que
-   su servidor esté en marcha, arráncalo antes en segundo plano. Con `pagina_completa: true` ves
-   también lo de debajo (hasta tres pantallas). Lo que la página pida a internet (fuentes, CDN) no
-   se carga: la herramienta te lo dice, y también los desbordes y los errores de la consola.
+   su servidor esté en marcha, arráncalo antes en segundo plano (con los datos de ejemplo del
+   proyecto) y captura **la página real**: no hagas copias estáticas ni descargues librerías.
+   Con `pagina_completa: true` ves también lo de debajo (hasta tres pantallas). Los estilos,
+   fuentes y guiones de los CDN públicos conocidos (jsDelivr, unpkg, cdnjs, Google Fonts,
+   Bootstrap…) sí se cargan; lo demás de internet no, y la herramienta te lo dice, igual que los
+   desbordes y los errores de la consola.
 2. **Mira cada imagen**: te llegan con la respuesta de la herramienta (y quedan guardadas: puedes
    volver a abrirlas con Read). Lee también sus avisos. Busca, en este orden:
    - cosas que se **pisan** (textos, botones, etiquetas, menús);

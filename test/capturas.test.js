@@ -152,3 +152,12 @@ test('de CDN públicos conocidos se descargan estilos, fuentes, guiones e imáge
   const text = report({ target: { label: 'login.html' }, full: false, blocked: [], cdn: ['cdn.jsdelivr.net'], shots: [{ width: 390, file: 'a.png', overflow: 0, errors: [] }] });
   assert.match(text, /CDN públicos \(cdn\.jsdelivr\.net\)/);
 });
+
+test('la herramienta y la habilidad dicen que el CDN se carga y que se capture la página real', () => {
+  assert.match(CAPTURE_TOOL.description, /CDN públicos conocidos .* se cargan/);
+  assert.match(CAPTURE_TOOL.description, /no hagas copias estáticas/);
+  assert.doesNotMatch(CAPTURE_TOOL.description, /\(fuentes, CDN\) no se carga/);
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'src', 'plugins', 'superpowers', 'skills', 'revision-visual', 'SKILL.md'), 'utf8');
+  assert.match(skill, /la página real/);
+  assert.match(skill, /sí se cargan/);
+});

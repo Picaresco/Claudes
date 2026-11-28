@@ -3,10 +3,11 @@
 // una página del proyecto en una ventana invisible a varios anchos y le devuelve a Claude las
 // imágenes (y las guarda en <datos de la app>/capturas/<pestaña>), para que vea cómo queda lo
 // que ha cambiado: solapes, textos cortados, desbordes, contraste.
-// Solo carga dos cosas: archivos de la carpeta del proyecto (su ruta real, sin salirse por un
-// enlace) y lo que sirve un servidor en este equipo (localhost). Todo lo demás que pida la página
-// (fuentes, CDN, otras webs, también por una redirección) se bloquea y se le avisa: así la
-// herramienta no sirve para sacar nada a internet ni para traer páginas de fuera. Cada captura,
+// Carga archivos de la carpeta del proyecto (su ruta real, sin salirse por un enlace), lo que sirve
+// un servidor en este equipo (localhost) y, de CDN públicos conocidos, solo estilos, fuentes,
+// guiones e imágenes (descargas por https). Todo lo demás que pida la página (otras webs, también
+// por una redirección) se bloquea y se le avisa: así la herramienta no sirve para sacar nada a
+// internet ni para traer páginas de fuera. Cada captura,
 // en una sesión del navegador aparte, en memoria y sin permisos ni descargas.
 const fs = require('fs');
 const path = require('path');
@@ -29,7 +30,8 @@ const CAPTURE_TOOL = {
   description: 'Captura cómo se ve una página del proyecto a varios anchos (por defecto 390, 1024 y 1440 px: móvil, tableta y escritorio) '
     + 'y te devuelve las imágenes para que las revises: solapes, textos cortados, desbordes, contraste, cosas que faltan. '
     + 'Sirve para un archivo .html o .svg de la carpeta del proyecto o para lo que sirva un servidor de desarrollo en este equipo (localhost); '
-    + 'si la app necesita servidor, arráncalo antes en segundo plano. Lo que la página pida a internet (fuentes, CDN) no se carga y se te avisa. '
+    + 'si la app necesita servidor, arráncalo antes en segundo plano y captura su página real (no hagas copias estáticas). '
+    + 'Los estilos, fuentes y guiones de CDN públicos conocidos (jsDelivr, unpkg, cdnjs, Google Fonts, Bootstrap…) se cargan; lo demás de internet no, y se te avisa. '
     + 'Las capturas también quedan guardadas como PNG (te da las rutas).',
   inputSchema: {
     type: 'object',

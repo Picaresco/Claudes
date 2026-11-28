@@ -195,6 +195,12 @@ test('con SuperPowers, Codex revisa al final aunque «Codex asesora» esté apag
   assert.equal(review.willReview('t2', { stopHookActive: false }), false);
 });
 
+test('el aviso de cómo trabajar pide apuntar al empezar lo pedido y lo que se da por hecho', () => {
+  assert.match(NOTE_ON, /Al empezar una tarea, apunta en tu lista lo que se pide y lo que el usuario daría por hecho/);
+  assert.match(NOTE_ON, /entradas no válidas o malintencionadas/);
+  assert.match(NOTE_ON, /arranca el servidor del propio proyecto y mira la página real/);
+});
+
 test('al arrancar: esfuerzo alto como mínimo y hasta dos agentes, salvo lo que ya tenga el usuario', () => {
   const { powerEffort, powerEnv } = require('../src/main/superpowers');
   assert.equal(powerEffort(null, null), 'high');
@@ -238,7 +244,7 @@ test('pasada proporcional: ligera en un cambio pequeño del proyecto, completa e
   assert.match(reason, /pasada ligera/);
   assert.match(reason, /No hace falta escribir pruebas nuevas/);
   assert.match(reason, /una ronda con capturar_pantalla/);
-  assert.match(reason, /Sin montar páginas de vista previa/);
+  assert.match(reason, /Mira la página real .*sin montar copias ni vistas previas aparte/);
   assert.match(reason, /daría por hecho aunque no lo haya dicho/);
   assert.doesNotMatch(reason, /reparte la comprobación/);
   assert.doesNotMatch(reason, /por separado/); // sin ejemplos que apunten a un caso concreto

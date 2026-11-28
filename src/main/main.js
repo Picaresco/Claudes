@@ -464,6 +464,8 @@ if (!app.requestSingleInstanceLock()) {
       // en ella pasa las pruebas, así que el recordatorio de pruebas llega después solo si no lo hizo.
       if (event.event === 'Stop') {
         event.superAsk = superpowers.willAsk(tabId);
+        // Codex revisa mientras Claude hace la pasada final (lo que encuentre, al terminarla).
+        if (event.superAsk) review.startEarly(tabId);
         // Tras la pasada final (que ya pide las pruebas), no se le vuelve a pedir pasarlas.
         event.testsAsk = !event.superAsk && !(tabs.get(tabId) || {}).superAsked && testcheck.willAsk(tabId);
         event.reviewing = !event.superAsk && !event.testsAsk && review.willReview(tabId, event);

@@ -29,7 +29,8 @@ const NOTE_ON = [
   '- Habilidades (plugin claudhome-superpowers): verification-before-completion antes de afirmar que algo funciona; systematic-debugging ante cualquier fallo (la causa antes que el arreglo); pruebas-primero para lógica nueva y para cada fallo que arregles (nunca borres código que funciona); revision-visual si cambias algo que se ve (herramienta capturar_pantalla a 390, 1024 y 1440 px).',
   '- Agentes: tú eres el único que edita. Si puedes seguir avanzando mientras tanto, delega en hasta dos agentes de solo lectura con un encargo concreto (p. ej. pasar la suite y resumir fallos, mirar las capturas, comprobar un módulo) y que te devuelvan pruebas, no opiniones. No delegues tareas pequeñas: explicarlas cuesta más que hacerlas.',
   '- Al terminar habrá una pasada final (te la pedirá ClaudHome): pruebas, lo pedido punto por punto y capturas si hay algo visual. Cierra diciendo qué has comprobado y qué queda pendiente. Si ves mejoras que de verdad merezcan la pena, propón como mucho tres, sin aplicarlas.',
-  '- Proporción: el esfuerzo de comprobar, a la medida del cambio. En un cambio pequeño no montes bancos de pruebas, servidores ni páginas de vista previa aparte, y no escribas pruebas nuevas para algo que solo cambia cómo se ve.',
+  '- Al empezar una tarea, apunta en tu lista lo que se pide y lo que el usuario daría por hecho aunque no lo diga (los usos evidentes, los casos límite y las entradas no válidas o malintencionadas de lo que toques) y trabaja contra esa lista; lo que no hagas, dilo como pendiente.',
+  '- Proporción: el esfuerzo de comprobar, a la medida del cambio. En un cambio pequeño no montes bancos de pruebas ni copias o páginas de vista previa aparte (para las capturas, arranca el servidor del propio proyecto y mira la página real), y no escribas pruebas nuevas para algo que solo cambia cómo se ve.',
 ].join('\n');
 const NOTE_OFF = 'ClaudHome · SuperPowers desactivado por el usuario en esta pestaña: vuelve a trabajar como siempre (sin pasada final ni agentes extra).';
 
@@ -144,7 +145,7 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
           ? '1. Pasa las pruebas que tenga el proyecto y que toquen lo cambiado (si no tiene, comprueba lo cambiado de una forma que se pueda repetir). Para un cambio así de pequeño no hace falta un archivo de pruebas nuevo.'
           : '1. No hace falta escribir pruebas nuevas para un cambio que solo cambia cómo se ve; si el proyecto tiene pruebas de esa parte, pásalas.',
         `2. Repasa punto por punto lo que pidió el usuario: ${asked}. ${expected}`,
-        `3. ${shots} Sin montar páginas de vista previa ni servidores aparte, salvo que no haya otra forma.`,
+        `3. ${shots} Mira la página real (con el servidor del propio proyecto si lo necesita), sin montar copias ni vistas previas aparte.`,
         `4. ${close}`,
       ]
       : [
