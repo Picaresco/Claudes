@@ -9,6 +9,9 @@
 //   - Flechas entre columnas contiguas, de borde a borde; entre columnas alejadas o dentro de
 //     la misma columna, por un carril de abajo, para no cruzar por encima de otros bloques.
 //     Los puntos de salida de cada lado se reparten para que no se monten.
+//   - Lo que va dentro de un bloque tiene su fila reservada, así nada pisa a nada: «Empieza aquí»
+//     bajo el título; al pie, la insignia de datos sensibles y la regla del bloque. El resumen
+//     (vista general) se centra en lo que queda entre medias (body).
 
 export const CARD_W = 210;
 export const CARD_H = 116;
@@ -23,7 +26,18 @@ const LANE_GAP = 40;
 const LANE_STEP = 26;
 const PAD = 18; // borde del bloque
 const HEAD = 66; // título del bloque
-const COL_GAP = 190; // entre columnas: sitio para las etiquetas de las flechas
+const START_ROW = 52; // fila de «Empieza aquí», bajo el título
+const BADGE_ROW = 54; // fila de la insignia «datos sensibles», al pie
+const RULE_ROW = 48; // fila de cada regla del bloque, al pie (cabe una etiqueta de dos renglones)
+const BADGE_H = 40; // grandes: se tienen que leer en la vista general
+export const START_W = 184;
+export const BADGE_W = 212;
+const sensitive = (m) => (m.notas || []).some((t) => String(t).startsWith('🛡'));
+const COL_GAP = 190; // entre columnas, como poco: sitio para las etiquetas de las flechas
+const MAX_GAP = 380; // y como mucho, aunque una etiqueta pida más (entonces se queda más pequeña)
+// Las etiquetas de las flechas guardan su tamaño en pantalla: de lejos crecen, hasta 2,2 veces
+// su tamaño en el lienzo (ui/workflow.js, apply). Cada hueco entre columnas mide lo que pide su
+// etiqueta más ancha a ese tamaño, así no se mete en los bloques de al lado.
 const V_GAP = 90; // entre bloques de una columna
 const MARGIN = 40;
 const BAND = 190; // banda de internet
@@ -31,6 +45,20 @@ const EXT_W = 250;
 const EXT_H = 96;
 const PER_COLUMN = 2; // bloques por columna como mucho: el mapa queda ancho, como la pantalla
 const COLUMN = { persona: 0, interfaz: 1, nucleo: 2, proceso: 3, datos: 4 };
+
+export const CHIP_MAX = 2.2;
+// Quita el signo del principio («✕», «🔑», «↻», «🛡», «⇢»): las que llevan icono lo dibujan aparte.
+export const unmark = (text) => String(text).trim().replace(/^(✕|🔑|↻|🛡|⇢)\uFE0F?\s*/u, '');
+const ICON_KINDS = new Set(['credencial', 'fondo']);
+
+// Tamaño de la etiqueta de una flecha en el lienzo: en dos renglones si es larga.
+export function chipSize(kind, text) {
+  const icon = ICON_KINDS.has(kind) ? 18 : 0;
+  const shown = icon ? unmark(text) : String(text);
+  const lines = [...shown].length > 15 ? wrap(shown, 15, 2) : [shown];
+  const w = Math.max(40, Math.max(...lines.map((l) => [...l].length)) * 8.4 + 24 + icon);
+  return { lines, w, h: lines.length * 18 + 10, icon };
+}
 
 // Parte un texto en renglones de `max` caracteres, como mucho `lines` renglones.
 export function wrap(text, max = 22, lines = 3) {
@@ -57,12 +85,15 @@ export function layoutMap(map) {
     const n = modsOf(b.id).length;
     const cols = n >= 3 ? 2 : 1;
     const rows = Math.ceil(n / cols);
-    const foot = 22 + rulesOf(b.id).length * 34;
+    const sens = modsOf(b.id).some(sensitive);
+    const extraTop = b.inicio ? START_ROW : 0;
+    const foot = 22 + rulesOf(b.id).length * RULE_ROW + (sens ? BADGE_ROW : 0);
     // Una sola columna con conexiones internas: su pasillo, a la derecha.
     const side = cols === 1 && map.internas.some((f) => modsOf(b.id).some((m) => m.id === f.de)) ? SIDE : 0;
     const w = n ? cols * CARD_W + (cols - 1) * IN_X + PAD * 2 + side : (b.tipo === 'persona' ? 220 : 260);
-    const h = Math.max(n ? HEAD + rows * (CARD_H + IN_Y) - IN_Y + foot : 200, 200);
-    boxes.set(b.id, { ...b, w, h, cols, n, side });
+    // Sin piezas: sitio para el resumen (unos 120) entre el título y lo del pie.
+    const h = Math.max(n ? HEAD + extraTop + rows * (CARD_H + IN_Y) - IN_Y + foot : 70 + extraTop + 120 + foot - 22, 200);
+    boxes.set(b.id, { ...b, w, h, cols, n, side, extraTop, foot, sensible: sens });
   }
 
   // Columnas por tipo (sin las vacías), con dos bloques como mucho en cada una.
@@ -78,15 +109,27 @@ export function layoutMap(map) {
     for (let i = 0; i < list.length; i += PER_COLUMN) cols.push({ type, blocks: list.slice(i, i + PER_COLUMN) });
   }
   const top = ext.length ? BAND + 30 : MARGIN;
+  // El hueco tras cada columna: el que pida la etiqueta más ancha que va de ella a la siguiente.
+  const colOf = new Map();
+  cols.forEach((col, i) => col.blocks.forEach((b) => colOf.set(b.id, i)));
+  const gaps = cols.map(() => COL_GAP);
+  for (const f of map.flechas) {
+    const a = colOf.get(f.de);
+    const b = colOf.get(f.a);
+    if (a === undefined || b === undefined || Math.abs(a - b) !== 1 || !f.texto) continue;
+    const i = Math.min(a, b);
+    gaps[i] = Math.max(gaps[i], Math.min(MAX_GAP, chipSize(f.tipo, f.texto).w * CHIP_MAX + 24));
+  }
   let x = MARGIN;
   let tallest = 0;
   cols.forEach((col, i) => {
     col.index = i;
     col.w = Math.max(...col.blocks.map((b) => b.w));
     col.x = x;
+    col.gap = gaps[i];
     col.h = col.blocks.reduce((s, b) => s + b.h, 0) + (col.blocks.length - 1) * V_GAP;
     tallest = Math.max(tallest, col.h);
-    x += col.w + COL_GAP;
+    x += col.w + gaps[i];
   });
   for (const col of cols) {
     let y = top + (tallest - col.h) / 2;
@@ -98,7 +141,7 @@ export function layoutMap(map) {
       y += b.h + V_GAP;
     }
   }
-  let W = x - COL_GAP + MARGIN;
+  let W = x - (cols.length ? gaps[cols.length - 1] : 0) + MARGIN;
 
   // Servicios de internet, sobre el bloque con el que más hablan.
   const blocks = [...boxes.values()];
@@ -118,7 +161,7 @@ export function layoutMap(map) {
     modsOf(b.id).forEach((m, i) => {
       const c = i % b.cols;
       const r = Math.floor(i / b.cols);
-      cards.push({ ...m, x: b.x + PAD + c * (CARD_W + IN_X), y: b.y + HEAD + r * (CARD_H + IN_Y), w: CARD_W, h: CARD_H, c, r, i });
+      cards.push({ ...m, x: b.x + PAD + c * (CARD_W + IN_X), y: b.y + HEAD + b.extraTop + r * (CARD_H + IN_Y), w: CARD_W, h: CARD_H, c, r, i });
     });
   }
 
@@ -200,20 +243,25 @@ export function layoutMap(map) {
     const [p, q] = r.ends;
     let d;
     let at;
+    // room: lo que puede ocupar su etiqueta sin meterse en los bloques (ancho, alto).
+    let room = [Infinity, Infinity];
     if (r.type === 'side') {
       const [s, t] = r.leftFirst ? [p, q] : [q, p];
       const dx = (t.x - s.x) / 2;
       d = `M${s.x} ${s.y}C${s.x + dx} ${s.y} ${t.x - dx} ${t.y} ${t.x} ${t.y}`;
       at = [(s.x + t.x) / 2, (s.y + t.y) / 2];
+      room = [Math.abs(t.x - s.x) - 16, Infinity];
     } else if (r.type === 'stack') {
       const [s, t] = r.upFirst ? [p, q] : [q, p];
       d = `M${s.x} ${s.y}C${s.x} ${(s.y + t.y) / 2} ${t.x} ${(s.y + t.y) / 2} ${t.x} ${t.y}`;
       at = [(s.x + t.x) / 2, (s.y + t.y) / 2];
+      room = [Infinity, Math.abs(t.y - s.y) - 8];
     } else if (r.type === 'up') {
       const [s, t] = r.fromOuter ? [q, p] : [p, q];
       const my = (s.y + t.y) / 2;
       d = `M${s.x} ${s.y}C${s.x} ${my} ${t.x} ${my} ${t.x} ${t.y}`;
       at = [(s.x + t.x) / 2, my];
+      room = [Infinity, Math.abs(t.y - s.y) - 8];
     } else if (r.type === 'gutter') {
       d = `M${p.x} ${p.y}H${r.gutter}V${q.y}H${q.x}`;
       at = [r.gutter, (p.y + q.y) / 2];
@@ -221,7 +269,7 @@ export function layoutMap(map) {
       d = `M${p.x} ${p.y}H${r.g1}V${r.lane}H${r.g2}V${q.y}H${q.x}`;
       at = [(r.g1 + r.g2) / 2, r.lane];
     }
-    return { d, at, kind: r.f.tipo, text: r.f.texto, bi: r.f.doble, de: r.f.de, a: r.f.a };
+    return { d, at, room, kind: r.f.tipo, text: r.f.texto, bi: r.f.doble, de: r.f.de, a: r.f.a };
   });
 
   // Flechas entre piezas de un mismo bloque. Entre vecinas de arriba y abajo, recta por el aire
@@ -281,12 +329,18 @@ export function layoutMap(map) {
     return { d, kind: r.f.tipo, bloque: a.bloque, de: r.f.de, a: r.f.a };
   });
 
-  // Reglas de cada bloque: etiquetas al pie.
+  // Lo de dentro de cada bloque, en sus filas: reglas al pie (la última abajo del todo), encima la
+  // insignia de datos sensibles y, bajo el título, «Empieza aquí». Y el hueco del resumen (body).
   const pills = [];
+  const badges = [];
   for (const b of blocks) {
-    rulesOf(b.id).forEach((r, k, rs) => pills.push({ text: r.texto, at: [b.x + b.w / 2, b.y + b.h - 20 - (rs.length - 1 - k) * 34], bloque: b.id }));
+    const rs = rulesOf(b.id);
+    rs.forEach((r, k) => pills.push({ text: r.texto, at: [b.x + b.w / 2, b.y + b.h - 12 - RULE_ROW / 2 - (rs.length - 1 - k) * RULE_ROW], bloque: b.id }));
+    if (b.sensible) badges.push({ kind: 'sensible', bloque: b.id, x: b.x + (b.w - BADGE_W) / 2, y: b.y + b.h - 12 - rs.length * RULE_ROW - (BADGE_ROW + BADGE_H) / 2, w: BADGE_W, h: BADGE_H });
+    if (b.inicio) badges.push({ kind: 'inicio', bloque: b.id, x: b.x + 18, y: b.y + HEAD - 4, w: Math.min(START_W, b.w - 36), h: BADGE_H });
+    b.body = [b.y + 70 + b.extraTop, b.y + b.h - Math.max(14, b.foot - 8)];
   }
 
   const H = (lanes.length ? lanes[lanes.length - 1] + 30 : bottom + 40) + MARGIN / 2;
-  return { W, H, band: extBoxes.length ? BAND : 0, blocks, ext: extBoxes, cards, arrows, inner, pills };
+  return { W, H, band: extBoxes.length ? BAND : 0, blocks, ext: extBoxes, cards, arrows, inner, pills, badges };
 }

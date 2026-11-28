@@ -6,6 +6,8 @@ sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambi
 
 ## 0.31.6 — 2026-11-28
 - Workflow: lo que pide una credencial (una sesión iniciada, un token, una clave) se dibuja con una llave y en turquesa, no con una ✕ roja: es un requisito, no un error. La ✕ roja queda para lo que bloquea o prohíbe (solo lectura, cortafuegos, accesos denegados). Los mapas ya hechos se ponen al día solos la próxima vez que entres en cada proyecto.
+- Workflow: tres símbolos más para orientarse. «▶ Empieza aquí», en verde y latiendo, en el bloque por el que arranca todo; un escudo violeta donde hay datos sensibles (datos personales, contraseñas, claves); y una flecha lila punteada, con puntos que avanzan despacio, para lo que trabaja en segundo plano sin hacerte esperar.
+- Workflow: cada símbolo tiene su sitio reservado y nada pisa a nada en ningún nivel de zoom: el hueco entre columnas crece con su etiqueta y las etiquetas no crecen más que su hueco. La leyenda solo enseña los símbolos que tiene cada mapa.
 - Arreglado: al actualizar un mapa del Workflow, las reglas de los bloques ya no se pierden.
 
 ## 0.31.5 — 2026-11-28

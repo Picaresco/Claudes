@@ -191,6 +191,46 @@ test('el mapa se dibuja sin bloques montados y con cada flecha y tarjeta en su s
   });
 });
 
+test('«Empieza aquí», «datos sensibles» y las reglas del bloque tienen su fila: no pisan nada', async () => {
+  const { layoutMap } = await loadLayout();
+  const sources = new Set(['src/index.js', 'src/db.js']);
+  const map = validate({
+    ...MAP,
+    bloques: MAP.bloques.map((b) => (b.id === 'cliente' || b.id === 'api' ? { ...b, inicio: true } : b.id === 'pago' ? { ...b, inicio: true } : b)),
+    modulos: [
+      { ...MAP.modulos[0], notas: [{ texto: '🛡 Guarda nombre y dirección', fuente: 'src/index.js' }, { texto: '⇢ Responde sin esperar', fuente: 'src/index.js' }] },
+      MAP.modulos[1],
+      { id: 'cola', bloque: 'api', nombre: 'Cola', sub: 'src/db.js', detalle: ['Envía correos'], archivos: ['src/db.js'], notas: [{ texto: 'sin signo', fuente: 'src/db.js' }] },
+    ],
+    flechas: [...MAP.flechas.slice(0, 3), { de: 'bd', a: 'cliente', tipo: 'fondo', texto: '⇢ avisa luego' }],
+    reglas: [{ bloque: 'api', texto: '✕ Solo desde la red local', fuente: 'src/index.js' }, { bloque: 'cliente', texto: '🔑 Con su cuenta', fuente: 'src/index.js' }],
+  }, sources);
+  // Solo bloques propios llevan «inicio»; las notas sin 🛡 o ⇢ no entran.
+  assert.deepEqual(map.bloques.filter((b) => b.inicio).map((b) => b.id), ['cliente', 'api']);
+  assert.deepEqual(map.modulos.find((m) => m.id === 'cola').notas, []);
+  assert.equal(map.flechas.find((f) => f.de === 'bd').tipo, 'fondo');
+  const L = layoutMap(map);
+  const overlap = (a, b) => !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+  const api = L.blocks.find((b) => b.id === 'api');
+  const cliente = L.blocks.find((b) => b.id === 'cliente');
+  assert.ok(api.sensible && !cliente.sensible);
+  assert.deepEqual(L.badges.map((g) => `${g.kind}:${g.bloque}`).sort(), ['inicio:api', 'inicio:cliente', 'sensible:api']);
+  // Una etiqueta de regla de dos renglones mide 46 de alto (chip): con su centro y esa altura.
+  const pillBox = (p) => ({ x: p.at[0] - 75, y: p.at[1] - 23, w: 150, h: 46 });
+  for (const b of L.blocks) {
+    const mine = [...L.badges.filter((g) => g.bloque === b.id), ...L.pills.filter((p) => p.bloque === b.id).map(pillBox)];
+    const cards = L.cards.filter((c) => c.bloque === b.id);
+    for (const g of mine) {
+      assert.ok(g.x >= b.x && g.y >= b.y && g.x + g.w <= b.x + b.w && g.y + g.h <= b.y + b.h, `algo de «${b.id}» se sale del bloque`);
+      for (const c of cards) assert.ok(!overlap(g, c), `en «${b.id}», una insignia o regla pisa la pieza «${c.id}»`);
+    }
+    for (let i = 0; i < mine.length; i += 1) for (let j = i + 1; j < mine.length; j += 1) assert.ok(!overlap(mine[i], mine[j]), `en «${b.id}», dos cosas del bloque se montan`);
+    // El hueco del resumen no toca ni «Empieza aquí» ni lo del pie.
+    for (const g of mine) assert.ok(g.y + g.h <= b.body[0] || g.y >= b.body[1], `en «${b.id}», el resumen pisaría una insignia o regla`);
+    assert.ok(b.body[1] - b.body[0] >= 60, `en «${b.id}», no queda sitio para el resumen`);
+  }
+});
+
 test('el mapa se hace al abrir, se guarda, y solo se rehace si el proyecto cambia con la ventana abierta', async (t) => {
   const dir = project(t);
   const data = tempDir(t);

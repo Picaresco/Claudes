@@ -846,7 +846,8 @@ dialog .btn-primary { background: var(--txt); }
 .wf-titles h1 { margin: 0; font-size: 18px; font-weight: 600; }
 .wf-proj { color: var(--dim); font-weight: 400; }
 .wf-titles p { margin-top: 2px; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wf-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--dim); }
+/* Con muchos símbolos, la leyenda pasa a dos renglones en su sitio (no empuja los botones abajo). */
+.wf-legend { display: flex; flex-wrap: wrap; max-width: 380px; gap: 4px 12px; font-size: 12px; color: var(--dim); }
 .wf-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .wf-sw { width: 18px; border-top: 2.5px solid var(--accent); }
 .wf-sw[data-k="bucle"] { border-top-color: var(--warn); }
@@ -855,6 +856,9 @@ dialog .btn-primary { background: var(--txt); }
 .wf-sw[data-k="credencial"] { border-top-color: #5FC8D6; border-top-style: dashed; }
 .wf-keyi { color: #5FC8D6; }
 .wf-legend .wf-key { width: 13px; height: 13px; margin-right: -2px; color: #5FC8D6; }
+.wf-legend span[hidden] { display: none; }
+.wf-legend .wf-ico { width: 13px; height: 13px; margin-right: -2px; }
+.wf-sw[data-k="fondo"] { border-top-color: #9AA7FF; border-top-style: dotted; border-top-width: 3px; }
 .wf-tools { display: flex; align-items: center; gap: 6px; }
 #dlg-workflow .wf-tools .btn { height: 34px; min-width: 34px; padding: 0 10px; justify-content: center; }
 .wf-tools .icon-btn { width: 36px; height: 36px; }
@@ -918,6 +922,11 @@ dialog .btn-primary { background: var(--txt); }
 .wf-cd { font-size: 8.2px; fill: var(--dim) !important; }
 .wf-cd.r { fill: var(--alert) !important; }
 .wf-cd.k { fill: #5FC8D6 !important; }
+.wf-cd.s { fill: #D69BF2 !important; }
+.wf-cd.f { fill: #9AA7FF !important; }
+.wf-shieldi, .wf-sensi { color: #D69BF2; }
+.wf-bgi { color: #9AA7FF; }
+.wf-starti { color: #7FD4A0; }
 .wf-cd.l { fill: var(--warn) !important; }
 .wf-cf { font-family: var(--mono) !important; font-size: 7px; fill: var(--mute) !important; }
 .wf-ar path { fill: none; vector-effect: non-scaling-stroke; }
@@ -926,6 +935,9 @@ dialog .btn-primary { background: var(--txt); }
 .wf-ar.k-bucle .wf-base { stroke: var(--warn); }
 .wf-ar.k-regla .wf-base { stroke: var(--alert); stroke-dasharray: 6 5; }
 .wf-ar.k-credencial .wf-base { stroke: #5FC8D6; stroke-dasharray: 6 5; }
+/* En segundo plano: punteada (se distingue también quieta) y con puntos que avanzan despacio. */
+.wf-ar.k-fondo .wf-base { stroke: #9AA7FF; stroke-width: 2.6; stroke-dasharray: 0.1 7; stroke-linecap: round; }
+.wf-ar.k-fondo .wf-flow { stroke: #E1E5FF; animation-duration: 3.4s; }
 .wf-ar.wf-in .wf-base { stroke-width: 1.4; opacity: 0.8; }
 .wf-flow { stroke-width: 3.6; stroke-linecap: round; stroke-dasharray: 0.1 18; animation: wf-run 1.4s linear infinite; }
 .wf-ar.k-datos .wf-flow { stroke: #C4DBFF; }
@@ -941,6 +953,18 @@ dialog .btn-primary { background: var(--txt); }
 .wf-chip.k-regla text { fill: #FFB4B4 !important; }
 .wf-chip.k-credencial rect { stroke: #5FC8D6; }
 .wf-chip.k-credencial text { fill: #BFEFF5 !important; }
+.wf-chip.k-fondo rect { stroke: #9AA7FF; }
+.wf-chip.k-fondo text { fill: #D5DBFF !important; }
+/* «Empieza aquí» (verde, late) y «datos sensibles» (violeta), dentro del bloque en su fila. */
+.wf-badge rect { stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.wf-badge text { font-size: 19px; font-weight: 600; }
+.wf-start > rect:not(.wf-pulse) { fill: rgba(127, 212, 160, 0.16); stroke: #7FD4A0; }
+.wf-start text { fill: #C9F2D8 !important; }
+.wf-start .wf-pulse { fill: none; stroke: #7FD4A0; transform-box: fill-box; transform-origin: center; animation: wf-breathe 2.4s ease-out infinite; }
+@keyframes wf-breathe { 0% { opacity: 0.8; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(1.12, 1.45); } }
+.wf-sens > rect { fill: rgba(214, 155, 242, 0.12); stroke: #D69BF2; }
+.wf-sens text { fill: #EBCDF8 !important; }
+@media (prefers-reduced-motion: reduce) { .wf-start .wf-pulse { animation: none; opacity: 0; } }
 .wf-lod1, .wf-lod2, .wf-lod3 { transition: opacity 0.3s; }
 .wf-lod2, .wf-lod3 { opacity: 0; pointer-events: none; }
 #wf-map[data-lod="2"] .wf-lod2, #wf-map[data-lod="3"] .wf-lod2, #wf-map[data-lod="3"] .wf-lod3 { opacity: 1; pointer-events: auto; }
