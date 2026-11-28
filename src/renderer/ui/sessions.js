@@ -159,6 +159,7 @@ export async function startClaude(view) {
   view.codex = Boolean(res.codex); // arrancó con la herramienta de imágenes de Codex
   view.compactApplied = Number.isFinite(res.compact) ? res.compact : null; // con el que arrancó
   view.gitRepo = typeof res.repo === 'boolean' ? res.repo : null; // con SuperPowers: sin git, Codex no revisa
+  view.gitReason = res.git && res.git.reason ? res.git.reason : ''; // por qué no se creó (ventanita de SuperPowers)
   if (initGit) gitWanted.delete(tab.id);
   if (res.git) gitNotice(tab, res.git);
   tab.sessionId = res.sessionId;
@@ -171,7 +172,7 @@ export async function startClaude(view) {
 // SuperPowers recién encendido con Codex: en el próximo arranque, git local si la carpeta no tiene.
 const gitWanted = new Set();
 export function wantGit(tabId, on) { if (on) gitWanted.add(tabId); else gitWanted.delete(tabId); }
-function gitNotice(tab, git) {
+export function gitNotice(tab, git) {
   if (git.state === 'created') {
     const out = git.excluded ? ` ${git.excluded === 1 ? 'Un archivo que parece llevar una clave se ha quedado' : `${git.excluded} archivos que parecen llevar una clave se han quedado`} fuera.` : '';
     toast(`«${tab.name}»: la carpeta no tenía git y he creado uno local con una foto del proyecto tal como está, para que Codex pueda revisar lo que cambie Claude. No tiene remoto: no se sube a ningún sitio.${out}`, 12000);

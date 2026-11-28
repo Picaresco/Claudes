@@ -4,6 +4,11 @@ Lo que trae cada versión de ClaudHome (antes, Claudes). Al pulsar «Actualizar�
 la app muestra las secciones de las versiones posteriores a la instalada. Cada
 sección empieza con `## X.Y.Z — AAAA-MM-DD` y lleva un punto (`- `) por cambio.
 
+## 0.33.2 — 2026-11-28
+- «Crear git aquí»: si una pestaña se abre con SuperPowers ya encendido en una carpeta sin git, la ventanita de SuperPowers lo avisa con un botón que crea el git local al momento, sin reiniciar la sesión ni tener que apagarlo y volver a encenderlo. Al crearlo sale el gas verde de Codex y el botón se queda en brasas. Solo aparece cuando hace falta: con git en la carpeta, sin Codex o con SuperPowers apagado, no está.
+- Mientras Claude trabaja, «Crear git aquí» espera a que termine, para que la foto de partida no se lleve sus cambios a medias.
+- En una ventana baja, la ventanita de SuperPowers ya no se sale por abajo: la lista de lo que hace se recoge y se desplaza, y el aviso y los botones quedan siempre a la vista.
+
 ## 0.33.1 — 2026-11-28
 - SuperPowers al máximo, con Codex: al encenderlo con Codex listo, de las letras de «Codex» sale una estela de gas verde que baja hasta el botón y lo envuelve unos segundos. Después, mientras siga encendido con Codex, el botón se queda en brasas: chispas verdes que suben del borde y un brillo que va y viene. Sin Codex se enciende con la luz de siempre, y con «reducir animaciones» no hay estela ni gas.
 - Al encender SuperPowers con Codex en una carpeta sin git, ClaudHome crea un repositorio git local con una foto del proyecto tal como está, para que Codex pueda revisar lo que cambie Claude (Codex compara con lo confirmado). No tiene remoto, así que no se sube a ningún sitio, y no añade ningún `.gitignore` al proyecto: lo pesado (node_modules, dist…), los `.env`, las claves y los archivos que parecen llevar una clave se quedan fuera de la foto.

@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('api', {
   onIdea: on('ideas:card'), // (tabId, card)
   onIdeaClear: on('ideas:clear'), // (tabId, id): respondida o aplazada
   powerStats: (tabId) => ipcRenderer.invoke('superpowers:stats', String(tabId)), // o null
+  powerGit: (tabId) => ipcRenderer.invoke('superpowers:git', String(tabId)), // { state, reason, excluded, repo }
   onCodexChanged: on('codex:changed'),
 
   // Botón «Workflow»: el mapa del proyecto de una pestaña (lo dibuja un modelo aparte).

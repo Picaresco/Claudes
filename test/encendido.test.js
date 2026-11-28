@@ -60,3 +60,13 @@ test('las brasas y el gas del HTML casan con los estilos', () => {
   assert.deepEqual(gas, Array.from({ length: puffs }, (_, i) => i + 1)); // y cada bocanada de gas
   assert.match(css, /prefers-reduced-motion[\s\S]*\.sp-embers, \.sp-trail, \.sp-gas \{ display: none; \}/);
 });
+
+test('«Crear git aquí» está en la ventanita de SuperPowers y llega al proceso principal', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', 'src', ...p), 'utf8');
+  const html = read('renderer', 'index.html');
+  assert.match(html, /<div id="sp-pop-git" class="sp-pop-git" hidden>[\s\S]*?<button id="sp-pop-git-go"[^>]*>Crear git aquí<\/button>/);
+  assert.match(read('preload', 'preload.js'), /powerGit: \(tabId\) => ipcRenderer\.invoke\('superpowers:git', String\(tabId\)\)/);
+  assert.match(read('main', 'ipc.js'), /ipcMain\.handle\('superpowers:git', \(_e, tabId\) => gitHere\(String\(tabId\)\)\)/);
+  // Con Claude trabajando no se ofrece: la foto de partida se llevaría sus cambios a medias.
+  assert.match(read('renderer', 'ui', 'superpowers.js'), /go\.disabled = gitBusy \|\| working;/);
+});

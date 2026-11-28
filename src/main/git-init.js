@@ -164,8 +164,9 @@ async function create(folder, { hooksDir, log, env, home, git, drives, maxFiles,
   if (!add.ok) return undo(`git add ha fallado: ${add.stderr.trim().slice(0, 160)}`);
   const commit = await run(['-c', 'user.name=ClaudHome', '-c', 'user.email=claudhome@localhost', 'commit', '-q', '--no-verify', '--allow-empty', '-m', MESSAGE], 60000);
   if (!commit.ok) return undo(`git commit ha fallado: ${commit.stderr.trim().slice(0, 160)}`);
-  log(`git local de SuperPowers creado en ${dir}: ${files.length - excluded.length} archivos en la foto${excluded.length ? `, ${excluded.length} fuera por parecer llevar una clave` : ''}`);
-  return { state: 'created', files: files.length - excluded.length, excluded };
+  const kept = files.length - excluded.length;
+  log(`git local de SuperPowers creado en ${dir}: ${kept} archivo${kept === 1 ? '' : 's'} en la foto${excluded.length ? `, ${excluded.length} fuera por parecer llevar una clave` : ''}`);
+  return { state: 'created', files: kept, excluded };
 }
 
 module.exports = { ensureRepo, unsuitable, inside, literal, EXCLUDE, MARK, MESSAGE };

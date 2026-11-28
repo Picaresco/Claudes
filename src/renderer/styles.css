@@ -1106,7 +1106,7 @@ dialog .btn-primary { background: var(--txt); }
 .sp-pop h3 { display: flex; align-items: center; gap: 8px; margin: 0 30px 4px 0; font-size: 15px; }
 .sp-pop h3 svg { flex: none; color: var(--sp3); filter: drop-shadow(0 0 4px rgba(245, 184, 65, 0.6)); }
 .sp-pop-sub { margin: 0 0 10px; color: var(--dim); font-size: 12.5px; }
-.sp-pop-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.sp-pop-list { margin: 0 0 12px; padding: 0; list-style: none; overflow-y: auto; overscroll-behavior: contain; }
 .sp-pop-list li { display: flex; gap: 9px; padding: 4px 0; font-size: 12.5px; line-height: 1.35; }
 .sp-pop-list i { flex: none; width: 18px; font-style: normal; text-align: center; }
 .sp-pop-list b { font-weight: 600; color: var(--txt); }
@@ -1117,6 +1117,16 @@ dialog .btn-primary { background: var(--txt); }
 .sp-pop-row small { color: var(--mute); font-size: 11px; }
 .sp-pop-go { flex: none; min-height: 36px; padding: 0 16px; border-radius: 8px; color: #fff; font-weight: 700; background: linear-gradient(90deg, var(--sp1), var(--sp2), var(--sp3)); }
 .sp-pop-go:hover { filter: brightness(1.08); }
+/* «Crear git aquí»: sin git, Codex no puede revisar (verde de Codex, como sus brasas). */
+.sp-pop-git { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 9px 10px 9px 12px; border: 1px solid rgba(111, 195, 168, 0.45); border-radius: 8px; background: rgba(111, 195, 168, 0.08); }
+.sp-pop-git[hidden] { display: none; }
+.sp-pop-git p { margin: 0; color: var(--dim); font-size: 12px; line-height: 1.4; }
+.sp-pop-git b { color: var(--codex); font-weight: 600; }
+.sp-pop-git span:empty { display: none; }
+.sp-pop-git span { display: block; margin-top: 4px; color: var(--warn); }
+.sp-pop-gitgo { flex: none; min-height: 34px; padding: 0 12px; border: 1px solid rgba(111, 195, 168, 0.6); border-radius: 8px; color: #E9FFF5; font-weight: 600; background: rgba(111, 195, 168, 0.16); }
+.sp-pop-gitgo:hover:not(:disabled) { background: rgba(111, 195, 168, 0.26); }
+.sp-pop-gitgo:disabled { opacity: 0.55; cursor: default; }
 .sp-pop-go[data-on="true"] { color: var(--txt); font-weight: 600; background: var(--bg1); border: 1px solid var(--line2); }
 .sp-pop-go[data-on="true"]:hover { border-color: var(--mute); filter: none; }
 /* SuperPowers al máximo, con Codex (ui/sp-ignite.js). Al encender: las letras de «Codex» se

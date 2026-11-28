@@ -12,7 +12,7 @@ function registerIpc({
   electron: { app, ipcMain, dialog, Notification, clipboard, shell },
   DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
   sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker, ideas, powerStats,
+  previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker, ideas, powerStats, gitHere,
 }) {
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
@@ -88,6 +88,8 @@ function registerIpc({
   ipcMain.handle('ideas:get', (_e, tabId) => ideas.get(String(tabId)));
   // …y lo que ha aportado en el proyecto de la pestaña (tarjeta del proyecto; power-stats.js).
   ipcMain.handle('superpowers:stats', (_e, tabId) => powerStats.get((tabs.get(String(tabId)) || {}).folder));
+  // «Crear git aquí»: git local para que Codex pueda revisar (main.js, gitHere; git-init.js).
+  ipcMain.handle('superpowers:git', (_e, tabId) => gitHere(String(tabId)));
   ipcMain.handle('ideas:act', (_e, tabId, id, action) => (['try', 'later', 'no'].includes(action) ? ideas.act(String(tabId), String(id), action) : { ok: false }));
 
   // Botón «Workflow» (workflow.js): el mapa del proyecto de la pestaña, aparte de su sesión.

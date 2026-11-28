@@ -270,12 +270,7 @@ async function createPty(o) {
   if (!codexState.state.checkedAt) await codexState.refresh();
   // SuperPowers con Codex, recién encendido con el botón (nunca al abrir una pestaña): si la carpeta
   // no tiene git, uno local con una foto de partida, para que Codex pueda revisar (git-init.js).
-  let git = null;
-  if (powers && o.initGit === true && codexState.usable()) {
-    git = await ensureRepo(o.cwd, { hooksDir: path.join(app.getPath('userData'), 'git-sin-hooks'), log: appLog });
-    if (git.state === 'skipped' || git.state === 'failed') appLog(`git local de SuperPowers en ${o.cwd}: no se crea (${git.reason})`);
-    git = { state: git.state, reason: git.reason || '', excluded: (git.excluded || []).length };
-  }
+  const git = powers && o.initGit === true && codexState.usable() ? await powerGit(o.cwd) : null;
   const withMcp = Boolean(codexState.state.installed) || powers; // con SuperPowers, por la de capturas
   const withCodex = withMcp && codexState.state.enabled; // con la herramienta de imágenes
   tab.folder = o.cwd;
@@ -313,6 +308,24 @@ async function createPty(o) {
   // compact: el autocompactar con el que arranca (null si manda la variable del usuario); repo: con
   // SuperPowers, si la carpeta tiene git (sin él, Codex no revisa); git: lo hecho al encenderlo.
   return { ok: true, sessionId: chosen.sessionId, resumed: chosen.resumed, codex: withCodex, compact: ownCompact ? null : compact, repo: powers ? isGitRepo(o.cwd) : null, git };
+}
+
+// SuperPowers con Codex: git local con una foto de partida si la carpeta no tiene, para que Codex
+// pueda revisar (git-init.js). Devuelve { state, reason, excluded (cuántos), repo }.
+async function powerGit(folder) {
+  const git = await ensureRepo(folder, { hooksDir: path.join(app.getPath('userData'), 'git-sin-hooks'), log: appLog });
+  if (git.state === 'skipped' || git.state === 'failed') appLog(`git local de SuperPowers en ${folder}: no se crea (${git.reason})`);
+  return { state: git.state, reason: git.reason || '', excluded: (git.excluded || []).length, repo: isGitRepo(folder) };
+}
+
+// «Crear git aquí» (ventanita de SuperPowers): para una pestaña que se abrió con SuperPowers ya
+// encendido en una carpeta sin git. La interfaz solo lo ofrece con Claude parado: con Claude
+// trabajando, la foto de partida se llevaría cambios a medias que Codex ya no vería.
+async function gitHere(tabId) {
+  const tab = tabs.get(String(tabId));
+  if (!tab || !tab.superpowers || !tab.folder) return { state: 'failed', reason: 'la pestaña no tiene SuperPowers encendido' };
+  if (!codexState.usable()) return { state: 'failed', reason: 'Codex no está disponible con tu cuenta de ChatGPT' };
+  return powerGit(tab.folder);
 }
 
 // ── Arranque ───────────────────────────────────────────────────────
@@ -668,7 +681,7 @@ if (!app.requestSingleInstanceLock()) {
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
       sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker, ideas, powerStats,
+      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker, ideas, powerStats, gitHere,
     });
     wm.create();
     limits.start();
