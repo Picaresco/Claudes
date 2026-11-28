@@ -15,9 +15,6 @@ const CAPTURE_TOOL = 'mcp__claudhome-codex__capturar_pantalla';
 // Lo que se ve: si cambia, la pasada pide revisarlo con capturas.
 const VISUAL = /\.(html?|css|scss|sass|less|vue|svelte|jsx|tsx|svg|astro|hbs|ejs|njk|liquid)$/i;
 const NOTE_EVERY = 30; // mensajes: se le recuerda cómo trabajar (como «Codex asesora»)
-// Lo que se le encarga al agente probador en la pasada final de un cambio grande: que intente
-// romperlo sin tocar nada y devuelva cada fallo con lo que lo reproduce.
-const PROBE_BRIEF = 'Intenta romper el cambio que acabo de hacer en este proyecto, sin editar ni crear archivos en él: mira el diff de git, prueba los casos límite, las entradas no válidas o malintencionadas y los usos que el usuario daría por hecho, y pasa la suite de pruebas. Devuelve solo los fallos que hayas reproducido, cada uno con el comando o la petición exacta que lo muestra y lo que esperabas; si no encuentras ninguno, dilo';
 // Cambio pequeño (pasada ligera): como mucho 2 archivos del proyecto y 6 ediciones.
 const SMALL_FILES = 2;
 const SMALL_EDITS = 6;
@@ -155,7 +152,7 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
         `1. Pasa la suite de pruebas completa del proyecto (si no tiene, una comprobación que se pueda repetir de lo que has cambiado)${tab.spLogic ? ' y añade las pruebas que falten para la lógica cambiada (no hacen falta para lo que solo cambia cómo se ve)' : ''}. Que la salida lo demuestre.`,
         `2. Repasa punto por punto lo que pidió el usuario: ${asked}. ${expected}`,
         `3. ${shots}`,
-        `4. Antes de los pasos 1 a 3, lanza en segundo plano un agente probador de solo lectura (tipo Explore) con este encargo: «${PROBE_BRIEF}». Mientras trabaja, haz tú los pasos 1 a 3; al acabar, comprueba lo que te devuelva y corrige lo que sea real.`,
+        '4. Si puedes, reparte la comprobación: un agente de solo lectura para las pruebas o las capturas mientras tú repasas lo pedido.',
         `5. ${close}`,
       ];
     return { decision: 'block', reason: `ClaudHome · SuperPowers: antes de terminar, la pasada final${small ? ' (cambio pequeño: pasada ligera)' : ''}.\n${steps.join('\n')}` };

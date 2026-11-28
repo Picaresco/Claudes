@@ -246,7 +246,7 @@ test('pasada proporcional: ligera en un cambio pequeño del proyecto, completa e
   assert.match(reason, /una ronda con capturar_pantalla/);
   assert.match(reason, /Mira la página real .*sin montar copias ni vistas previas aparte/);
   assert.match(reason, /daría por hecho aunque no lo haya dicho/);
-  assert.doesNotMatch(reason, /agente probador/);
+  assert.doesNotMatch(reason, /reparte la comprobación/);
   assert.doesNotMatch(reason, /por separado/); // sin ejemplos que apunten a un caso concreto
 
   // Pequeño con lógica: las pruebas que ya tenga, sin archivo nuevo.
@@ -265,7 +265,7 @@ test('pasada proporcional: ligera en un cambio pequeño del proyecto, completa e
   assert.doesNotMatch(reason, /pasada ligera/);
   assert.match(reason, /suite de pruebas completa/);
   assert.match(reason, /añade las pruebas que falten para la lógica/);
-  assert.match(reason, /lanza en segundo plano un agente probador de solo lectura \(tipo Explore\).*Intenta romper el cambio.*sin editar ni crear archivos/);
+  assert.match(reason, /reparte la comprobación/);
   assert.match(reason, /daría por hecho/);
 
   // Muchas ediciones de un mismo archivo también cuentan como cambio grande.
