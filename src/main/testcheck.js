@@ -401,6 +401,18 @@ function createTestReminder({ tabs, log = () => {}, home = os.homedir() }) {
     const all = [...state.values()];
     return { unsure, run: all.filter((s) => s.needsRun && s.root), bad: all.filter((s) => s.failing) };
   }
+  // Cómo han quedado las pruebas de este turno (la pasada final de SuperPowers lo enseña con lo
+  // visto, no con lo que diga Claude): 'ok' (pasadas después del último cambio), 'failing',
+  // 'pending' (cambios sin pruebas después), 'none' (no se han pasado ni hacía falta) o 'unknown'.
+  function verdict(tabId) {
+    const tab = tabs.get(tabId);
+    if (!tab || !tab.testsLog) return 'unknown';
+    const now = status(tab);
+    if (now.unsure) return 'unknown';
+    if (now.bad.length) return 'failing';
+    if (now.run.length) return 'pending';
+    return tab.testsLog.some((item) => item.kind === 'test') ? 'ok' : 'none';
+  }
   // Las órdenes de pruebas que han fallado, para nombrarlas.
   const failedCommands = (bad) => [...new Set(bad.map((s) => plain(s.command, 80)).filter(Boolean))].slice(0, 3).join(', ');
 
@@ -476,7 +488,7 @@ function createTestReminder({ tabs, log = () => {}, home = os.homedir() }) {
   // Para las pruebas: espera a que terminen las búsquedas en marcha.
   const settled = (tabId) => Promise.all(((tabs.get(tabId) || {}).testsWork || []).slice());
 
-  return { turnStarted, toolStarting, toolUsed, willAsk, answer, failing, settled };
+  return { turnStarted, toolStarting, toolUsed, willAsk, answer, failing, verdict, settled };
 }
 
 module.exports = { createTestReminder, detectTests, findTestRoot, isTestCommand, testInvocation, testRuns, outcome, splitCommands, nativeDir };

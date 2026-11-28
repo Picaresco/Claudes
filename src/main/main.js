@@ -31,6 +31,7 @@ const { createNarrator } = require('./narrator');
 const { createWorkflow } = require('./workflow');
 const { createPlanTracker, PLAN_NOTE } = require('./plan');
 const { isAgentReport } = require('./turns');
+const { createSuperpowers } = require('./superpowers');
 const { compactTarget, compactEnv } = require('./project-card');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
@@ -59,6 +60,7 @@ let growth = null; // aviso de archivos de código que crecen mucho (growth.js)
 let review = null; // Codex como segundo revisor del código (review.js)
 let secrets = null; // aviso de claves y contraseñas escritas en los archivos (secrets.js)
 let testcheck = null; // pruebas antes de terminar (testcheck.js)
+let superpowers = null; // SuperPowers por pestaña: pasada final y cómo trabajar (superpowers.js)
 let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
 let optimizeChecker = null; // la segunda mirada de Haiku (optimize-check.js)
@@ -203,6 +205,7 @@ async function createPty(o) {
   if (DEV && process.env.CLAUDES_TEST_PERMISSION_MODE) args.push('--permission-mode', process.env.CLAUDES_TEST_PERMISSION_MODE);
   tab.usage = null;
   if (review) review.sessionStarted(o.id); // con su primer mensaje sabrá cuándo pedir la segunda opinión
+  if (superpowers) superpowers.sessionStarted(o.id); // y cómo trabajar con SuperPowers
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
   const plugins = style.sessionPlugins();
   for (const plugin of plugins) args.push('--plugin-dir', plugin.dir);
@@ -301,8 +304,10 @@ if (!app.requestSingleInstanceLock()) {
       netlog: () => netlog, // se crea más tarde
       sandboxMissing: () => codexState.state.sandbox === false,
       onBusy: codexState.adviseBusy, // el indicador de la barra superior y, al terminar, el uso
+      extraFor: (tabId) => Boolean(superpowers && superpowers.on(tabId)), // SuperPowers incluye la revisión final
     });
     testcheck = createTestReminder({ tabs, log: appLog });
+    superpowers = createSuperpowers({ tabs, log: appLog });
     optimizer = createOptimizer({ tabs, log: appLog });
     // Antes de recomendar «Optimiza», Haiku lee lo que más ha cambiado y dice si conviene
     // (optimize-check.js). Lo que se le envía queda en el «Log».
@@ -342,8 +347,15 @@ if (!app.requestSingleInstanceLock()) {
       // empieza un turno nuevo: lo que el turno lleva hecho sigue contando (turns.js).
       if (event.event === 'UserPromptSubmit' && isAgentReport(event)) event.agentReport = true;
       const newTurn = event.event === 'UserPromptSubmit' && !event.agentReport;
-      if (newTurn) { review.turnStarted(tabId, event.prompt, event.request); testcheck.turnStarted(tabId, event.prompt); }
-      if (event.event === 'PostToolUse') review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
+      if (newTurn) {
+        review.turnStarted(tabId, event.prompt, event.request);
+        testcheck.turnStarted(tabId, event.prompt);
+        superpowers.turnStarted(tabId, event.prompt, event.request);
+      }
+      if (event.event === 'PostToolUse') {
+        review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
+        superpowers.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file);
+      }
       // ¿Conviene optimizar? Cada cambio de código cuenta (se cuenta después de contestar).
       if (newTurn) optimizeHints.turnStarted(tabId);
       if (event.event === 'PostToolUse' && EDIT_TOOLS.has(event.toolName) && event.toolInput && event.toolInput.file) {
@@ -353,7 +365,7 @@ if (!app.requestSingleInstanceLock()) {
       // Pruebas antes de terminar: qué se cambia, qué pruebas se pasan y cómo acaban.
       if (event.event === 'PreToolUse') testcheck.toolStarting(tabId, event.toolName, event.toolUseId);
       // Conversación resumida: con el siguiente mensaje se le recuerda cuándo pedir a Codex.
-      if (event.event === 'PostCompact') review.compacted(tabId);
+      if (event.event === 'PostCompact') { review.compacted(tabId); superpowers.compacted(tabId); }
       if (event.event === 'PostToolUse' || event.event === 'PostToolUseFailure') {
         testcheck.toolUsed(tabId, event.toolName, event.toolInput, {
           cwd: event.cwd, failed: event.event === 'PostToolUseFailure', background: event.background, shell: event.shell, toolUseId: event.toolUseId,
@@ -363,10 +375,18 @@ if (!app.requestSingleInstanceLock()) {
       // Al pararse: primero, las pruebas (que las pase si cambió código sin pasarlas, o que
       // no termine sin más si han fallado); después (en el siguiente Stop), la revisión de
       // Codex. Si el turno se para con las pruebas sin pasar, la interfaz se lo dice al usuario.
+      // Con SuperPowers, antes que todo eso, la pasada final (una vez por turno, si cambió algo):
+      // en ella pasa las pruebas, así que el recordatorio de pruebas llega después solo si no lo hizo.
       if (event.event === 'Stop') {
-        event.testsAsk = testcheck.willAsk(tabId);
-        event.reviewing = !event.testsAsk && review.willReview(tabId, event);
-        event.testsFailing = event.testsAsk ? null : testcheck.failing(tabId);
+        event.superAsk = superpowers.willAsk(tabId);
+        event.testsAsk = !event.superAsk && testcheck.willAsk(tabId);
+        event.reviewing = !event.superAsk && !event.testsAsk && review.willReview(tabId, event);
+        event.testsFailing = event.superAsk || event.testsAsk ? null : testcheck.failing(tabId);
+        // El resumen de la pasada (panel «Actividad»): cuando ya no queda nada que pedirle.
+        if (!event.superAsk && !event.testsAsk) {
+          const pass = superpowers.summary(tabId, { tests: testcheck.verdict(tabId), codex: event.reviewing });
+          if (pass) event.superPass = pass;
+        }
       }
       // Con /clear la pestaña pasa a otra conversación: los hooks llevan la actual.
       const tab = tabs.get(tabId);
@@ -418,7 +438,10 @@ if (!app.requestSingleInstanceLock()) {
     secrets = new Secrets({ store, log: appLog });
     hookServer.respond = async (tabId, eventName, event, signal) => {
       // Al pararse Claude: la revisión de Codex, si toca.
-      if (eventName === 'Stop') return event.testsAsk ? testcheck.answer(tabId) : review.onStop(tabId, event, signal);
+      if (eventName === 'Stop') {
+        if (event.superAsk) return superpowers.answer(tabId);
+        return event.testsAsk ? testcheck.answer(tabId) : review.onStop(tabId, event, signal);
+      }
       // Al presentar un plan: la crítica de Codex, si toca.
       if (eventName === 'PlanReview') return review.onPlan(tabId, event, signal);
       if (eventName === 'PostToolUse') {
@@ -450,6 +473,9 @@ if (!app.requestSingleInstanceLock()) {
       // «Codex asesora»: cuándo pedir la segunda opinión (o que se ha apagado), si la sesión no lo sabe.
       const advisor = event && event.agentReport ? null : review.advisorNote(tabId, event && event.prompt, event && event.sessionId);
       if (advisor) parts.push(advisor);
+      // SuperPowers: cómo trabajar (habilidades, agentes, pasada final), si la sesión no lo sabe.
+      const powers = event && event.agentReport ? null : superpowers.note(tabId, event);
+      if (powers) parts.push(powers);
       const optimize = optimizer.consume(tabId, event && event.prompt);
       if (optimize) { parts.push(optimize); optimizeHints.optimized(tabId); }
       return parts.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: parts.join('\n\n') } } : null;

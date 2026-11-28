@@ -100,7 +100,7 @@ export function onHook(tabId, ev) {
     case 'Stop':
       // Si se le retiene por las pruebas o Codex va a revisar lo que ha cambiado, el turno aún no ha terminado.
       view.testsFailing = ev.testsFailing || null; // se dice al terminar del todo (finished)
-      if (ev.testsAsk) setStatus(view, 'working');
+      if (ev.testsAsk || ev.superAsk) setStatus(view, 'working'); // las pruebas o la pasada de SuperPowers
       else if (ev.reviewing) setStatus(view, 'reviewing');
       else finished(view, false);
       break;

@@ -162,9 +162,13 @@ function reasonFor(parsed, text, effort = EFFORT) {
 // (secrets.js); checkLogin(): si Codex tiene ahora mismo la sesión de ChatGPT;
 // onBusy(+1 | -1, tabId, qué, icono): Codex empieza o deja de trabajar para esa pestaña
 // (indicador de la barra superior; icono: 'review', 'plan', 'opinion' o 'security');
-// sandboxMissing(): a Codex le falta configurar su zona protegida de Windows.
-function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true, onBusy = () => {}, sandboxMissing = () => false }) {
+// sandboxMissing(): a Codex le falta configurar su zona protegida de Windows;
+// extraFor(tabId): esa pestaña tiene SuperPowers, que incluye la revisión final de Codex aunque
+// «Codex asesora» esté apagado (solo la revisión del final: ni el plan ni la segunda opinión).
+function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true, onBusy = () => {}, sandboxMissing = () => false, extraFor = () => false }) {
   let enabled = store.get('codexReview', false) === true; // apagado hasta que el usuario lo encienda
+  // ¿Se revisa lo de esta pestaña al terminar? Con «Codex asesora» o con SuperPowers.
+  const reviews = (tabId) => enabled || Boolean(extraFor(tabId));
   // Consultas a Codex en marcha: al apagar el interruptor se paran todas.
   const running = new Set();
   function linked(signal) {
@@ -186,7 +190,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     tab.reviewRepo = undefined; // repositorio de lo editado: undefined = aún nada, '' = sin git, null = varios
     tab.reviewed = false;
     tab.reviewPending = false;
-    tab.reviewArmed = enabled;
+    tab.reviewArmed = reviews(tabId);
     tab.reviewSkip = typeof prompt === 'string' && prompt.startsWith(WRAPUP_START.slice(0, 30));
   }
 
@@ -196,7 +200,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   function toolUsed(tabId, toolName, file = null, cwd = null) {
     if (!EDIT_TOOLS.has(toolName)) return;
     const tab = tabs.ensure(tabId);
-    if (!enabled || !tab.reviewArmed || tab.reviewed || tab.reviewSkip) return; // este turno no se revisa
+    if (!reviews(tabId) || !tab.reviewArmed || tab.reviewed || tab.reviewSkip) return; // este turno no se revisa
     const known = typeof file === 'string' && file;
     if (known && !isCode(file)) return; // documentos, datos, notas…: no piden revisión
     const base = cwd || tab.folder;
@@ -212,8 +216,10 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   // para que la interfaz no dé el turno por terminado mientras Codex revisa.
   function willReview(tabId, event) {
     const tab = tabs.get(tabId);
-    const go = Boolean(enabled && tab && tab.reviewArmed && tab.edited
-      && !tab.reviewSkip && !tab.reviewed && (!(event && event.stopHookActive) || tab.testsAsked) && usable());
+    // Tras otro aviso del Stop (stopHookActive), solo si ese aviso era de ClaudHome: el de las
+    // pruebas o la pasada final de SuperPowers.
+    const go = Boolean(reviews(tabId) && tab && tab.reviewArmed && tab.edited
+      && !tab.reviewSkip && !tab.reviewed && (!(event && event.stopHookActive) || tab.testsAsked || tab.superAsked) && usable());
     if (tab) tab.reviewPending = go;
     return go;
   }
@@ -266,7 +272,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       return null;
     }
     if (tab.turn !== turn) return null; // el usuario ya ha seguido: no se lanza
-    if (!enabled) { // apagado mientras se comprobaba: no se envía nada
+    if (!reviews(tabId)) { // apagado mientras se comprobaba: no se envía nada
       post({ state: 'nothing' });
       return null;
     }
@@ -293,7 +299,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
       post({ state: 'aborted', seconds: 0 });
       return null;
     }
-    if (tab.turn !== turn || !enabled) return null;
+    if (tab.turn !== turn || !reviews(tabId)) return null;
     post({ state: 'running' });
     const effort = reviewEffort(input);
     log(`revisión de Codex: empieza en ${cwd} (${MODEL}, razonamiento ${effort}: ${input.lines || 0} líneas en ${(input.paths || []).length} archivos)`);
@@ -309,7 +315,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     } finally { onBusy(-1, tabId, 'revisión del código', 'review'); }
     result.effort = effort;
     const file = saveDetails(cwd, result);
-    if (!enabled) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras revisaba
+    if (!reviews(tabId)) { post({ state: 'aborted', seconds: result.seconds }); return null; } // apagado mientras revisaba
     if (tab.turn !== turn) { // el usuario ya ha seguido: lo encontrado no se le devuelve a Claude
       log(`revisión de Codex: terminada tras ${result.seconds} s, pero el turno ya había cambiado; no se usa`);
       return null;

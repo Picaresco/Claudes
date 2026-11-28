@@ -466,3 +466,27 @@ test('las webs se ofrecen solo de la respuesta final; los archivos, de cualquier
   ev('Stop', { narr: { transcript: conv, last: 'Listo. La guía que he seguido: https://docs.example.com/svg' } });
   assert.deepEqual(last().entries.filter((e) => e.src === 'link').map((e) => e.text), ['Pincha aquí para ver la imagen plano.png', 'Pincha aquí para ver la web docs.example.com/svg']);
 });
+
+test('SuperPowers: el paso de la pasada final, su tarjeta con lo visto y la línea de Codex al terminar', (t) => {
+  const { narrator, last, ev } = setup(t, { enabled: false });
+  ev('UserPromptSubmit', { request: 'Pon el botón en verde' });
+  ev('Stop', { superAsk: true, narr: { last: 'Hecho.' } });
+  assert.equal(last().now.text, 'Pasada final de SuperPowers');
+  assert.equal(last().now.kind, 'power');
+  assert.ok(last().entries.some((e) => e.kind === 'power' && /pasada final/.test(e.text)));
+  // Termina la pasada y Codex revisa: la tarjeta sale con lo visto y Codex «revisando».
+  ev('Stop', { reviewing: true, superPass: { tests: 'ok', captures: 'ok', captured: 3, visual: ['estilo.css'], codex: true, seconds: 40 }, narr: { last: 'Pasada final: …' } });
+  let card = last().entries.find((e) => e.kind === 'pass');
+  assert.equal(card.pass.codex, 'running');
+  assert.match(card.text, /pruebas pasadas · 3 capturas · Codex revisa/);
+  narrator.review('t1', { state: 'found', count: 2 });
+  card = last().entries.find((e) => e.kind === 'pass');
+  assert.equal(card.pass.codex, 'found');
+  assert.equal(card.pass.found, 2);
+  assert.match(card.text, /Codex: 2 posibles problemas/);
+  // Un turno nuevo no toca la tarjeta del anterior.
+  ev('UserPromptSubmit', { request: 'Otra cosa' });
+  ev('Stop', { reviewing: true, narr: { last: 'Hecho lo otro.' } });
+  narrator.review('t1', { state: 'clean' });
+  assert.equal(last().entries.find((e) => e.kind === 'pass').pass.codex, 'found');
+});

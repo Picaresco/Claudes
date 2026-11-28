@@ -15,6 +15,11 @@
   --accent: #6AA5F8; /* azul de la app: actualizar */
   --claude: #E08A68; /* gasto de Claude (barra inferior) */
   --codex: #6FC3A8;  /* gasto de Codex (barra inferior) */
+  /* SuperPowers (por pestaña): violeta → rosa → oro. */
+  --sp1: #8B5CF6;
+  --sp2: #EC4899;
+  --sp3: #F5B841;
+  --sp-grad: linear-gradient(135deg, var(--sp1), var(--sp2), var(--sp3));
   --sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
 }
@@ -456,6 +461,22 @@ body.dragging #workspace * { pointer-events: none; }
 .act-item[data-kind="done"][data-src="haiku"] .act-text { font-weight: 500; }
 .act-item[data-kind="tests"] .act-ico, .act-item[data-kind="wait"] .act-ico, .act-item[data-kind="ask"] .act-ico { color: var(--warn); }
 .act-item[data-kind="codex"] .act-ico, .act-item[data-kind="agent"] .act-ico, .act-item[data-kind="link"] .act-ico { color: var(--accent); }
+.act-item[data-kind="power"] .act-ico { color: var(--sp3); }
+/* SuperPowers: la tarjeta de la pasada final, con el borde de sus colores. */
+.act-item.act-pass { display: block; margin: 8px 0 4px; padding: 9px 11px 8px; border: 1px solid transparent; border-radius: 10px; color: var(--txt);
+  background: linear-gradient(var(--bg2), var(--bg2)) padding-box, var(--sp-grad) border-box; }
+.act-pass-head { display: flex; align-items: center; gap: 7px; margin: 0 0 5px; font-size: 13px; font-weight: 600; }
+.act-pass-head svg { flex: none; color: var(--sp3); filter: drop-shadow(0 0 3px rgba(245, 184, 65, 0.55)); }
+.act-pass-head .act-time { margin-left: auto; padding-top: 0; font-weight: 400; }
+.act-pass-row { display: grid; grid-template-columns: 14px 1fr; column-gap: 7px; margin: 0; padding: 2px 0; font-size: 12.5px; line-height: 1.35; color: var(--dim); overflow-wrap: anywhere; }
+.act-pass-mark { text-align: center; font-weight: 700; color: var(--mute); }
+.act-pass-row[data-state="ok"] .act-pass-mark { color: var(--ok); }
+.act-pass-row[data-state="warn"] .act-pass-mark { color: var(--warn); }
+.act-pass-row[data-state="bad"] .act-pass-mark { color: var(--alert); }
+.act-pass-row[data-state="run"] { color: var(--txt); }
+.act-pass-row[data-state="run"] .act-pass-mark { color: var(--sp3); }
+.act-pass-row[data-state="warn"], .act-pass-row[data-state="bad"] { color: var(--txt); }
+.act-pass-foot { margin: 5px 0 0; font-size: 11.5px; color: var(--mute); }
 /* «Pincha aquí para verlo»: «aquí» abre lo que enseña Claude. */
 .act-link { display: inline; color: var(--focus); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .act-link:hover { color: var(--txt); }
@@ -471,6 +492,7 @@ body.dragging #workspace * { pointer-events: none; }
 .act-pulse { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: act-pulse 1.4s ease-in-out infinite; }
 .act-now[data-kind="wait"] .act-pulse, .act-now[data-kind="ask"] .act-pulse { background: var(--warn); }
 .act-now[data-kind="codex"] .act-pulse, .act-now[data-kind="agent"] .act-pulse { background: var(--accent); }
+.act-now[data-kind="power"] .act-pulse { background: var(--sp-grad); }
 @keyframes act-pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .act-item.fresh, .act-pulse { animation: none; } }
 

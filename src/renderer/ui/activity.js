@@ -32,6 +32,7 @@ const ICONS = {
   say: '<path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/>',
   done: '<circle cx="8" cy="8" r="6"/><path d="M5.3 8.2l1.9 1.9 3.6-3.8"/>',
   error: '<path d="M8 2 14.5 13.5h-13z"/><path d="M8 6.5v3.2M8 11.6h.01"/>',
+  power: '<path d="M9.2 1.5 3.5 9h4l-1 5.5L12.5 7h-4z"/>',
   link: '<path d="M9 2.5h4.5V7"/><path d="M13.5 2.5 7.5 8.5"/><path d="M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3"/>',
 };
 const icon = (kind) => {
@@ -102,7 +103,54 @@ function addThumb(li, target) {
   });
 }
 
+// SuperPowers: la tarjeta de la pasada final, con lo que ha visto ClaudHome (no con lo que diga
+// Claude: lo pedido y las mejoras están en su respuesta). narrator.js, addPass.
+const MARKS = { ok: '✓', warn: '!', bad: '✗', run: '◌', off: '○', info: '◇' };
+function passRows(pass) {
+  const visual = (pass.visual || []).slice(0, 3).join(', ');
+  return [
+    ({
+      ok: ['ok', 'Pruebas: pasadas después del último cambio'],
+      failing: ['bad', 'Pruebas: fallan (lo explica en su respuesta)'],
+      pending: ['warn', 'Pruebas: hay cambios sin probar después'],
+      none: ['off', 'Pruebas: no ha pasado ninguna (no hay o no hacía falta)'],
+    })[pass.tests] || ['off', 'Pruebas: no se ha podido saber cómo han ido'],
+    ['info', 'Lo pedido, punto por punto: lo repasa en su respuesta'],
+    ({
+      ok: ['ok', `Revisión visual: ${pass.captured} captura${pass.captured === 1 ? '' : 's'} de pantalla`],
+      missing: ['warn', `Ha cambiado ${visual || 'algo que se ve'} sin revisarlo con capturas`],
+    })[pass.captures] || ['off', 'Revisión visual: no hacía falta (nada que se vea)'],
+    ({
+      running: ['run', 'Codex revisa el resultado…'],
+      clean: ['ok', 'Codex: sin objeciones'],
+      found: ['warn', `Codex: ${pass.found === 1 ? 'un posible problema' : `${pass.found || 0} posibles problemas`}; Claude lo revisa`],
+      none: ['off', 'Codex no ha podido revisar esta vez'],
+    })[pass.codex] || ['off', 'Codex no revisa esta vez'],
+  ];
+}
+function passCard(entry) {
+  const li = el('li', 'act-item act-pass');
+  li.dataset.kind = 'pass';
+  li.dataset.src = 'pass';
+  if (!seen.has(entry.id)) { li.classList.add('fresh'); seen.add(entry.id); }
+  li.title = entry.text;
+  const head = el('p', 'act-pass-head');
+  head.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="M9.2 1.5 3.5 9h4l-1 5.5L12.5 7h-4z" fill="currentColor"/></svg>`;
+  head.append(el('span', '', 'Pasada final · SuperPowers'), el('time', 'act-time', hhmm(entry.at)));
+  li.append(head);
+  for (const [state, text] of passRows(entry.pass)) {
+    const row = el('p', 'act-pass-row');
+    row.dataset.state = state;
+    row.append(el('span', 'act-pass-mark', MARKS[state]), el('span', '', text));
+    li.append(row);
+  }
+  const s = Number(entry.pass.seconds) || 0;
+  li.append(el('p', 'act-pass-foot', `${s < 60 ? `${s} s` : `${Math.round(s / 60)} min`} de pasada · las mejoras, si merecen la pena, en su respuesta`));
+  return li;
+}
+
 function item(entry) {
+  if (entry.kind === 'pass' && entry.pass) return passCard(entry);
   const li = el('li', 'act-item');
   li.dataset.kind = entry.kind;
   li.dataset.src = entry.src;

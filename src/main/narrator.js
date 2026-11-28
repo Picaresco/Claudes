@@ -356,6 +356,14 @@ function parseLines(stdout) {
 // tabs: lo que se sabe de cada pestaña (su carpeta) · send(canal, …): a la interfaz ·
 // findClaude(), env(), workDir(): cómo lanzar Haiku (haiku.js) · open: si el panel está abierto ·
 // run(cmd, entrada): sustituye al lanzamiento real (pruebas) · gather, gap: esperas (ms).
+// La pasada final de SuperPowers en una frase (lo que se ve al pasar el ratón por la tarjeta).
+function passText(pass) {
+  const tests = { ok: 'pruebas pasadas', failing: 'pruebas que fallan', pending: 'cambios sin probar', none: 'sin pruebas que pasar', unknown: 'pruebas sin saber' }[pass.tests] || 'pruebas sin saber';
+  const shots = { ok: `${pass.captured} captura${pass.captured === 1 ? '' : 's'}`, missing: 'algo visual sin capturas', skip: 'nada visual' }[pass.captures] || '';
+  const codex = { running: 'Codex revisa', clean: 'Codex sin objeciones', found: `Codex: ${pass.found || 0} posibles problemas`, none: 'Codex no ha podido revisar', off: 'sin Codex' }[pass.codex] || '';
+  return `Pasada final de SuperPowers: ${[tests, shots, codex].filter(Boolean).join(' · ')}`;
+}
+
 function createNarrator({
   tabs, send, log = () => {}, findClaude, env, workDir, enabled = true, now = Date.now, run = null, gather = GATHER, gap = MIN_GAP,
 }) {
@@ -390,7 +398,7 @@ function createNarrator({
   };
 
   const snapshot = (st) => ({
-    entries: st.entries.slice(-MAX_ENTRIES).map(({ id, at, kind, text, src, pending, link }) => ({ id, at, kind, text, src, pending, ...(link ? { link } : {}) })),
+    entries: st.entries.slice(-MAX_ENTRIES).map(({ id, at, kind, text, src, pending, link, pass }) => ({ id, at, kind, text, src, pending, ...(link ? { link } : {}), ...(pass ? { pass: { ...pass } } : {}) })),
     now: st.now,
     enabled: isOn,
   });
@@ -650,6 +658,7 @@ function createNarrator({
         st.turns.set(st.turn, { request: clip(said, 300), recent: [] });
         for (const old of st.turns.keys()) if (old < st.turn - 2) st.turns.delete(old);
         st.reviewing = null;
+        st.passEntry = null; // la pasada final es de cada turno
         st.tools.clear();
         st.agents.clear();
         if (oneLine(said)) {
@@ -716,6 +725,12 @@ function createNarrator({
         break;
       }
       case 'Stop': {
+        if (ev.superAsk) {
+          addStep(tabId, st, { kind: 'power', show: 'SuperPowers le pide la pasada final antes de terminar', info: 'ClaudHome no le deja terminar todavía: SuperPowers le pide la pasada final (pasar las pruebas, repasar lo pedido punto por punto y, si ha cambiado algo que se ve, revisarlo con capturas)' });
+          setNow(st, 'power', 'Pasada final de SuperPowers');
+          break;
+        }
+        if (ev.superPass) addPass(tabId, st, ev.superPass);
         if (ev.testsAsk) {
           addStep(tabId, st, { kind: 'tests', show: 'ClaudHome le pide repasar las pruebas antes de terminar', info: 'ClaudHome no le deja terminar todavía: le pide que pase las pruebas (o que arregle las que fallan) antes de acabar' });
           setNow(st, 'think', 'Pensando…');
@@ -750,6 +765,19 @@ function createNarrator({
     changed(tabId);
   }
 
+  // SuperPowers: la tarjeta de la pasada final, con lo que ha visto ClaudHome (superpowers.js).
+  // Haiku no la cuenta: es un resumen fijo. La línea de Codex cambia cuando termina su revisión.
+  function addPass(tabId, st, pass) {
+    const entry = {
+      id: `s${tabId.slice(0, 8)}-${++st.seq}`, at: now(), kind: 'pass', src: 'pass', pending: false, steps: [], items: [],
+      pass: { ...pass, codex: pass.codex ? 'running' : 'off' },
+    };
+    entry.text = passText(entry.pass);
+    st.entries.push(entry);
+    st.passEntry = entry;
+    trim(st);
+  }
+
   // Fin de la tarea: el «Ha terminado», con la respuesta final para que Haiku la resuma.
   function finish(tabId, st, last) {
     st.reviewing = null;
@@ -771,6 +799,13 @@ function createNarrator({
     if (!st || !st.reviewing || !result || typeof result.state !== 'string') return;
     if (['running', 'plan-running', 'plan-done', 'plan-error', 'plan-secret', 'opinion-running', 'opinion-done'].includes(result.state)) return;
     if (result.state === 'blocked' && result.op !== 'review') return;
+    // La tarjeta de la pasada final, con lo que ha dicho Codex.
+    const pass = st.passEntry && st.passEntry.pass;
+    if (pass && pass.codex === 'running') {
+      pass.codex = result.state === 'found' ? 'found' : ['clean', 'nothing'].includes(result.state) ? 'clean' : 'none';
+      if (result.state === 'found') pass.found = Number(result.count) || 0;
+      st.passEntry.text = passText(pass);
+    }
     if (result.state === 'found') {
       st.reviewing = null;
       const count = Number(result.count) || 0;
