@@ -124,7 +124,7 @@ const CDN_HOSTS = new Set([
   'stackpath.bootstrapcdn.com', 'maxcdn.bootstrapcdn.com', 'netdna.bootstrapcdn.com',
   'code.jquery.com', 'cdn.tailwindcss.com', 'use.fontawesome.com', 'kit.fontawesome.com',
   'ka-f.fontawesome.com', 'cdn.datatables.net', 'cdn.plot.ly', 'esm.sh', 'cdn.skypack.dev',
-  'rsms.me', 'fonts.bunny.net', 'use.typekit.net', 'p.typekit.net',
+  'rsms.me', 'fonts.bunny.net', 'use.typekit.net', 'p.typekit.net', 'cdn.socket.io',
 ]);
 const CDN_TYPES = new Set(['stylesheet', 'font', 'script', 'image']);
 function allowCdn(details) {
