@@ -169,6 +169,9 @@ function reasonFor(parsed, text, effort = EFFORT) {
 const EARLY_NOTE = 'Codex ha revisado tus cambios tal como estaban al pedirte la pasada final, mientras la hacías: si algo de lo que dice ya lo has corregido en la pasada, sáltatelo.';
 const FOLLOW_SOON = 'Como en la pasada cambiaste código, Codex ya está revisando el cambio otra vez, con eso incluido, mientras corriges esto: lo que encuentre te llegará al terminar.';
 const FOLLOW_NOTE = 'Segunda ronda: Codex ha vuelto a revisar el cambio con lo que hiciste en la pasada final. Lo que ya hayas corregido o decidido no cambiar (con motivo), sáltatelo.';
+// Con SuperPowers, si Codex no puede revisar porque lo que ha escrito Claude lleva algo con pinta
+// de clave (una secret_key de mentira en una prueba, por ejemplo), se le pide que no la deje así.
+const secretNote = (files) => `ClaudHome · Codex no ha podido revisar tus cambios: ${files.join(', ')} ${files.length > 1 ? 'llevan' : 'lleva'} algo con pinta de clave escrita en el código, y ClaudHome no envía claves fuera de este equipo. Si es un valor de pruebas (por ejemplo, una secret_key de mentira), haz que no quede escrito tal cual (genéralo, p. ej. con secrets.token_hex(), o léelo de una variable de entorno) y vuelve a terminar: entonces revisará Codex. Si es una clave de verdad, sácala del código (a una variable de entorno o al .env, que no se sube) y díselo al usuario.`;
 // El esfuerzo de la segunda ronda, como mucho «high»: es un repaso, que no haga esperar.
 const LEVELS = ['low', 'medium', 'high', 'xhigh'];
 const capEffort = (effort, cap) => (cap && LEVELS.indexOf(effort) > LEVELS.indexOf(cap) ? cap : effort);
@@ -204,6 +207,8 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (tab.reviewEarly) { tab.reviewEarly.abort(); tab.reviewEarly = null; }
     if (tab.reviewFollow) { tab.reviewFollow.abort(); tab.reviewFollow = null; }
     tab.reviewEdits = 0;
+    tab.reviewFiles = new Set(); // lo que ha cambiado Claude en este turno
+    tab.secretAsked = false;
   }
 
   // Claude ha usado una herramienta: ¿ha editado código, y de qué repositorio? Si no se
@@ -230,6 +235,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     else if (tab.reviewRepo === null || !sameRepo(tab.reviewRepo, repo)) tab.reviewRepo = null; // de varios sitios
     tab.edited = true;
     tab.reviewEdits = (tab.reviewEdits || 0) + 1;
+    if (known) (tab.reviewFiles = tab.reviewFiles || new Set()).add(path.normalize(full).toLowerCase());
   }
 
   // ¿Hay que revisar en este Stop? Se decide al recibir el aviso, antes de responder,
@@ -277,6 +283,21 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   // repite cómo acabó para que no se quede ahí.
   function repost(tabId, tab, job) {
     if (job.last && job.last.state !== 'running' && tab.turn === job.turn) send('review:result', tabId, job.last);
+  }
+
+  // Codex no ha revisado porque lo que se le enviaría lleva algo con pinta de clave: si todo eso lo
+  // ha escrito Claude en este turno, con SuperPowers se le pide que no lo deje escrito tal cual y
+  // que vuelva a terminar; entonces revisa Codex. Una vez por turno. Devuelve la respuesta o null.
+  function secretAsk(tabId, tab, last) {
+    if (!last || last.state !== 'secret' || last.unchecked || tab.secretAsked || !extraFor(tabId)) return null;
+    const files = last.files || [];
+    const mine = [...(tab.reviewFiles || [])];
+    const own = files.length > 0 && files.every((f) => mine.some((m) => m.endsWith(path.normalize(f).toLowerCase())));
+    if (!own) return null;
+    tab.secretAsked = true;
+    tab.reviewed = false; // en cuanto lo cambie, la revisión se hace
+    log(`revisión de Codex: se le pide a Claude que no deje escrita la clave de ${files.join(', ')}`);
+    return { decision: 'block', reason: secretNote(files) };
   }
 
   // Segunda ronda: el cambio otra vez, con lo que Claude hizo en la pasada final.
@@ -349,12 +370,15 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
         const second = await awaitEarly(again, signal);
         return second && second.reason ? { ...second, reason: `${FOLLOW_NOTE}\n\n${second.reason}` } : second;
       }
+      const ask = secretAsk(tabId, tab, early.last);
+      if (ask) return ask;
       repost(tabId, tab, early);
       return result;
     }
     // Lo que llegue cuando el usuario ya ha empezado otro turno no cambia su estado.
     const turn = tab.turn;
-    const post = (result) => { if (tab.turn === turn) send('review:result', tabId, result); };
+    let last = null;
+    const post = (result) => { last = result; if (tab.turn === turn) send('review:result', tabId, result); };
     // Se revisa el repositorio de lo que ha editado Claude, no la carpeta en la que acabe.
     const cwd = tab.reviewRepo;
     if (cwd === null) {
@@ -369,9 +393,11 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     }
     // Lo que se va a enviar no puede llevar claves (y tiene que poder comprobarse).
     const link = linked(signal);
+    let answer;
     try {
-      return await reviewRun(tabId, tab, turn, post, cwd, link.signal);
+      answer = await reviewRun(tabId, tab, turn, post, cwd, link.signal);
     } finally { link.done(); }
+    return answer || secretAsk(tabId, tab, last);
   }
 
   // La revisión, ya decidido el repositorio: comprobación de claves, cuenta y Codex.

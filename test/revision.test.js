@@ -79,7 +79,7 @@ test('lo que se le dice a Claude incluye los hallazgos y le deja decidir', () =>
   assert.match(reasonFor(parseReview(huge), huge), /\[… recortado\]/);
 });
 
-function makeReview(t, { enabled = true, usable = true, result = null, detailed = true, reviewChanges = null, checkSecrets = null, checkLogin = null, askCodex = null } = {}) {
+function makeReview(t, { enabled = true, usable = true, result = null, detailed = true, reviewChanges = null, checkSecrets = null, checkLogin = null, askCodex = null, extraFor = null } = {}) {
   const saved = { codexReview: enabled };
   const sent = [];
   const logs = [];
@@ -103,6 +103,7 @@ function makeReview(t, { enabled = true, usable = true, result = null, detailed 
     detailedLogs: () => detailed,
     ...(checkSecrets ? { checkSecrets } : {}),
     ...(checkLogin ? { checkLogin } : {}),
+    ...(extraFor ? { extraFor } : {}),
     onBusy: (delta) => { busy.push(delta); },
     netlog: () => ({ record: (entry) => records.push(entry) }),
   });
@@ -918,4 +919,63 @@ test('si la revisión de la pasada acaba antes que Claude, al pararse se repite 
     assert.equal(sent.length, before + 1, state);
     assert.equal(sent[sent.length - 1][2].state, state); // y se le vuelve a decir cómo acabó
   }
+});
+
+test('con SuperPowers, si Codex no revisa por una clave que ha escrito Claude, se le pide quitarla y luego revisa', async (t) => {
+  const dir = gitRepo(t);
+  let flagged = true;
+  const { review, tabs, calls, logs } = makeReview(t, {
+    enabled: false, extraFor: () => true,
+    checkSecrets: async () => (flagged ? { ok: true, files: ['test_x.py'] } : { ok: true, files: [], lines: 10, paths: ['test_x.py'] }),
+  });
+  tabs.ensure('t1').folder = dir;
+  review.turnStarted('t1', 'Añade pruebas');
+  review.toolUsed('t1', 'Write', path.join(dir, 'test_x.py'));
+  review.startEarly('t1');
+  tabs.get('t1').superAsked = true;
+  review.willReview('t1', { event: 'Stop', stopHookActive: true });
+  const ask = await review.onStop('t1', { event: 'Stop', cwd: dir });
+  assert.equal(ask.decision, 'block');
+  assert.match(ask.reason, /test_x\.py lleva algo con pinta de clave/);
+  assert.match(ask.reason, /secrets\.token_hex\(\)/);
+  assert.ok(logs.some((l) => /no deje escrita la clave/.test(l)));
+  assert.equal(calls.length, 0); // a Codex no se le ha enviado nada
+  // Claude genera el valor en vez de escribirlo: ahora sí revisa Codex.
+  flagged = false;
+  review.toolUsed('t1', 'Edit', path.join(dir, 'test_x.py'));
+  assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), true);
+  const answer = await review.onStop('t1', { event: 'Stop', cwd: dir });
+  assert.equal(calls.length, 1);
+  assert.equal(answer.decision, 'block'); // los hallazgos de SAMPLE
+});
+
+test('la petición de quitar la clave solo se hace una vez, con SuperPowers y si la ha escrito Claude', async (t) => {
+  const dir = gitRepo(t);
+  const secret = async () => ({ ok: true, files: ['config.py'] });
+  // Un archivo con clave que no ha tocado Claude: no se le pide nada.
+  const a = makeReview(t, { enabled: false, extraFor: () => true, checkSecrets: secret });
+  a.tabs.ensure('t1').folder = dir;
+  a.review.turnStarted('t1', 'Cambia a');
+  a.review.toolUsed('t1', 'Edit', path.join(dir, 'a.js'));
+  a.review.willReview('t1', { event: 'Stop' });
+  assert.equal(await a.review.onStop('t1', { event: 'Stop', cwd: dir }), null);
+  // Sin SuperPowers («Codex asesora»), tampoco: como siempre, se avisa en la pestaña.
+  const b = makeReview(t, { checkSecrets: secret });
+  b.tabs.ensure('t1').folder = dir;
+  b.review.turnStarted('t1', 'Cambia config');
+  b.review.toolUsed('t1', 'Edit', path.join(dir, 'config.py'));
+  b.review.willReview('t1', { event: 'Stop' });
+  assert.equal(await b.review.onStop('t1', { event: 'Stop', cwd: dir }), null);
+  // Con SuperPowers y escrita por Claude: una vez; si la deja, la segunda vez ya no se insiste.
+  const c = makeReview(t, { enabled: false, extraFor: () => true, checkSecrets: secret });
+  c.tabs.ensure('t1').folder = dir;
+  c.review.turnStarted('t1', 'Cambia config');
+  c.review.toolUsed('t1', 'Edit', path.join(dir, 'config.py'));
+  c.review.willReview('t1', { event: 'Stop' });
+  assert.equal((await c.review.onStop('t1', { event: 'Stop', cwd: dir })).decision, 'block');
+  c.review.toolUsed('t1', 'Edit', path.join(dir, 'config.py'));
+  c.review.willReview('t1', { event: 'Stop', stopHookActive: true });
+  c.tabs.get('t1').superAsked = true;
+  c.review.willReview('t1', { event: 'Stop', stopHookActive: true });
+  assert.equal(await c.review.onStop('t1', { event: 'Stop', cwd: dir }), null);
 });
