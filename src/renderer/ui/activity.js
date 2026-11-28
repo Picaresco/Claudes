@@ -117,13 +117,14 @@ function passRows(pass) {
     })[pass.tests] || ['off', 'Pruebas: no se ha podido saber cómo han ido'],
     ['info', 'Lo pedido, punto por punto: lo repasa en su respuesta'],
     ({
-      ok: ['ok', `Revisión visual: ${pass.captured === 1 ? 'una ronda' : `${pass.captured} rondas`} de capturas`],
-      missing: ['warn', `Ha cambiado ${visual || 'algo que se ve'} sin revisarlo con capturas`],
+      ok: ['ok', `Revisión visual: ${pass.captured === 1 ? '1 captura' : `${pass.captured} capturas`} de pantalla`],
+      missing: ['warn', `Ha cambiado ${visual || 'algo que se ve'} y no lo ha capturado después`],
     })[pass.captures] || ['off', 'Revisión visual: no hacía falta (nada que se vea)'],
     ({
       running: ['run', 'Codex revisa el resultado…'],
       clean: ['ok', 'Codex: sin objeciones'],
       found: ['warn', `Codex: ${pass.found === 1 ? 'un posible problema' : `${pass.found || 0} posibles problemas`}; Claude lo revisa`],
+      nothing: ['off', 'Codex: no había cambios pendientes que revisar'],
       none: ['off', 'Codex no ha podido revisar esta vez'],
     })[pass.codex] || ['off', 'Codex no revisa esta vez'],
   ];

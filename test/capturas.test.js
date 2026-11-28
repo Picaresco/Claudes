@@ -40,6 +40,21 @@ test('se captura una página del proyecto o de localhost, y nada más', (t) => {
   assert.throws(() => resolveTarget('index.html', []), /ya no está abierta/);
 });
 
+test('la carpeta en la que trabaja la sesión solo vale para las rutas relativas, y las rutas de red de fuera ni se abren', (t) => {
+  const dir = project(t);
+  // Relativa a una subcarpeta del proyecto.
+  assert.equal(resolveTarget('demo.htm', [dir], path.join(dir, 'docs')).label, 'demo.htm');
+  // Aunque la sesión trabaje fuera, eso no abre esa carpeta.
+  const outside = tempDir(t);
+  fs.writeFileSync(path.join(outside, 'x.html'), '<p>x</p>');
+  assert.throws(() => resolveTarget(path.join(outside, 'x.html'), [dir], outside), /fuera de la carpeta/);
+  // Una ruta de red de fuera se rechaza sin intentar abrirla (no se queda esperando a la red).
+  const started = Date.now();
+  assert.throws(() => resolveTarget('\\\\servidor-que-no-existe\\carpeta\\x.html', [dir]), /fuera de la carpeta/);
+  assert.equal(allowRequest('file://servidor-que-no-existe/carpeta/x.css', [dir]), false);
+  assert.ok(Date.now() - started < 1000);
+});
+
 test('un enlace dentro del proyecto que apunta fuera no sirve para salirse', (t) => {
   const dir = project(t);
   const outside = tempDir(t);

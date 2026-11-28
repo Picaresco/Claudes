@@ -18,6 +18,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const { resultText, jsonIn, command, createRunner } = require('./haiku');
+const { maskSecrets } = require('./secrets');
 
 const EVERY = 5; // turnos con cambios entre ideas
 const GAP = 24 * 3600 * 1000; // como mucho una al día por proyecto
@@ -68,7 +69,11 @@ function parseIdea(text) {
   const answer = jsonIn(text);
   const raw = answer && answer.idea;
   if (!raw || typeof raw !== 'object') return null;
-  const n = (v) => (Number.isFinite(Number(v)) ? Math.min(5, Math.max(1, Math.round(Number(v)))) : 0);
+  // Una puntuación de 1 a 5, o 0 si falta o no es un número (y entonces la idea no vale).
+  const n = (v) => {
+    const x = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+    return Number.isFinite(x) ? Math.min(5, Math.max(1, Math.round(x))) : 0;
+  };
   const idea = {
     title: clip(raw.titulo, 70),
     kind: raw.tipo === 'visual' ? 'visual' : raw.tipo === 'funcional' ? 'funcional' : '',
@@ -82,7 +87,7 @@ function parseIdea(text) {
     page: typeof raw.pagina === 'string' && raw.pagina.trim() ? clip(raw.pagina, 300) : null,
     width: [390, 1024, 1440].includes(Number(raw.ancho)) ? Number(raw.ancho) : 390,
   };
-  return idea.title && idea.kind && idea.why && idea.todo ? idea : null;
+  return idea.title && idea.kind && idea.why && idea.todo && idea.gain && idea.confidence && idea.effort ? idea : null;
 }
 
 // ¿Merece la pena enseñarla? Con 3 o más rechazos en el último mes, se pide la ganancia máxima.
@@ -103,12 +108,12 @@ function worthIt(idea, history = {}, at = Date.now()) {
 // Lo que se le pide a la sesión con «Pruébalo en una rama aparte».
 function tryPrompt(card, folder) {
   const slug = slugOf(card.title);
-  const copy = `${path.basename(folder)}-idea-${slug}`;
+  const copy = `${slugOf(path.basename(folder))}-idea-${slug}`; // sin espacios ni símbolos
   return [
     `Idea de ClaudHome (SuperPowers) que quiero probar: «${card.title}».`,
     `Por qué: ${card.why}`,
     `Qué hacer: ${card.todo}${card.files.length ? ` (archivos: ${card.files.join(', ')})` : ''}`,
-    `Pruébala sin tocar mi rama actual ni mis cambios: crea una copia de trabajo aparte con «git worktree add ../${copy} -b idea/${slug}» (si el proyecto no usa git, dímelo y no hagas nada) y haz allí el cambio.`,
+    `Pruébala sin tocar mi rama actual ni mis cambios: crea una copia de trabajo aparte con «git worktree add "../${copy}" -b idea/${slug}» (si el proyecto no usa git, dímelo y no hagas nada) y haz allí el cambio.`,
     card.kind === 'visual'
       ? `Después pasa las pruebas en la copia y captura con capturar_pantalla el antes (${card.page || 'la página donde se ve'}, en esta carpeta) y el después (en la copia), a ${card.width} px y a los anchos de siempre.`
       : 'Después pasa las pruebas en la copia y añade las que hagan falta para lo nuevo.',
@@ -150,7 +155,7 @@ function createIdeas({
     if (!tab || !tab.folder || !tab.superpowers) return false;
     const key = keyOf(tab.folder);
     const p = project(tab.folder);
-    if (request) requests.set(key, [...(requests.get(key) || []), request].slice(-5));
+    if (request) requests.set(key, [...(requests.get(key) || []), maskSecrets(clip(request, 400))].slice(-5));
     p.count += 1;
     save();
     const due = p.count >= EVERY && now() - (p.lastAt || 0) >= GAP && !p.card && claim(key, p);
@@ -223,12 +228,16 @@ function createIdeas({
     const p = all[keyOf(tab.folder)];
     if (!p || !p.card || p.card.id !== id) return { ok: false };
     const card = p.card;
-    if (action === 'later') { p.snoozeUntil = now() + SNOOZE; save(); return { ok: true }; }
+    if (now() < (p.snoozeUntil || 0)) return { ok: false }; // aplazada: aún no se enseña
+    const key = keyOf(tab.folder);
+    const clear = () => { for (const [id, other] of tabs.map) if (other && other.folder && keyOf(other.folder) === key) send('ideas:clear', id, card.id); };
+    if (action === 'later') { p.snoozeUntil = now() + SNOOZE; save(); clear(); return { ok: true }; }
     p.card = null;
     p.snoozeUntil = 0;
     if (action === 'no') p.rejected = [...p.rejected, { title: card.title, kind: card.kind, at: now() }].slice(-KEEP);
     if (action === 'try') p.tried = [...p.tried, { title: card.title, kind: card.kind, at: now() }].slice(-KEEP);
     save();
+    clear();
     log(`Ideas: «${card.title}»: ${action === 'try' ? 'se prueba en una rama aparte' : 'no le interesa'}`);
     return action === 'try' ? { ok: true, prompt: tryPrompt(card, tab.folder) } : { ok: true };
   }

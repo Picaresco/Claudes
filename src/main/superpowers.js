@@ -47,6 +47,10 @@ function powerEnv(env = process.env) {
 
 function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
   const on = (tabId) => Boolean((tabs.get(tabId) || {}).superpowers);
+  // Las conversaciones que recibieron el aviso de «activado». Aquí y no en la pestaña: al
+  // reiniciar la sesión (encender o apagar), la app olvida lo de la pestaña, pero la conversación
+  // que se retoma sigue llevando el aviso.
+  const heardOn = new Set();
 
   // Empieza un turno del usuario (no un informe de agente: main.js lo filtra con turns.js).
   function turnStarted(tabId, prompt, request) {
@@ -56,7 +60,10 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     tab.spSkip = said.startsWith(WRAPUP.slice(0, 30));
     tab.spEdited = false;
     tab.spVisual = [];
-    tab.spCaptures = 0;
+    tab.spCaptures = 0; // imágenes capturadas en el turno
+    tab.spSeq = 0; // orden de lo que pasa: ¿hay capturas después del último cambio visual?
+    tab.spVisualSeq = 0;
+    tab.spCaptureSeq = 0;
     tab.superAsked = false;
     tab.spAfter = 0; // cambios después de pedirle la pasada final
     tab.spMeasured = false;
@@ -64,22 +71,30 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     tab.spTurnAt = now();
   }
 
-  // Lo que hace Claude (también sus agentes): qué cambia y si captura la pantalla. Que ha
-  // cambiado algo se apunta también sin SuperPowers, para comparar (power-stats.js); y si cambia
-  // algo después de pedirle la pasada final, es que la pasada ha corregido algo.
+  // Lo que cambia Claude (también sus agentes). Que ha cambiado algo se apunta también sin
+  // SuperPowers, para comparar (power-stats.js); y si cambia algo después de pedirle la pasada
+  // final, es que la pasada ha corregido algo.
   function toolUsed(tabId, toolName, file = null) {
     const tab = tabs.get(tabId);
-    if (!tab) return;
-    const powered = on(tabId);
-    if (toolName === CAPTURE_TOOL) { if (powered) tab.spCaptures = (tab.spCaptures || 0) + 1; return; }
-    if (!EDIT_TOOLS.has(toolName)) return;
+    if (!tab || !EDIT_TOOLS.has(toolName)) return;
     tab.spEdited = true;
     if (tab.superAsked) tab.spAfter = (tab.spAfter || 0) + 1;
-    if (!powered) return;
+    if (!on(tabId)) return;
     if (typeof file === 'string' && VISUAL.test(file)) {
       const name = path.basename(file);
       if (!(tab.spVisual || []).includes(name)) tab.spVisual = [...(tab.spVisual || []), name].slice(0, 12);
+      tab.spSeq = (tab.spSeq || 0) + 1;
+      tab.spVisualSeq = tab.spSeq;
     }
+  }
+
+  // Una captura que ha salido bien (main.js, al devolverla la herramienta): cuántas imágenes.
+  function captured(tabId, images) {
+    const tab = tabs.get(tabId);
+    if (!tab || !(images > 0)) return;
+    tab.spCaptures = (tab.spCaptures || 0) + images;
+    tab.spSeq = (tab.spSeq || 0) + 1;
+    tab.spCaptureSeq = tab.spSeq;
   }
 
   // ¿Toca la pasada final en este Stop? Una vez por turno, si ha cambiado algo.
@@ -87,7 +102,7 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     const tab = tabs.get(tabId);
     if (!tab || !on(tabId) || !tab.spEdited || tab.superAsked || tab.spSkip) return false;
     tab.superAsked = true;
-    tab.spPass = { at: now(), visual: [...(tab.spVisual || [])], told: false };
+    tab.spPass = { at: now(), visual: [...(tab.spVisual || [])], told: false }; // lo visual hasta aquí, para pedírselo
     log(`SuperPowers: pasada final en ${tabId}`);
     return true;
   }
@@ -115,12 +130,15 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     const tab = tabs.get(tabId);
     if (!tab || !tab.spPass || tab.spPass.told) return null;
     tab.spPass.told = true;
-    const visual = tab.spPass.visual || [];
-    const captured = tab.spCaptures || 0; // en todo el turno: también las de antes de la pasada
+    // Lo visual de todo el turno (también lo cambiado en la pasada), y bien solo si hay capturas
+    // después del último cambio visual (una de antes no enseña cómo ha quedado).
+    const visual = [...(tab.spVisual || [])];
+    const images = tab.spCaptures || 0;
+    const after = (tab.spCaptureSeq || 0) > (tab.spVisualSeq || 0);
     return {
       tests,
-      captures: captured ? 'ok' : visual.length ? 'missing' : 'skip',
-      captured,
+      captures: visual.length ? (after ? 'ok' : 'missing') : images ? 'ok' : 'skip',
+      captured: images,
       visual,
       codex: Boolean(codex),
       seconds: Math.max(0, Math.round((now() - tab.spPass.at) / 1000)),
@@ -150,7 +168,6 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     const tab = tabs.ensure(tabId);
     if (event && typeof event.prompt === 'string' && event.prompt.startsWith(WRAPUP.slice(0, 30))) return null;
     const sessionId = (event && event.sessionId) || null;
-    const told = tab.spOnSessions || (tab.spOnSessions = []);
     tab.spPrompts = (tab.spPrompts || 0) + 1;
     const stale = tab.spTold === true && ((sessionId && tab.spSession && sessionId !== tab.spSession) || tab.spPrompts > NOTE_EVERY);
     if (on(tabId)) {
@@ -158,20 +175,23 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
       tab.spTold = true;
       tab.spSession = sessionId || tab.spSession || null;
       tab.spPrompts = 0;
-      if (sessionId && !told.includes(sessionId)) tab.spOnSessions = [...told, sessionId].slice(-20);
+      if (sessionId) {
+        heardOn.add(sessionId);
+        if (heardOn.size > 200) heardOn.delete(heardOn.values().next().value);
+      }
       log(`SuperPowers: se le dice a la sesión ${tabId} cómo trabajar`);
       return NOTE_ON;
     }
-    const heard = tab.spTold === true || Boolean(sessionId && told.includes(sessionId));
+    const heard = tab.spTold === true || Boolean(sessionId && heardOn.has(sessionId));
     tab.spTold = false;
     if (!heard) return null;
-    tab.spOnSessions = told.filter((id) => id !== sessionId);
+    if (sessionId) heardOn.delete(sessionId);
     return NOTE_OFF;
   }
   const sessionStarted = (tabId) => { tabs.ensure(tabId).spTold = undefined; };
   const compacted = (tabId) => { const tab = tabs.get(tabId); if (tab && tab.spTold === true) tab.spTold = undefined; };
 
-  return { on, turnStarted, toolUsed, willAsk, answer, summary, turnEnded, note, sessionStarted, compacted, CAPTURE_TOOL };
+  return { on, turnStarted, toolUsed, captured, willAsk, answer, summary, turnEnded, note, sessionStarted, compacted, CAPTURE_TOOL };
 }
 
 module.exports = { createSuperpowers, powerEffort, powerEnv, NOTE_ON, NOTE_OFF, VISUAL };

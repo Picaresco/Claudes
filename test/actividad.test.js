@@ -478,15 +478,21 @@ test('SuperPowers: el paso de la pasada final, su tarjeta con lo visto y la lín
   ev('Stop', { reviewing: true, superPass: { tests: 'ok', captures: 'ok', captured: 3, visual: ['estilo.css'], codex: true, seconds: 40 }, narr: { last: 'Pasada final: …' } });
   let card = last().entries.find((e) => e.kind === 'pass');
   assert.equal(card.pass.codex, 'running');
-  assert.match(card.text, /pruebas pasadas · 3 rondas de capturas · Codex revisa/);
+  assert.match(card.text, /pruebas pasadas · 3 capturas · Codex revisa/);
   narrator.review('t1', { state: 'found', count: 2 });
   card = last().entries.find((e) => e.kind === 'pass');
   assert.equal(card.pass.codex, 'found');
   assert.equal(card.pass.found, 2);
   assert.match(card.text, /Codex: 2 posibles problemas/);
+  // «Sin cambios que revisar» no es «sin objeciones».
+  ev('UserPromptSubmit', { request: 'Y esto' });
+  ev('Stop', { reviewing: true, superPass: { tests: 'ok', captures: 'skip', captured: 0, visual: [], codex: true, seconds: 5 }, narr: { last: 'Hecho.' } });
+  narrator.review('t1', { state: 'nothing' });
+  assert.equal(last().entries.filter((e) => e.kind === 'pass').pop().pass.codex, 'nothing');
   // Un turno nuevo no toca la tarjeta del anterior.
   ev('UserPromptSubmit', { request: 'Otra cosa' });
   ev('Stop', { reviewing: true, narr: { last: 'Hecho lo otro.' } });
   narrator.review('t1', { state: 'clean' });
   assert.equal(last().entries.find((e) => e.kind === 'pass').pass.codex, 'found');
+  assert.equal(last().entries.filter((e) => e.kind === 'pass').pop().pass.codex, 'nothing');
 });

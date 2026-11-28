@@ -10,6 +10,8 @@ import { views, toast } from './state.js';
 import { queueFit, focusTerminal } from './views.js';
 
 const cards = new Map(); // pestaña → idea esperando respuesta
+const asked = new Map(); // pestaña → cuándo se preguntó por última vez (una aplazada vuelve a salir)
+const ASK_EVERY = 30 * 60 * 1000;
 const SPARK = '<svg aria-hidden="true" width="17" height="17" viewBox="0 0 16 16"><path d="M8 1.5c.4 2.9 1.7 4.2 4.6 4.6-2.9.4-4.2 1.7-4.6 4.6-.4-2.9-1.7-4.2-4.6-4.6C6.3 5.7 7.6 4.4 8 1.5zM12.6 10.3c.2 1.3.8 1.9 2.1 2.1-1.3.2-1.9.8-2.1 2.1-.2-1.3-.8-1.9-2.1-2.1 1.3-.2 1.9-.8 2.1-2.1z" fill="currentColor"/></svg>';
 const level = (n) => (n <= 2 ? 'bajo' : n === 3 ? 'medio' : 'alto');
 
@@ -130,13 +132,19 @@ export function setIdea(tabId, card) {
   if (view) render(view);
 }
 
-// Al terminar un turno (session-events.js) o al abrir la pestaña: la que estuviera esperando.
+// Al cambiar de estado (status.js): la que estuviera esperando a que Claude terminase. Si no hay
+// ninguna, cada media hora se vuelve a preguntar (una aplazada con «Más tarde» vuelve al día siguiente).
 export function showPendingIdea(view) {
-  if (view && cards.has(view.tab.id)) render(view);
+  if (!view) return;
+  if (cards.has(view.tab.id)) { render(view); return; }
+  if (view.tab.superpowers && view.started && !BUSY.includes(view.status) && Date.now() - (asked.get(view.tab.id) || 0) > ASK_EVERY) {
+    loadIdea(view.tab.id);
+  }
 }
 
 // Al abrir una pestaña con SuperPowers: si su proyecto tiene una idea esperando.
 export async function loadIdea(tabId) {
+  asked.set(tabId, Date.now());
   try { setIdea(tabId, await api.ideasGet(tabId)); } catch { /* sin idea */ }
 }
 
@@ -148,4 +156,6 @@ export function forgetIdea(tabId) {
 
 export function wireIdeas() {
   api.onIdea((tabId, card) => setIdea(tabId, card));
+  // Respondida (o aplazada) desde otra pestaña del mismo proyecto: aquí también se quita.
+  api.onIdeaClear((tabId, id) => { if (cards.has(tabId) && cards.get(tabId).id === id) forgetIdea(tabId); });
 }

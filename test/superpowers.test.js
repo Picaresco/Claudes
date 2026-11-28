@@ -96,11 +96,21 @@ test('el resumen sale de lo visto (pruebas, capturas, Codex) y una sola vez', ()
   sp.turnStarted('t1', 'Rediseña el pie');
   sp.toolUsed('t1', 'Edit', 'pie.vue');
   sp.willAsk('t1');
-  sp.toolUsed('t1', sp.CAPTURE_TOOL);
-  sp.toolUsed('t1', sp.CAPTURE_TOOL);
+  sp.captured('t1', 3); // una llamada a capturar_pantalla con sus tres anchos
   pass = sp.summary('t1', { tests: 'none' });
   assert.equal(pass.captures, 'ok');
-  assert.equal(pass.captured, 2);
+  assert.equal(pass.captured, 3);
+
+  // Una captura de antes del cambio visual no enseña cómo ha quedado; y lo visual que se cambia
+  // en la propia pasada también cuenta.
+  sp.turnStarted('t1', 'Ajusta el menú');
+  sp.captured('t1', 3);
+  sp.toolUsed('t1', 'Edit', 'menu.css');
+  sp.willAsk('t1');
+  sp.toolUsed('t1', 'Edit', 'menu.html');
+  pass = sp.summary('t1', { tests: 'ok' });
+  assert.equal(pass.captures, 'missing');
+  assert.deepEqual(pass.visual, ['menu.css', 'menu.html']);
 
   sp.turnStarted('t1', 'Arregla el cálculo');
   sp.toolUsed('t1', 'Edit', 'calc.js');
@@ -124,6 +134,15 @@ test('el aviso de cómo trabajar: una vez, otra tras /clear o al resumirse, y «
   sp.sessionStarted('t1');
   assert.equal(say('s2'), NOTE_OFF);
   assert.equal(say('s2'), null);
+  // Al reiniciar, la app olvida lo de la pestaña (tabs.forget), pero la conversación retomada
+  // sigue llevando el aviso de «activado»: se le dice que se ha apagado.
+  tabs.get('t1').superpowers = true;
+  sp.sessionStarted('t1');
+  assert.equal(say('s3'), NOTE_ON);
+  tabs.forget('t1');
+  tabs.ensure('t1').superpowers = false;
+  sp.sessionStarted('t1');
+  assert.equal(say('s3'), NOTE_OFF);
   // Una conversación que nunca lo oyó no necesita que se le diga que está apagado.
   sp.sessionStarted('t1');
   assert.equal(say('s9'), null);

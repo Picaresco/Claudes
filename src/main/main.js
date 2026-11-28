@@ -32,11 +32,11 @@ const { createWorkflow } = require('./workflow');
 const { createPlanTracker, PLAN_NOTE } = require('./plan');
 const { isAgentReport } = require('./turns');
 const { createSuperpowers, powerEffort, powerEnv } = require('./superpowers');
-const { createCapture, CAPTURE_TOOL, worktreeRoots } = require('./capture');
+const { createCapture, CAPTURE_TOOL, worktreeRoots, tabDir, inside } = require('./capture');
 const { createIdeas } = require('./ideas');
 const { createPowerStats } = require('./power-stats');
 const digest = require('./workflow-digest');
-const { findGit } = require('./secrets');
+const { findGit, maskSecrets } = require('./secrets');
 const { jsonIn } = require('./haiku');
 const { readRule } = require('./context');
 const { compactTarget, compactEnv } = require('./project-card');
@@ -72,6 +72,15 @@ let capture = null; // capturas de pantalla para la revisión visual de SuperPow
 let ideas = null; // ideas para el proyecto de SuperPowers (ideas.js)
 let powerStats = null; // lo que aporta SuperPowers en cada proyecto (power-stats.js)
 const capturesDir = () => path.join(app.getPath('userData'), 'capturas');
+// Una tarea que ha cambiado algo termina: se mide con o sin SuperPowers (power-stats.js).
+function measureTurn(tabId) {
+  if (!superpowers || !powerStats) return;
+  const ended = superpowers.turnEnded(tabId, testcheck.verdict(tabId));
+  const folder = (tabs.get(tabId) || {}).folder;
+  if (ended && folder) powerStats.record(folder, ended);
+}
+// Lo que dice la revisión de Codex cuando ya no hay nada más (si encuentra algo, Claude sigue).
+const REVIEW_FINAL = new Set(['clean', 'nothing', 'skipped', 'secret', 'error', 'aborted', 'blocked']);
 let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
 let optimizeChecker = null; // la segunda mirada de Haiku (optimize-check.js)
@@ -215,7 +224,7 @@ async function createPty(o) {
   const allow = [...ctx.allow];
   if (powers) {
     allow.push(`mcp__${CODEX_SERVER}__${CAPTURE_TOOL.name}`);
-    const rule = readRule(capturesDir(), true);
+    const rule = readRule(tabDir(capturesDir(), o.id), true); // solo las de esta pestaña
     if (rule) allow.push(rule);
   }
   const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, allow))];
@@ -322,9 +331,12 @@ if (!app.requestSingleInstanceLock()) {
       // en orden con los avisos de los hooks, que el panel también procesa con setImmediate.
       send: (channel, ...args) => {
         if (channel === 'review:result' && narrator) setImmediate(() => narrator.review(args[0], args[1]));
-        // Lo que encuentra Codex en las tareas con SuperPowers, para medir lo que aporta.
-        const reviewed = channel === 'review:result' && args[1] && args[1].state === 'found' ? tabs.get(args[0]) : null;
-        if (reviewed && reviewed.superpowers && powerStats) powerStats.codexFound(reviewed.folder, Number(args[1].count) || 0);
+        // Lo que encuentra Codex en las tareas con SuperPowers, para medir lo que aporta; y si
+        // no encuentra nada (o no revisa), la tarea termina ahí y se mide.
+        const result = channel === 'review:result' && args[1] && typeof args[1].state === 'string' ? args[1] : null;
+        const reviewed = result ? tabs.get(args[0]) : null;
+        if (reviewed && result.state === 'found' && reviewed.superpowers && powerStats) powerStats.codexFound(reviewed.folder, Number(result.count) || 0);
+        if (reviewed && REVIEW_FINAL.has(result.state) && !(result.state === 'blocked' && result.op !== 'review')) measureTurn(args[0]);
         send(channel, ...args);
       },
       detailedLogs: () => logger.enabled, // la salida completa, solo con la depuración activada
@@ -340,6 +352,9 @@ if (!app.requestSingleInstanceLock()) {
     superpowers = createSuperpowers({ tabs, log: appLog });
     powerStats = createPowerStats({ store });
     capture = createCapture({ electron: { BrowserWindow, session }, dir: capturesDir, log: appLog });
+    // Las capturas se borran a los dos días aunque no se haga ninguna más: al abrir y cada 6 horas.
+    setTimeout(() => capture.prune(), 30 * 1000).unref();
+    setInterval(() => capture.prune(), 6 * 3600 * 1000).unref();
     // Ideas para el proyecto: Sonnet aparte propone y, si puede, Codex da su visto bueno.
     ideas = createIdeas({
       store, tabs, send, log: appLog,
@@ -352,12 +367,12 @@ if (!app.requestSingleInstanceLock()) {
         if (!codexState.advisorUsable() || !(await codex.chatgptLogin())) return null;
         const cwd = path.join(app.getPath('temp'), 'Claudes-haiku');
         fs.mkdirSync(cwd, { recursive: true });
-        if (netlog) netlog.record({ tabId, kind: 'idea', target: folder, detail: `${review.MODEL} · ¿merece la pena la idea «${idea.title}»?`, dest: 'OpenAI (Codex)', external: true });
+        if (netlog) netlog.record({ tabId, kind: 'idea', target: `${folder} (visto bueno de Codex)`, detail: `${review.MODEL} · ¿merece la pena la idea «${idea.title}»?`, dest: 'OpenAI (Codex)', external: true });
         const result = await codex.askCodex({
           cwd, model: review.MODEL, effort: 'low', timeout: 3 * 60 * 1000,
           prompt: [
             `Otro asistente propone esta mejora para el proyecto «${path.basename(folder)}». Mira con criterio, en el material de abajo, si el problema existe de verdad y si la mejora merece la pena ahora para quien usa el proyecto.`,
-            `Idea: ${idea.title}\nPor qué: ${idea.why}\nQué hacer: ${idea.todo}\nArchivos: ${idea.files.join(', ') || '(no dice)'}`,
+            maskSecrets(`Idea: ${idea.title}\nPor qué: ${idea.why}\nQué hacer: ${idea.todo}\nArchivos: ${idea.files.join(', ') || '(no dice)'}`),
             `Material del proyecto (recortado; lo que parecía una clave va tapado):\n${text}`,
             'Responde solo con este JSON: {"coincide": true o false, "motivo": "una frase en español"}',
           ].join('\n\n'),
@@ -448,10 +463,9 @@ if (!app.requestSingleInstanceLock()) {
         // El resumen de la pasada (panel «Actividad»): cuando ya no queda nada que pedirle.
         if (!event.superAsk && !event.testsAsk) {
           const verdict = testcheck.verdict(tabId);
-          // Para medir lo que aporta SuperPowers: cada tarea que ha cambiado algo, con o sin él.
-          const ended = superpowers.turnEnded(tabId, verdict);
-          const folder = (tabs.get(tabId) || {}).folder;
-          if (ended && folder) powerStats.record(folder, ended);
+          // Para medir lo que aporta SuperPowers: cada tarea que ha cambiado algo, con o sin él,
+          // al terminar de verdad (si Codex va a revisar, al saber lo que dice).
+          if (!event.reviewing) measureTurn(tabId);
           const pass = superpowers.summary(tabId, { tests: verdict, codex: event.reviewing });
           if (pass) {
             event.superPass = pass;
@@ -560,11 +574,15 @@ if (!app.requestSingleInstanceLock()) {
       callTool: (tabId, name, args, signal) => {
         if (name === CAPTURE_TOOL.name) {
           const tab = tabs.get(tabId) || {};
-          // Las páginas de la carpeta en la que trabaja (puede ser otra copia del repositorio) y la del proyecto.
-          // …y sus copias de trabajo de git (las ideas se prueban en una).
-          return worktreeRoots(tab.folder, findGit()).then((copies) => {
-            const roots = [tab.cwd, tab.folder, ...copies].filter(Boolean);
-            return capture.take(tabId, args, { roots, signal });
+          // Las páginas de la carpeta del proyecto y de sus copias de trabajo de git (las ideas se
+          // prueban en una). La carpeta en la que trabaja la sesión solo sirve para las rutas
+          // relativas, y solo si es una de ellas: no abre otras.
+          return worktreeRoots(tab.folder, findGit()).then(async (copies) => {
+            const roots = [tab.folder, ...copies].filter(Boolean);
+            const base = tab.cwd && inside(tab.cwd, roots) ? tab.cwd : tab.folder;
+            const shot = await capture.take(tabId, args, { roots, base, signal });
+            superpowers.captured(tabId, shot.images); // la pasada final sabe que ha mirado la pantalla
+            return shot;
           });
         }
         return name === codex.OPINION_TOOL.name ? review.secondOpinion(tabId, args, signal) : codexState.drawImage(tabId, args);

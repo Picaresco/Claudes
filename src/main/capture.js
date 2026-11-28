@@ -19,6 +19,8 @@ const MAX_WIDTH = 1920;
 const HEIGHT = 900; // alto de la «pantalla»
 const MAX_SCREENS = 3; // página completa: hasta tres pantallas de alto
 const LOAD_MS = 20000; // lo que puede tardar en cargar cada anchura
+const SHOT_MS = 45000; // y cada anchura entera: si la página se cuelga, se cierra y se sigue
+const MEASURE_MS = 5000; // medir la página
 const PAGE_FILE = /\.(html?|xhtml|svg)$/i;
 const KEEP_MS = 2 * 24 * 3600 * 1000; // las capturas se borran a los dos días
 
@@ -73,13 +75,19 @@ function real(file) {
     dir = up;
   }
 }
-// ¿Está dentro de alguna de las carpetas (también tras resolver enlaces)?
+const within = (file, root) => {
+  const rel = path.relative(root, file);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+// ¿Está dentro de alguna de las carpetas? Primero sin tocar el disco (una ruta de fuera, también
+// de red como \\servidor\carpeta, no se llega a abrir) y después con la ruta real (que un enlace
+// de dentro no lleve fuera).
 function inside(file, roots) {
-  const target = real(file);
-  return roots.some((root) => {
-    const rel = path.relative(real(root), target);
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-  });
+  const full = path.resolve(file);
+  const bases = roots.flatMap((root) => [path.resolve(root), real(root)]);
+  if (!bases.some((base) => within(full, base))) return false;
+  const target = real(full);
+  return roots.some((root) => within(target, real(root)));
 }
 
 // ¿Se deja cargar esta dirección? Archivos de las carpetas, este equipo y datos en línea.
@@ -107,8 +115,9 @@ function allowRequest(url, roots) {
 }
 
 // Qué se va a capturar: { url, label }. Lanza un error con un mensaje para Claude si no se puede.
-// roots[0]: la carpeta de trabajo de la sesión (para las rutas relativas).
-function resolveTarget(objetivo, roots) {
+// roots: las carpetas del proyecto (y sus copias de trabajo de git); base: desde dónde se leen las
+// rutas relativas (la carpeta en la que trabaja la sesión, si es una de ellas).
+function resolveTarget(objetivo, roots, base = roots[0]) {
   const said = typeof objetivo === 'string' ? objetivo.trim() : '';
   if (!said) throw new Error('Falta «objetivo»: la ruta de un .html del proyecto o una dirección de localhost.');
   if (!roots.length) throw new Error('Esta sesión ya no está abierta en ClaudHome.');
@@ -126,13 +135,14 @@ function resolveTarget(objetivo, roots) {
   if (/^file:/i.test(text)) {
     try { file = fileURLToPath(text); } catch { throw new Error(`«${said}» no es una ruta de archivo válida.`); }
   }
-  file = path.resolve(roots[0], file);
+  file = path.resolve(base || roots[0], file);
+  const outside = 'Ese archivo está fuera de la carpeta del proyecto: solo se capturan páginas del proyecto.';
+  if (!PAGE_FILE.test(file)) throw new Error('Solo se capturan páginas .html, .htm o .svg (para una app con servidor, usa su dirección de localhost).');
+  if (!inside(file, roots)) throw new Error(outside); // antes de abrir nada (inside no toca lo de fuera)
   let stat = null;
   try { stat = fs.statSync(file); } catch { /* no existe */ }
   if (!stat || !stat.isFile()) throw new Error(`No encuentro el archivo ${file}.`);
-  if (!PAGE_FILE.test(file)) throw new Error('Solo se capturan páginas .html, .htm o .svg (para una app con servidor, usa su dirección de localhost).');
-  if (!inside(file, roots)) throw new Error('Ese archivo está fuera de la carpeta del proyecto: solo se capturan páginas del proyecto.');
-  return { url: pathToFileURL(real(file)).href, label: path.relative(roots[0], file) || path.basename(file) };
+  return { url: pathToFileURL(real(file)).href, label: path.relative(base || roots[0], file) || path.basename(file) };
 }
 
 // Los anchos pedidos: enteros entre 320 y 1920, sin repetir, como mucho 3.
@@ -206,13 +216,14 @@ function createCapture({ electron, dir, log = () => {} }) {
   // pruebas de navegador): una ventana no puede ser más grande que la pantalla del equipo, así que
   // con ella sola una captura de 1440 px saldría más estrecha y estirada. Por debajo de 600 px, como
   // un móvil (con su etiqueta viewport). La imagen sale a escala 1, al píxel pedido.
-  async function shoot(ses, target, roots, width, { full, extra, signal }) {
+  async function shoot(ses, target, roots, width, { full, extra, signal, holder }) {
     const win = new electron.BrowserWindow({
       // Fuera de pantalla: sin ventana a la vista, pero dibujando (una ventana oculta normal no
       // dibuja y la captura se quedaría esperando).
       show: false, width: Math.min(width, 1280), height: 800,
       webPreferences: { offscreen: true, session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, backgroundThrottling: false },
     });
+    holder.win = win; // para cerrarla desde fuera si se pasa de tiempo o se cancela
     const errors = [];
     const contents = win.webContents;
     const dbg = contents.debugger;
@@ -241,14 +252,18 @@ function createCapture({ electron, dir, log = () => {} }) {
         if (!/ERR_ABORTED/.test(why)) throw new Error(`No se ha podido abrir «${target.label}»: ${why.slice(0, 200)}`, { cause: err });
       } finally { clearTimeout(timer); }
       await waitMs(extra, signal);
-      const measure = await contents.executeJavaScript(
-        '({ h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0), w: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0) })',
-        true,
-      ).catch(() => ({ h: HEIGHT, w: width }));
+      const fallback = { h: HEIGHT, w: width };
+      const measure = await Promise.race([
+        contents.executeJavaScript(
+          '({ h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0), w: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0) })',
+          true,
+        ).catch(() => fallback),
+        new Promise((resolve) => { setTimeout(resolve, MEASURE_MS, fallback); }),
+      ]);
       const height = full ? Math.min(HEIGHT * MAX_SCREENS, Math.max(HEIGHT, Math.ceil(measure.h))) : HEIGHT;
       const shot = await cdp(dbg, 'Page.captureScreenshot', {
         format: 'png', captureBeyondViewport: height > HEIGHT, clip: { x: 0, y: 0, width, height, scale: 1 },
-      });
+      }).catch((err) => { throw new Error(`«${target.label}» no responde a ${width} px (la página parece colgada) y no se ha podido capturar.`, { cause: err }); });
       const png = Buffer.from(shot.data, 'base64');
       // Desborde: lo que mide el contenido más allá del ancho pedido (en modo móvil, el ancho
       // interno de la ventana crece con el contenido y no sirve para medirlo).
@@ -259,16 +274,34 @@ function createCapture({ electron, dir, log = () => {} }) {
     }
   }
 
-  // La captura de una pestaña. roots: [carpeta de trabajo, carpeta de la pestaña]. Devuelve el
-  // resultado de la herramienta: el texto y las imágenes.
-  async function take(tabId, args, { roots, signal } = {}) {
-    const target = resolveTarget(args && args.objetivo, roots || []);
+  // Una anchura con su plazo: si la página se cuelga o se cancela, se cierra su ventana y se
+  // sigue (las demás capturas no se quedan esperando detrás).
+  function shootWithin(ses, target, roots, width, opts) {
+    const holder = {};
+    const close = () => { if (holder.win && !holder.win.isDestroyed()) holder.win.destroy(); };
+    return new Promise((resolve, reject) => {
+      const fail = (err) => { clearTimeout(timer); close(); reject(err); };
+      const timer = setTimeout(() => fail(new Error(`«${target.label}» no ha respondido a tiempo (${SHOT_MS / 1000} s): la captura se ha cancelado.`)), SHOT_MS);
+      const onAbort = () => fail(new Error('Se ha cancelado la captura.'));
+      if (opts.signal) opts.signal.addEventListener('abort', onAbort, { once: true });
+      shoot(ses, target, roots, width, { ...opts, holder }).then(
+        (shot) => { clearTimeout(timer); resolve(shot); },
+        (err) => fail(err),
+      ).finally(() => { if (opts.signal) opts.signal.removeEventListener('abort', onAbort); });
+    });
+  }
+
+  // La captura de una pestaña. roots: las carpetas del proyecto y sus copias de trabajo de git;
+  // base: desde dónde se leen las rutas relativas. Devuelve el resultado de la herramienta (el
+  // texto y las imágenes) y, para ClaudHome, las rutas y cuántas imágenes son.
+  async function take(tabId, args, { roots, base = null, signal } = {}) {
+    const target = resolveTarget(args && args.objetivo, roots || [], base || (roots || [])[0]);
     const widths = widthsFrom(args && args.anchos);
     const full = Boolean(args && args.pagina_completa === true);
     const extra = Math.min(5000, Math.max(0, Math.round(Number(args && args.esperar_ms)) || 400));
     const run = async () => {
       prune();
-      const outDir = path.join(dir(), String(tabId).replace(/[^\w-]/g, '_'));
+      const outDir = tabDir(dir(), tabId);
       fs.mkdirSync(outDir, { recursive: true });
       const ses = electron.session.fromPartition(`capturas-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`); // en memoria
       const blocked = new Set();
@@ -284,7 +317,7 @@ function createCapture({ electron, dir, log = () => {} }) {
       try {
         for (const width of widths) {
           if (signal && signal.aborted) throw new Error('Se ha cancelado la captura.');
-          const shot = await shoot(ses, target, roots, width, { full, extra, signal });
+          const shot = await shootWithin(ses, target, roots, width, { full, extra, signal });
           shot.file = path.join(outDir, `${when}-${width}.png`);
           fs.writeFileSync(shot.file, shot.png);
           shots.push(shot);
@@ -300,6 +333,7 @@ function createCapture({ electron, dir, log = () => {} }) {
           ...shots.map((s) => ({ type: 'image', data: s.png.toString('base64'), mimeType: 'image/png' })),
         ],
         files: shots.map((s) => s.file),
+        images: shots.length,
       };
     };
     const next = chain.then(run, run);
@@ -307,8 +341,11 @@ function createCapture({ electron, dir, log = () => {} }) {
     return next;
   }
 
-  return { take };
+  return { take, prune };
 }
+
+// La carpeta de las capturas de una pestaña (cada pestaña solo puede volver a leer las suyas).
+const tabDir = (base, tabId) => path.join(base, String(tabId).replace(/[^\w-]/g, '_'));
 
 // Las copias de trabajo de git del proyecto (git worktree): las ideas de SuperPowers se prueban
 // en una, junto a la carpeta del proyecto, y sus páginas también se pueden capturar. git: su ruta.
@@ -322,4 +359,4 @@ function worktreeRoots(folder, git) {
   });
 }
 
-module.exports = { worktreeRoots, createCapture, CAPTURE_TOOL, resolveTarget, allowRequest, widthsFrom, report, DEFAULT_WIDTHS };
+module.exports = { worktreeRoots, tabDir, inside, createCapture, CAPTURE_TOOL, resolveTarget, allowRequest, widthsFrom, report, DEFAULT_WIDTHS };

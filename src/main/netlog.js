@@ -34,6 +34,7 @@ const KIND_LABEL = {
   imagen: 'Imagen con Codex',
   workflow: 'Mapa del proyecto (Workflow)',
   idea: 'Ideas para el proyecto (SuperPowers)',
+  captura: 'Capturas de pantalla (SuperPowers)',
 };
 
 // ── Direcciones locales o de internet ────────────────────────────────
@@ -245,6 +246,11 @@ class NetLog {
     } else if (tool.startsWith('mcp__')) {
       const [, server = '', name = ''] = /^mcp__(.+?)__(.+)$/.exec(tool) || [];
       if (!server) return;
+      // Las capturas de ClaudHome: las imágenes vuelven a Claude y van con la conversación.
+      if (server === OWN_MCP && name === 'capturar_pantalla') {
+        this.record({ ...base, kind: 'captura', target: input.summary || 'capturar_pantalla', detail: 'Capturas de pantalla de una página del proyecto, para que Claude la revise', dest: 'Anthropic', external: false });
+        return;
+      }
       if (server === OWN_MCP) { this.addSize(tabId, size); return; } // el de ClaudHome ya anotó adónde va (OpenAI)
       const host = server.startsWith('claude_ai_') ? 'claude.ai' : this.remoteMcp(this.cwdOf(tabId)).get(server) || null;
       this.record({ ...base, kind: 'mcp', target: `${server} · ${name}`, detail: input.summary || '', dest: host ? `${host} y Anthropic` : 'Anthropic', external: Boolean(host) });

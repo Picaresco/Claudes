@@ -43,6 +43,15 @@ function make({ reply = answer(IDEA), codex = null, superpowers = true } = {}) {
   return { ideas, tabs, saved, sent, asked, records, turns, tick: (ms) => { clock += ms; } };
 }
 
+test('lo pedido que se le pasa al modelo de las ideas va con las claves tapadas', async () => {
+  const { ideas, asked } = make();
+  const key = `sk-ant-${'Ab3'.repeat(12)}`; // montada al ejecutar: este archivo no lleva una clave escrita
+  for (let i = 0; i < EVERY; i += 1) ideas.turnDone('t1', `Conecta la API con la clave ${key}`);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(asked.length, 1);
+  assert.doesNotMatch(asked[0], new RegExp(key));
+});
+
 test('se piensa una idea tras 5 turnos con cambios, como mucho una al día y solo con SuperPowers', async () => {
   const off = make({ superpowers: false });
   await off.turns(EVERY);
@@ -97,10 +106,14 @@ test('las tres respuestas: más tarde (un día), no me interesa y pruébalo en u
   assert.equal(ideas.act('t1', 'otra', 'later').ok, false); // otra idea: nada
   assert.equal(ideas.act('t1', card.id, 'later').ok, true);
   assert.equal(ideas.get('t1'), null);
+  assert.deepEqual(sent.at(-1), ['ideas:clear', 't1', card.id]); // se quita en todas las pestañas del proyecto
+  assert.equal(ideas.act('t1', card.id, 'try').ok, false); // aplazada: ni desde otra pestaña
   tick(24 * 3600 * 1000 + 1);
   assert.equal(ideas.get('t1').id, card.id); // vuelve al día siguiente
   const tried = ideas.act('t1', card.id, 'try');
-  assert.match(tried.prompt, /git worktree add \.\.\/web-clinica-idea-la-lista-de-citas-no-se-puede-usar-en-el -b idea\/la-lista-de-citas-no-se-puede-usar-en-el»/);
+  assert.match(tried.prompt, /git worktree add "\.\.\/web-clinica-idea-la-lista-de-citas-no-se-puede-usar-en-el" -b idea\/la-lista-de-citas-no-se-puede-usar-en-el»/);
+  // Una carpeta con espacios no rompe la orden.
+  assert.match(tryPrompt({ ...card, files: [] }, 'C:\\Proyectos\\Mi Web'), /git worktree add "\.\.\/mi-web-idea-/);
   assert.match(tried.prompt, /capturar_pantalla/);
   assert.equal(ideas.get('t1'), null);
   assert.equal(saved.ideas[Object.keys(saved.ideas)[0]].tried[0].title, IDEA.titulo);
@@ -123,6 +136,10 @@ test('el filtro aprende: con 3 rechazos en un mes pide la ganancia máxima y nad
 test('la respuesta del modelo se limpia y lo que falta la invalida', () => {
   assert.equal(parseIdea('no hay JSON'), null);
   assert.equal(parseIdea('{"idea": {"titulo": "x"}}'), null);
+  // Sin esfuerzo (o sin un número) no vale: no se puede decir que cueste poco.
+  assert.equal(parseIdea(JSON.stringify({ idea: { ...IDEA, esfuerzo: null } })), null);
+  assert.equal(parseIdea(JSON.stringify({ idea: { ...IDEA, esfuerzo: 'poco' } })), null);
+  assert.equal(parseIdea(JSON.stringify({ idea: { ...IDEA, confianza: undefined } })), null);
   const idea = parseIdea(JSON.stringify({ idea: { ...IDEA, ganancia: 9, ancho: 777, riesgo: 'raro', archivos: ['a', 3, ''] } }));
   assert.equal(idea.gain, 5);
   assert.equal(idea.width, 390);
