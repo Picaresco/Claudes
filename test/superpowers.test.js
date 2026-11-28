@@ -32,12 +32,33 @@ test('la pasada final se pide una vez por turno, solo si ha cambiado algo y nunc
   assert.equal(sp.willAsk('t1'), false); // el turno de cerrar la sesión no tiene pasada
 });
 
-test('apagado no pide nada ni cuenta nada', () => {
+test('apagado no pide nada ni apunta lo visual; solo que ha cambiado algo, para comparar', () => {
   const { sp, tabs } = make({ on: false });
   sp.turnStarted('t1', 'Cambia el color');
   sp.toolUsed('t1', 'Edit', 'estilo.css');
+  sp.toolUsed('t1', sp.CAPTURE_TOOL);
   assert.equal(sp.willAsk('t1'), false);
-  assert.equal(tabs.get('t1').spEdited, false);
+  assert.equal(tabs.get('t1').spEdited, true);
+  assert.deepEqual(tabs.get('t1').spVisual, []);
+  assert.equal(tabs.get('t1').spCaptures, 0);
+});
+
+test('la medida de cada tarea: con o sin SuperPowers, lo que tarda y si la pasada corrigió algo', () => {
+  const { sp, tabs, tick } = make();
+  sp.turnStarted('t1', 'Explica el código');
+  assert.equal(sp.turnEnded('t1', 'none'), null); // sin cambios no cuenta
+  sp.turnStarted('t1', 'Arregla el cálculo');
+  sp.toolUsed('t1', 'Edit', 'calc.js');
+  sp.willAsk('t1');
+  sp.toolUsed('t1', 'Edit', 'calc.js'); // la pasada encuentra algo y lo corrige
+  tick(90_000);
+  assert.deepEqual(sp.turnEnded('t1', 'ok'), { mode: 'with', seconds: 90, fixed: true, tests: 'ok' });
+  assert.equal(sp.turnEnded('t1', 'ok'), null); // una vez por turno
+  tabs.get('t1').superpowers = false;
+  sp.turnStarted('t1', 'Otra cosa');
+  sp.toolUsed('t1', 'Write', 'b.js');
+  tick(30_000);
+  assert.deepEqual(sp.turnEnded('t1', 'pending'), { mode: 'without', seconds: 30, fixed: false, tests: 'pending' });
 });
 
 test('la respuesta lleva lo pedido y, si ha cambiado algo visual, las capturas con sus archivos', () => {
@@ -164,4 +185,20 @@ test('al arrancar: esfuerzo alto como mínimo y hasta dos agentes, salvo lo que 
   assert.equal(powerEffort('raro', 'medium'), 'high');
   assert.deepEqual(powerEnv({}), { CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: '2', CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: '1' });
   assert.deepEqual(powerEnv({ CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: '5' }), { CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: '1' });
+});
+
+test('lo que aporta en el proyecto: con y sin, medias, correcciones, pruebas y Codex', () => {
+  const { createPowerStats } = require('../src/main/power-stats');
+  const saved = {};
+  const stats = createPowerStats({ store: { get: (k, f) => (k in saved ? saved[k] : f), set: (k, v) => { saved[k] = v; } } });
+  assert.equal(stats.get('C:/p'), null); // sin nada con SuperPowers, no se enseña
+  stats.record('C:/p', { mode: 'without', seconds: 60, fixed: false, tests: 'pending' });
+  assert.equal(stats.get('C:/p'), null);
+  stats.record('C:/p', { mode: 'with', seconds: 120, fixed: true, tests: 'ok' });
+  stats.record('C:/P', { mode: 'with', seconds: 9 * 3600, fixed: false, tests: 'none' }); // misma carpeta; una tarea abierta no infla la media
+  stats.codexFound('C:/p', 2);
+  const got = stats.get('c:/p');
+  assert.deepEqual(got.with, { turns: 2, minutes: 121, fixed: 1, tested: 1, green: 1 });
+  assert.deepEqual(got.without, { turns: 1, minutes: 1, fixed: 0, tested: 1, green: 0 });
+  assert.equal(got.codex, 2);
 });

@@ -120,11 +120,13 @@ function build(id) {
       <div class="tc-stat"><small>Conversación</small><span class="tc-conv"></span></div>
       <div class="tc-stat"><small>Gastado en ella</small><span class="tc-spent"></span></div>
     </div>
+    <div class="tc-sec tc-power" hidden></div>
     <div class="tc-sec">
       <h4>Modelo</h4>
       <div class="tc-models" role="radiogroup" aria-label="Modelo"></div>
       <h4>Esfuerzo</h4>
       <div class="mm-seg tc-efforts" role="radiogroup" aria-label="Esfuerzo"></div>
+      <p class="tc-note tc-power-effort" hidden>Con SuperPowers trabaja como mínimo con esfuerzo alto, elijas el que elijas.</p>
       <label class="mm-check"><input class="tc-default" type="checkbox"> <span>Usar también en las sesiones nuevas (lo guarda como tu configuración de Claude Code)</span></label>
     </div>
     <div class="tc-sec">
@@ -182,6 +184,35 @@ function build(id) {
   return node;
 }
 
+// La sección «SuperPowers en este proyecto»: tareas con y sin, lo que tardan, lo que corrige la
+// pasada final, las pruebas en verde y lo que encuentra Codex. Las comparaciones, solo con al
+// menos 3 tareas de cada lado (con menos no dicen nada).
+const pct = (a, b) => `${b ? Math.round((a / b) * 100) : 0}${String.fromCharCode(0xa0)}%`; // «63 %» sin partirse
+const mins = (m) => (m < 1 ? `${Math.max(1, Math.round(m * 60))} s` : `${String(m).replace('.', ',')} min`);
+function fillPower(box, s) {
+  box.replaceChildren();
+  const head = el('h4', 'tc-power-h');
+  head.innerHTML = '<svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16"><path d="M9.2 1.5 3.5 9h4l-1 5.5L12.5 7h-4z" fill="currentColor"/></svg>';
+  head.append('SuperPowers en este proyecto');
+  const sides = el('div', 'tc-power-sides');
+  const side = (label, x, cls) => {
+    const d = el('div', `tc-power-side ${cls}`);
+    d.append(el('small', '', label), el('b', '', x.turns === 1 ? '1 tarea' : `${x.turns} tareas`), el('span', '', x.turns ? `${mins(x.minutes)} de media` : '—'));
+    return d;
+  };
+  sides.append(side('Con SuperPowers', s.with, 'on'), side('Sin', s.without, 'off'));
+  const lines = el('ul', 'tc-power-lines');
+  const line = (text) => lines.append(el('li', '', text));
+  line(`La pasada final corrigió algo en ${s.with.fixed} de ${s.with.turns} (${pct(s.with.fixed, s.with.turns)}).`);
+  if (s.with.tested) {
+    const both = s.without.tested >= 3 && s.with.tested >= 3;
+    line(`Pruebas en verde al terminar: ${pct(s.with.green, s.with.tested)}${both ? ` con SuperPowers y ${pct(s.without.green, s.without.tested)} sin` : ''}.`);
+  }
+  if (s.codex) line(`Codex encontró ${s.codex === 1 ? 'un posible problema' : `${s.codex} posibles problemas`} al revisar.`);
+  box.append(head, sides, lines, el('p', 'tc-note', 'Solo cuenta las tareas que cambian algo. Lo mide ClaudHome con lo que ve (pruebas, cambios, revisiones), no con lo que dice Claude.'));
+  box.hidden = false;
+}
+
 function act(what) {
   const id = card && card.id;
   const tab = byId(id);
@@ -230,6 +261,12 @@ export function openTabCard(id, x, y) {
     applyTabChoices(id, picked, changed).catch((err) => api.log(`tarjeta: ${err.message}`));
   });
   for (const b of node.querySelectorAll('.tc-row[data-act]')) b.addEventListener('click', () => act(b.dataset.act));
+  node.querySelector('.tc-power-effort').hidden = tab.superpowers !== true;
+  // Lo que ha aportado SuperPowers en este proyecto (si se ha usado).
+  api.powerStats(id).then((stats) => {
+    if (!card || card.id !== id || !stats) return;
+    fillPower(node.querySelector('.tc-power'), stats);
+  }).catch(() => { /* sin datos */ });
   // La dirección en GitHub la sabe el proceso principal (git).
   const share = node.querySelector('.tc-share');
   share.title = 'Buscando la dirección del proyecto en GitHub…';

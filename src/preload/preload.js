@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('api', {
   ideasGet: (tabId) => ipcRenderer.invoke('ideas:get', String(tabId)),
   ideasAct: (tabId, id, action) => ipcRenderer.invoke('ideas:act', String(tabId), String(id), String(action)),
   onIdea: on('ideas:card'), // (tabId, card)
+  powerStats: (tabId) => ipcRenderer.invoke('superpowers:stats', String(tabId)), // o null
   onCodexChanged: on('codex:changed'),
 
   // Botón «Workflow»: el mapa del proyecto de una pestaña (lo dibuja un modelo aparte).

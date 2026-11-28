@@ -34,6 +34,7 @@ const { isAgentReport } = require('./turns');
 const { createSuperpowers, powerEffort, powerEnv } = require('./superpowers');
 const { createCapture, CAPTURE_TOOL, worktreeRoots } = require('./capture');
 const { createIdeas } = require('./ideas');
+const { createPowerStats } = require('./power-stats');
 const digest = require('./workflow-digest');
 const { findGit } = require('./secrets');
 const { jsonIn } = require('./haiku');
@@ -69,6 +70,7 @@ let testcheck = null; // pruebas antes de terminar (testcheck.js)
 let superpowers = null; // SuperPowers por pestaña: pasada final y cómo trabajar (superpowers.js)
 let capture = null; // capturas de pantalla para la revisión visual de SuperPowers (capture.js)
 let ideas = null; // ideas para el proyecto de SuperPowers (ideas.js)
+let powerStats = null; // lo que aporta SuperPowers en cada proyecto (power-stats.js)
 const capturesDir = () => path.join(app.getPath('userData'), 'capturas');
 let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
@@ -320,6 +322,9 @@ if (!app.requestSingleInstanceLock()) {
       // en orden con los avisos de los hooks, que el panel también procesa con setImmediate.
       send: (channel, ...args) => {
         if (channel === 'review:result' && narrator) setImmediate(() => narrator.review(args[0], args[1]));
+        // Lo que encuentra Codex en las tareas con SuperPowers, para medir lo que aporta.
+        const reviewed = channel === 'review:result' && args[1] && args[1].state === 'found' ? tabs.get(args[0]) : null;
+        if (reviewed && reviewed.superpowers && powerStats) powerStats.codexFound(reviewed.folder, Number(args[1].count) || 0);
         send(channel, ...args);
       },
       detailedLogs: () => logger.enabled, // la salida completa, solo con la depuración activada
@@ -333,6 +338,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     testcheck = createTestReminder({ tabs, log: appLog });
     superpowers = createSuperpowers({ tabs, log: appLog });
+    powerStats = createPowerStats({ store });
     capture = createCapture({ electron: { BrowserWindow, session }, dir: capturesDir, log: appLog });
     // Ideas para el proyecto: Sonnet aparte propone y, si puede, Codex da su visto bueno.
     ideas = createIdeas({
@@ -441,7 +447,12 @@ if (!app.requestSingleInstanceLock()) {
         event.testsFailing = event.superAsk || event.testsAsk ? null : testcheck.failing(tabId);
         // El resumen de la pasada (panel «Actividad»): cuando ya no queda nada que pedirle.
         if (!event.superAsk && !event.testsAsk) {
-          const pass = superpowers.summary(tabId, { tests: testcheck.verdict(tabId), codex: event.reviewing });
+          const verdict = testcheck.verdict(tabId);
+          // Para medir lo que aporta SuperPowers: cada tarea que ha cambiado algo, con o sin él.
+          const ended = superpowers.turnEnded(tabId, verdict);
+          const folder = (tabs.get(tabId) || {}).folder;
+          if (ended && folder) powerStats.record(folder, ended);
+          const pass = superpowers.summary(tabId, { tests: verdict, codex: event.reviewing });
           if (pass) {
             event.superPass = pass;
             ideas.turnDone(tabId, (tabs.get(tabId) || {}).spRequest || '');
@@ -616,7 +627,7 @@ if (!app.requestSingleInstanceLock()) {
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
       sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker, ideas,
+      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker, ideas, powerStats,
     });
     wm.create();
     limits.start();

@@ -58,17 +58,24 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     tab.spVisual = [];
     tab.spCaptures = 0;
     tab.superAsked = false;
+    tab.spAfter = 0; // cambios después de pedirle la pasada final
+    tab.spMeasured = false;
     tab.spPass = null; // { at, visual, told } desde que se le pide la pasada
     tab.spTurnAt = now();
   }
 
-  // Lo que hace Claude (también sus agentes): qué cambia y si captura la pantalla.
+  // Lo que hace Claude (también sus agentes): qué cambia y si captura la pantalla. Que ha
+  // cambiado algo se apunta también sin SuperPowers, para comparar (power-stats.js); y si cambia
+  // algo después de pedirle la pasada final, es que la pasada ha corregido algo.
   function toolUsed(tabId, toolName, file = null) {
     const tab = tabs.get(tabId);
-    if (!tab || !on(tabId)) return;
-    if (toolName === CAPTURE_TOOL) { tab.spCaptures = (tab.spCaptures || 0) + 1; return; }
+    if (!tab) return;
+    const powered = on(tabId);
+    if (toolName === CAPTURE_TOOL) { if (powered) tab.spCaptures = (tab.spCaptures || 0) + 1; return; }
     if (!EDIT_TOOLS.has(toolName)) return;
     tab.spEdited = true;
+    if (tab.superAsked) tab.spAfter = (tab.spAfter || 0) + 1;
+    if (!powered) return;
     if (typeof file === 'string' && VISUAL.test(file)) {
       const name = path.basename(file);
       if (!(tab.spVisual || []).includes(name)) tab.spVisual = [...(tab.spVisual || []), name].slice(0, 12);
@@ -120,6 +127,21 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
     };
   }
 
+  // Termina una tarea que ha cambiado algo (una vez por turno): para medir lo que aporta
+  // SuperPowers (power-stats.js). tests: el veredicto de testcheck.
+  function turnEnded(tabId, tests = 'unknown') {
+    const tab = tabs.get(tabId);
+    if (!tab || !tab.spEdited || tab.spSkip || tab.spMeasured || !tab.spTurnAt) return null;
+    tab.spMeasured = true;
+    const powered = on(tabId);
+    return {
+      mode: powered ? 'with' : 'without',
+      seconds: Math.max(0, Math.round((now() - tab.spTurnAt) / 1000)),
+      fixed: powered && (tab.spAfter || 0) > 0,
+      tests,
+    };
+  }
+
   // El aviso a Claude: una vez por sesión, otra vez tras /clear, al resumirse la conversación o
   // cada 30 mensajes. Y si se apaga: encender o apagar reinicia la sesión retomando la misma
   // conversación, que ya lleva el aviso de «activado», así que se le dice que se ha apagado
@@ -149,7 +171,7 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
   const sessionStarted = (tabId) => { tabs.ensure(tabId).spTold = undefined; };
   const compacted = (tabId) => { const tab = tabs.get(tabId); if (tab && tab.spTold === true) tab.spTold = undefined; };
 
-  return { on, turnStarted, toolUsed, willAsk, answer, summary, note, sessionStarted, compacted, CAPTURE_TOOL };
+  return { on, turnStarted, toolUsed, willAsk, answer, summary, turnEnded, note, sessionStarted, compacted, CAPTURE_TOOL };
 }
 
 module.exports = { createSuperpowers, powerEffort, powerEnv, NOTE_ON, NOTE_OFF, VISUAL };
