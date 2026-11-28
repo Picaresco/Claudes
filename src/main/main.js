@@ -30,6 +30,7 @@ const { createChecker } = require('./optimize-check');
 const { createNarrator } = require('./narrator');
 const { createWorkflow } = require('./workflow');
 const { createPlanTracker, PLAN_NOTE } = require('./plan');
+const { isAgentReport } = require('./turns');
 const { compactTarget, compactEnv } = require('./project-card');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
@@ -337,10 +338,14 @@ if (!app.requestSingleInstanceLock()) {
       if (netlog) setImmediate(() => netlog.fromHook(tabId, event));
       // Lo que necesita la revisión de Codex: si el turno ha editado código y, al pararse,
       // si se va a revisar (la interfaz no lo da por terminado mientras tanto).
-      if (event.event === 'UserPromptSubmit') { review.turnStarted(tabId, event.prompt, event.request); testcheck.turnStarted(tabId, event.prompt); }
+      // El informe de un agente (o el aviso de una tarea terminada) llega como un mensaje, pero no
+      // empieza un turno nuevo: lo que el turno lleva hecho sigue contando (turns.js).
+      if (event.event === 'UserPromptSubmit' && isAgentReport(event)) event.agentReport = true;
+      const newTurn = event.event === 'UserPromptSubmit' && !event.agentReport;
+      if (newTurn) { review.turnStarted(tabId, event.prompt, event.request); testcheck.turnStarted(tabId, event.prompt); }
       if (event.event === 'PostToolUse') review.toolUsed(tabId, event.toolName, event.toolInput && event.toolInput.file, event.cwd);
       // ¿Conviene optimizar? Cada cambio de código cuenta (se cuenta después de contestar).
-      if (event.event === 'UserPromptSubmit') optimizeHints.turnStarted(tabId);
+      if (newTurn) optimizeHints.turnStarted(tabId);
       if (event.event === 'PostToolUse' && EDIT_TOOLS.has(event.toolName) && event.toolInput && event.toolInput.file) {
         const file = event.toolInput.file;
         setImmediate(() => { optimizeHints.edited(tabId, file, event.cwd).catch(() => { /* se contará con el siguiente */ }); });
@@ -443,7 +448,7 @@ if (!app.requestSingleInstanceLock()) {
       if (ctx) parts.push(ctx.hookSpecificOutput.additionalContext);
       // Botón «Optimiza»: las instrucciones completas, si se acaba de confirmar.
       // «Codex asesora»: cuándo pedir la segunda opinión (o que se ha apagado), si la sesión no lo sabe.
-      const advisor = review.advisorNote(tabId, event && event.prompt, event && event.sessionId);
+      const advisor = event && event.agentReport ? null : review.advisorNote(tabId, event && event.prompt, event && event.sessionId);
       if (advisor) parts.push(advisor);
       const optimize = optimizer.consume(tabId, event && event.prompt);
       if (optimize) { parts.push(optimize); optimizeHints.optimized(tabId); }

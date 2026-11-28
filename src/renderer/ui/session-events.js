@@ -71,7 +71,7 @@ export function onHook(tabId, ev) {
   if (view.closing) {
     // Durante el cierre ordenado solo interesa saber si la petición ha entrado
     // y cuándo termina Claude de responderla.
-    if (ev.event === 'UserPromptSubmit' && view.closing.sent) view.closing.submitted = true;
+    if (ev.event === 'UserPromptSubmit' && view.closing.sent && !ev.agentReport) view.closing.submitted = true;
     else if ((ev.event === 'Stop' || ev.event === 'StopFailure') && view.closing.submitted) view.closing.finish('saved');
     return;
   }

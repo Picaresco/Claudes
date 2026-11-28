@@ -70,6 +70,7 @@ function createPlanTracker({ send = () => {}, now = Date.now } = {}) {
     }
     if (narr.agentId) return; // las tareas de un agente no son el plan de esta conversación
     if (ev.event === 'UserPromptSubmit') {
+      if (ev.agentReport) return; // el informe de un agente no es un encargo nuevo (turns.js)
       // Un encargo nuevo: si el plan anterior ya estaba terminado, lo siguiente es otro plan.
       if (allDone(st)) st.newTask = true;
       return;

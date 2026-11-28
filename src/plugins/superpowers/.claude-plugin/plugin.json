@@ -1,0 +1,8 @@
+{
+  "name": "claudhome-superpowers",
+  "description": "SuperPowers de ClaudHome: verificar antes de dar algo por terminado, depurar buscando la causa, pruebas primero y revisión visual con capturas. Las tres primeras habilidades son de obra/superpowers (MIT).",
+  "version": "1.0.0",
+  "author": {
+    "name": "ClaudHome"
+  }
+}

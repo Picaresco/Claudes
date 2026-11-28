@@ -13,6 +13,7 @@
 // Solo se le pregunta a Haiku con la actividad activada (rueda de opciones), aunque la columna
 // esté oculta; desactivada, no gasta nada y los pasos se
 // quedan con sus palabras fijas. Si Haiku falla varias veces seguidas, se descansa un rato.
+const { REPORT } = require('./turns');
 const fs = require('fs');
 const path = require('path');
 const { redact } = require('./netlog');
@@ -632,7 +633,7 @@ function createNarrator({
         const said = ev.request || ev.prompt || '';
         // No lo ha escrito el usuario: el informe de un agente que trabajaba en segundo plano o el
         // aviso de una tarea que ha terminado, que Claude Code le pasa a Claude como un mensaje.
-        const system = /^\s*<(agent-message|task-notification)[\s>]/i.exec(said);
+        const system = REPORT.exec(said); // turns.js
         if (system) {
           const body = clip(plain(said.replace(/<[^>]*>/g, ' ').replace(/\[[^\]]*\]/g, ' ')), 600);
           const agentReport = /agent/i.test(system[1]);
