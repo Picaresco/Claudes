@@ -1078,3 +1078,47 @@ dialog .btn-primary { background: var(--txt); }
 .upd-version code { padding: 0 2px; background: var(--bg0); border-radius: 3px; font: 12px var(--mono); }
 .upd-empty { font-size: 13px; color: var(--dim); }
 .upd-note { font-size: 12px; color: var(--dim); }
+
+/* ── SuperPowers (ui/superpowers.js) ─────────────────────────────── */
+/* Encendido: borde con sus colores y rayo que brilla; mientras Claude trabaja, el degradado gira
+   (una vuelta cada 3 s); al terminar, quieto. Con «reducir movimiento», nada se mueve. */
+@property --sp-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.sp-btn svg { color: var(--dim); }
+.sp-btn[data-on="true"] {
+  color: #fff;
+  font-weight: 600;
+  border: 1.5px solid transparent;
+  padding: 0 11.5px;
+  background: linear-gradient(var(--bg2), var(--bg2)) padding-box, conic-gradient(from var(--sp-angle), var(--sp1), var(--sp2), var(--sp3), var(--sp1)) border-box;
+  box-shadow: 0 0 14px rgba(236, 72, 153, 0.35);
+}
+.sp-btn[data-on="true"] svg { color: var(--sp3); animation: sp-zap 2.2s ease-in-out infinite; }
+.sp-btn[data-on="true"][data-working="true"] { animation: sp-spin 3s linear infinite; }
+.sp-btn[data-on="true"][data-working="true"] svg { animation-duration: 1.6s; }
+@keyframes sp-spin { to { --sp-angle: 360deg; } }
+@keyframes sp-zap { 0%, 100% { filter: drop-shadow(0 0 2px var(--sp3)); } 50% { filter: drop-shadow(0 0 7px var(--sp3)); } }
+.tab-bolt { display: flex; flex: none; color: var(--sp3); filter: drop-shadow(0 0 4px rgba(245, 184, 65, 0.7)); }
+.tab-bolt svg { width: 13px; height: 13px; }
+.sp-pop { position: fixed; z-index: 40; width: min(420px, calc(100vw - 16px)); padding: 16px 18px 14px; border: 1px solid var(--line2); border-radius: 12px; background: var(--bg2); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55); }
+.sp-pop::before { content: ''; position: absolute; top: -7px; left: var(--sp-arrow, 52px); width: 12px; height: 12px; background: var(--bg2); border-left: 1px solid var(--line2); border-top: 1px solid var(--line2); transform: rotate(45deg); }
+.sp-pop-x { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: var(--dim); }
+.sp-pop-x:hover, .sp-pop-x:focus-visible { background: var(--bg1); color: var(--txt); }
+.sp-pop h3 { display: flex; align-items: center; gap: 8px; margin: 0 30px 4px 0; font-size: 15px; }
+.sp-pop h3 svg { flex: none; color: var(--sp3); filter: drop-shadow(0 0 4px rgba(245, 184, 65, 0.6)); }
+.sp-pop-sub { margin: 0 0 10px; color: var(--dim); font-size: 12.5px; }
+.sp-pop-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.sp-pop-list li { display: flex; gap: 9px; padding: 4px 0; font-size: 12.5px; line-height: 1.35; }
+.sp-pop-list i { flex: none; width: 18px; font-style: normal; text-align: center; }
+.sp-pop-list b { font-weight: 600; color: var(--txt); }
+.sp-pop-list span { color: var(--dim); }
+.sp-pop-cost { margin: 0; padding: 8px 10px; border: 1px solid rgba(242, 184, 102, 0.35); border-radius: 8px; background: rgba(242, 184, 102, 0.08); color: var(--warn); font-size: 12px; }
+.sp-pop-note { margin: 10px 0 0; color: var(--mute); font-size: 11.5px; }
+.sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.sp-pop-row small { color: var(--mute); font-size: 11px; }
+.sp-pop-go { flex: none; min-height: 36px; padding: 0 16px; border-radius: 8px; color: #fff; font-weight: 700; background: linear-gradient(90deg, var(--sp1), var(--sp2), var(--sp3)); }
+.sp-pop-go:hover { filter: brightness(1.08); }
+.sp-pop-go[data-on="true"] { color: var(--txt); font-weight: 600; background: var(--bg1); border: 1px solid var(--line2); }
+.sp-pop-go[data-on="true"]:hover { border-color: var(--mute); filter: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sp-btn[data-on="true"], .sp-btn[data-on="true"] svg { animation: none; }
+}

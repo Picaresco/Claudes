@@ -2,6 +2,7 @@
 import { WRAPUP_PROMPT } from './constants.js';
 import { api } from './dom.js';
 import { renderTabs, renderHeads, renderStatusbar } from './render.js';
+import { renderPowerButton } from './superpowers.js';
 import { sleep } from './state.js';
 
 export function setStatus(view, status) {
@@ -14,6 +15,7 @@ export function setStatus(view, status) {
   renderTabs();
   renderHeads();
   renderStatusbar();
+  renderPowerButton(); // con SuperPowers, el borde gira mientras trabaja
 }
 
 // Cierre ordenado: interrumpe lo que Claude esté haciendo y le pide que deje

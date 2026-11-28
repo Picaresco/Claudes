@@ -28,7 +28,8 @@ const path = require('path');
 
 const EXPLAIN_PLUGIN = 'explanatory-output-style';
 const DESIGN_PLUGIN = 'frontend-design';
-const BUNDLED_PLUGINS = [EXPLAIN_PLUGIN, DESIGN_PLUGIN];
+const SUPERPOWERS_PLUGIN = 'superpowers'; // solo en las pestañas con SuperPowers (main.js, createPty)
+const BUNDLED_PLUGINS = [EXPLAIN_PLUGIN, DESIGN_PLUGIN, SUPERPOWERS_PLUGIN];
 const NEEDS_BASH = new Set([EXPLAIN_PLUGIN]); // los que tienen hooks de bash
 const OFFICIAL_MARKETPLACE = 'claude-plugins-official';
 const YOU_SHOULD_KNOW = 'cc-plugin-you-should-know@builtin';
@@ -102,8 +103,10 @@ function createStyle({ srcDir, dstDir, userSettings, gitBash, tabs, log, label }
       const key = `${p.name}@${OFFICIAL_MARKETPLACE}`;
       return p.name === EXPLAIN_PLUGIN ? enabled[key] === true : Object.prototype.hasOwnProperty.call(enabled, key);
     };
-    return pluginDirs.filter((p) => usable(p) && !decided(p) && !(brief && p.name === EXPLAIN_PLUGIN));
+    return pluginDirs.filter((p) => p.name !== SUPERPOWERS_PLUGIN && usable(p) && !decided(p) && !(brief && p.name === EXPLAIN_PLUGIN));
   }
+  // El de SuperPowers ({ name, dir }), si se ha podido preparar.
+  const superpowersPlugin = () => pluginDirs.find((p) => p.name === SUPERPOWERS_PLUGIN) || null;
 
   // ¿Tiene el usuario el plugin explicativo instalado y activado en su Claude Code?
   const userExplains = () => (userSettings().enabledPlugins || {})[`${EXPLAIN_PLUGIN}@${OFFICIAL_MARKETPLACE}`] === true;
@@ -136,6 +139,7 @@ function createStyle({ srcDir, dstDir, userSettings, gitBash, tabs, log, label }
   return {
     prepare,
     sessionPlugins,
+    superpowersPlugin,
     sessionSettings,
     started,
     update,
@@ -144,4 +148,4 @@ function createStyle({ srcDir, dstDir, userSettings, gitBash, tabs, log, label }
   };
 }
 
-module.exports = { createStyle, EXPLAIN_PLUGIN, DESIGN_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT };
+module.exports = { createStyle, EXPLAIN_PLUGIN, DESIGN_PLUGIN, SUPERPOWERS_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT };

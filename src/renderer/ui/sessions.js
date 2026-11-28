@@ -138,6 +138,7 @@ export async function startClaude(view) {
   const res = await api.ptyCreate({
     id: tab.id, kind: 'claude', name: tab.name, cwd: tab.cwd, sessionId: tab.sessionId, mode, exclude, context: tab.context,
     model: tab.model || null, effort: tab.effort || null, // los elegidos para la pestaña (su tarjeta)
+    superpowers: tab.superpowers === true, // el botón «SuperPowers» de la barra (ui/superpowers.js)
     // Autocompactar (null: el 85 % de siempre) y el tamaño del contexto que se vio la última vez.
     compact: Number.isFinite(tab.compact) ? tab.compact : null, ctxSize: tab.ctxSize || null,
     cols: view.term.cols, rows: view.term.rows,

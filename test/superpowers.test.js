@@ -154,3 +154,14 @@ test('con SuperPowers, Codex revisa al final aunque «Codex asesora» esté apag
   review.toolUsed('t2', 'Edit', 'src/main/superpowers.js', process.cwd());
   assert.equal(review.willReview('t2', { stopHookActive: false }), false);
 });
+
+test('al arrancar: esfuerzo alto como mínimo y hasta dos agentes, salvo lo que ya tenga el usuario', () => {
+  const { powerEffort, powerEnv } = require('../src/main/superpowers');
+  assert.equal(powerEffort(null, null), 'high');
+  assert.equal(powerEffort('low', 'max'), 'high'); // manda el de la pestaña, subido a alto
+  assert.equal(powerEffort('xhigh', null), 'xhigh');
+  assert.equal(powerEffort(null, 'max'), 'max'); // el predeterminado de Claude Code ya es mayor
+  assert.equal(powerEffort('raro', 'medium'), 'high');
+  assert.deepEqual(powerEnv({}), { CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: '2', CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: '1' });
+  assert.deepEqual(powerEnv({ CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: '5' }), { CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: '1' });
+});

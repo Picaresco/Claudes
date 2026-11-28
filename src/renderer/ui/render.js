@@ -1,6 +1,7 @@
 // ── Pintado ──────────────────────────────────────────────────────
 import { renderActivity } from './activity.js';
 import { enterProject } from './workflow.js';
+import { renderPowerButton, BOLT } from './superpowers.js';
 import { codexInfo } from './codex.js';
 import { colorHex, SIDES, SVG, STATUS, EFFORT_LEVELS } from './constants.js';
 import { contextCount } from './context.js';
@@ -33,7 +34,7 @@ function tabElement(tab, shown) {
   main.setAttribute('role', 'tab');
   main.setAttribute('aria-selected', String(tab.id === S.activeId));
   const usage = view && view.usage && view.usage.pct !== null ? view.usage : null;
-  main.setAttribute('aria-label', `${tab.name}, ${st.label.toLowerCase()}${usage ? `, conversación al ${usage.pct} %` : ''}`);
+  main.setAttribute('aria-label', `${tab.name}, ${st.label.toLowerCase()}${tab.superpowers ? ', con SuperPowers' : ''}${usage ? `, conversación al ${usage.pct} %` : ''}`);
   const spent = limitsSnap.conversations[tab.id];
   main.title = `${tab.name} · ${st.label}\n${tab.cwd}${usage ? `\n${usageText(usage)}` : ''}${spent ? `\nTokens usados en esta conversación: ${nf.format(spent.total)} (${tokensBreakdown(spent)}).` : ''}\nBotón derecho: sus opciones (cerrar, cambiar nombre, color…)`;
   main.innerHTML = SVG[st.icon];
@@ -42,6 +43,11 @@ function tabElement(tab, shown) {
   const attnDot = main.querySelector('.dot-attn');
   if (attnDot) attnDot.style.animationDelay = `-${Date.now() % 1200}ms`;
   main.append(el('span', 'tab-name', tab.name));
+  if (tab.superpowers) { // SuperPowers: un rayo que brilla
+    const bolt = el('span', 'tab-bolt');
+    bolt.innerHTML = BOLT;
+    main.append(bolt);
+  }
   // Sin × en la pestaña: se cierra desde sus opciones (botón derecho, ui/tabcard.js), con
   // Ctrl+Mayús+W o con el botón central del ratón.
   node.append(main);
@@ -109,6 +115,7 @@ export function renderToolbar() {
   $('#tb-path').title = tab.cwd;
   $('#btn-terminal').setAttribute('aria-pressed', String(Boolean(tab.extraOpen)));
   $('#btn-context').setAttribute('aria-pressed', String(Boolean(tab.contextOpen)));
+  renderPowerButton();
   const logCount = logEntriesOf(tab).length;
   $('#log-badge').hidden = logCount === 0;
   $('#log-badge').textContent = logCount > 999 ? '999+' : String(logCount);

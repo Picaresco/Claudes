@@ -1,6 +1,7 @@
 // Interfaz de Claudes: pestañas, vista dividida, terminal extra, recientes y avisos.
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
-import { wireActivity } from './ui/activity.js';
+import { wireActivity, setActivity } from './ui/activity.js';
+import { wireSuperpowers } from './ui/superpowers.js';
 import { wireZoom } from './ui/zoom.js';
 import { wireTabCard } from './ui/tabcard.js';
 import { EFFORT_LEVELS } from './ui/constants.js';
@@ -57,6 +58,7 @@ function restore(saved) {
       // Autocompactar de la pestaña (null: el 85 % de serie) y el tamaño de su contexto.
       compact: Number.isInteger(raw.compact) && raw.compact >= 30 && raw.compact <= 95 ? raw.compact : null,
       ctxSize: Number(raw.ctxSize) > 0 ? Number(raw.ctxSize) : null,
+      superpowers: raw.superpowers === true, // SuperPowers en esta pestaña (apagado de serie)
     });
   }
   for (const raw of Array.isArray(saved.recents) ? saved.recents : []) {
@@ -121,6 +123,8 @@ async function init() {
       },
       // Pone el indicador de Codex como si su estado fuera otro (los campos que se den).
       showCodex: (fields) => renderCodex({ ...(codexInfo || {}), ...fields }),
+      // Enseña en «Actividad» lo que se le dé (p. ej. la tarjeta de la pasada final de SuperPowers).
+      showActivity: (snap) => setActivity(S.activeId, snap),
       // Pone una pestaña en un estado, para ver cómo se pinta.
       showStatus: (index, status) => {
         const tab = S.tabs[index];
@@ -168,6 +172,7 @@ async function init() {
   wireLog();
   wireWorkflow();
   wireActivity();
+  wireSuperpowers();
   wireZoom();
   wireTabCard();
   wireTabs();

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { Tabs } = require('../src/main/tabs');
-const { createStyle, EXPLAIN_PLUGIN, DESIGN_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT } = require('../src/main/style');
+const { createStyle, EXPLAIN_PLUGIN, DESIGN_PLUGIN, SUPERPOWERS_PLUGIN, YOU_SHOULD_KNOW, BRIEF_TEXT } = require('../src/main/style');
 const { childEnv, quoteForCmd, shellList, shellCommand, SESSION_MARKERS } = require('../src/main/shells');
 const { createPtys } = require('../src/main/ptys');
 const { userSettings, usageFrom } = require('../src/main/claude-config');
@@ -51,9 +51,15 @@ const names = (plugins) => plugins.map((p) => p.name);
 
 test('los plugins se copian y se pasan a las sesiones; en modo resumido, sin el explicativo', (t) => {
   const { style, dstDir } = makeStyle(t);
-  assert.deepEqual(style.prepare(), [EXPLAIN_PLUGIN, DESIGN_PLUGIN]);
+  assert.deepEqual(style.prepare(), [EXPLAIN_PLUGIN, DESIGN_PLUGIN, SUPERPOWERS_PLUGIN]);
   assert.ok(fs.existsSync(path.join(dstDir, EXPLAIN_PLUGIN, 'hooks-handlers', 'session-start.sh')));
   assert.ok(fs.existsSync(path.join(dstDir, DESIGN_PLUGIN, 'skills', DESIGN_PLUGIN, 'SKILL.md')));
+  // El de SuperPowers se prepara (con sus habilidades y su licencia) pero solo va a sus pestañas.
+  for (const skill of ['verification-before-completion', 'systematic-debugging', 'pruebas-primero', 'revision-visual']) {
+    assert.ok(fs.existsSync(path.join(dstDir, SUPERPOWERS_PLUGIN, 'skills', skill, 'SKILL.md')), skill);
+  }
+  assert.ok(fs.existsSync(path.join(dstDir, SUPERPOWERS_PLUGIN, 'LICENSE')));
+  assert.deepEqual(style.superpowersPlugin(), plugin(dstDir, SUPERPOWERS_PLUGIN));
   assert.deepEqual(style.sessionPlugins(), [plugin(dstDir, EXPLAIN_PLUGIN), plugin(dstDir, DESIGN_PLUGIN)]);
   style.brief = true;
   assert.deepEqual(style.sessionPlugins(), [plugin(dstDir, DESIGN_PLUGIN)]);
@@ -61,7 +67,7 @@ test('los plugins se copian y se pasan a las sesiones; en modo resumido, sin el 
 
 test('sin Git Bash solo va el de diseño; el que el usuario ya tiene activado no se pasa', (t) => {
   const none = makeStyle(t, { gitBash: null });
-  assert.deepEqual(none.style.prepare(), [DESIGN_PLUGIN]);
+  assert.deepEqual(none.style.prepare(), [DESIGN_PLUGIN, SUPERPOWERS_PLUGIN]); // el de SuperPowers no tiene hooks
   assert.deepEqual(names(none.style.sessionPlugins()), [DESIGN_PLUGIN]);
   const mine = makeStyle(t, { settings: { enabledPlugins: { [`${EXPLAIN_PLUGIN}@claude-plugins-official`]: true } } });
   mine.style.prepare();

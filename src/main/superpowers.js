@@ -29,6 +29,22 @@ const NOTE_ON = [
 ].join('\n');
 const NOTE_OFF = 'ClaudHome · SuperPowers desactivado por el usuario en esta pestaña: vuelve a trabajar como siempre (sin pasada final ni agentes extra).';
 
+// Al arrancar la sesión con SuperPowers: esfuerzo alto como mínimo (si el elegido para la
+// pestaña, o el predeterminado de Claude Code, ya es mayor, ese).
+const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+function powerEffort(chosen, fallback) {
+  const have = LEVELS.includes(chosen) ? chosen : LEVELS.includes(fallback) ? fallback : null;
+  return have && LEVELS.indexOf(have) >= LEVELS.indexOf('high') ? have : 'high';
+}
+// …y hasta dos agentes a la vez, que no lancen otros (Claude Code: de serie, 20 a la vez). Si el
+// usuario ya tiene puestas las variables, mandan las suyas. env: process.env.
+function powerEnv(env = process.env) {
+  const out = {};
+  if (env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS === undefined) out.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS = '2';
+  if (env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH === undefined) out.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH = '1';
+  return out;
+}
+
 function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
   const on = (tabId) => Boolean((tabs.get(tabId) || {}).superpowers);
 
@@ -136,4 +152,4 @@ function createSuperpowers({ tabs, log = () => {}, now = () => Date.now() }) {
   return { on, turnStarted, toolUsed, willAsk, answer, summary, note, sessionStarted, compacted, CAPTURE_TOOL };
 }
 
-module.exports = { createSuperpowers, NOTE_ON, NOTE_OFF, VISUAL };
+module.exports = { createSuperpowers, powerEffort, powerEnv, NOTE_ON, NOTE_OFF, VISUAL };

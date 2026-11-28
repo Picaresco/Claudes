@@ -31,7 +31,7 @@ const { createNarrator } = require('./narrator');
 const { createWorkflow } = require('./workflow');
 const { createPlanTracker, PLAN_NOTE } = require('./plan');
 const { isAgentReport } = require('./turns');
-const { createSuperpowers } = require('./superpowers');
+const { createSuperpowers, powerEffort, powerEnv } = require('./superpowers');
 const { compactTarget, compactEnv } = require('./project-card');
 const { Tabs } = require('./tabs');
 const { createAppLog, localStamp, safeFileName } = require('./applog');
@@ -40,7 +40,7 @@ const { createPtys } = require('./ptys');
 const { createClipboard } = require('./clipboard');
 const { createWindowManager } = require('./window');
 const { createStyle } = require('./style');
-const { userSettings, usageFrom, modelFrom } = require('./claude-config');
+const { userSettings, usageFrom, modelFrom, defaultModel } = require('./claude-config');
 
 // Permite probar la app con una carpeta de datos aparte, sin tocar la real.
 if (process.env.CLAUDES_USER_DATA) app.setPath('userData', path.resolve(process.env.CLAUDES_USER_DATA));
@@ -179,6 +179,9 @@ async function createPty(o) {
 
   const tab = tabs.ensure(o.id);
   if (typeof o.name === 'string' && o.name) tab.name = o.name;
+  // SuperPowers (botón de la barra, por pestaña): lo leen la pasada final y la revisión de Codex.
+  const powers = o.superpowers === true;
+  tab.superpowers = powers;
   const exe = sessions.findClaude();
   if (!exe) {
     appLog(`sesión ${tabLabel(o.id)}: no se encuentra claude en el equipo`);
@@ -200,7 +203,9 @@ async function createPty(o) {
   const args = [...chosen.args, '--settings', hookServer.settingsFile(o.id, sessionSettings(o.id, ctx.allow))];
   // El modelo y el esfuerzo elegidos para esta pestaña (barra inferior): solo para esta sesión.
   if (typeof o.model === 'string' && /^[\w.[\]-]{2,60}$/.test(o.model)) args.push('--model', o.model);
-  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(o.effort)) args.push('--effort', o.effort);
+  // Con SuperPowers, alto como mínimo.
+  const effort = powers ? powerEffort(o.effort, defaultModel().effort) : o.effort;
+  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) args.push('--effort', effort);
   // Solo al ejecutar desde el código: arrancar en un modo de permisos (p. ej. «plan»), para las pruebas.
   if (DEV && process.env.CLAUDES_TEST_PERMISSION_MODE) args.push('--permission-mode', process.env.CLAUDES_TEST_PERMISSION_MODE);
   tab.usage = null;
@@ -208,9 +213,12 @@ async function createPty(o) {
   if (superpowers) superpowers.sessionStarted(o.id); // y cómo trabajar con SuperPowers
   if (ctx.promptFile) args.push('--append-system-prompt-file', ctx.promptFile);
   const plugins = style.sessionPlugins();
+  // SuperPowers: sus habilidades (src/plugins/superpowers).
+  const powerPlugin = powers ? style.superpowersPlugin() : null;
+  if (powerPlugin) plugins.push(powerPlugin);
   for (const plugin of plugins) args.push('--plugin-dir', plugin.dir);
   style.started(o.id, plugins);
-  const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id };
+  const extraEnv = { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDES_TAB_ID: o.id, ...(powers ? powerEnv() : {}) };
   if (ownTodo === undefined) extraEnv.CLAUDE_CODE_ENABLE_TODO_TOOLS = '1';
   // Autocompactar (tarjeta del proyecto): al llegar la conversación a ese % del contexto, Claude
   // Code la resume sola. 85 % de serie; cada pestaña puede tener el suyo. Claude Code lo lee al
@@ -245,7 +253,8 @@ async function createPty(o) {
   appLog(`sesión ${tabLabel(o.id)} arranca: ${chosen.resumed ? 'retoma' : 'conversación nueva'} ${chosen.sessionId} en ${o.cwd}`
     + `${withMcp ? ` · con Codex (segunda opinión${withCodex ? ' e imágenes' : ''})` : ''}${ctx.text ? ` · con contexto (${ctx.allow.length} permisos de lectura)` : ''}`
     + `${planOn ? ' · con lista de tareas' : ''} · autocompactar ${ownCompact ? 'con la variable del usuario' : `al ${compact} %`}`
-    + `${o.model || o.effort ? ` · modelo ${o.model || 'predeterminado'}${o.effort ? `, esfuerzo ${o.effort}` : ''}` : ''}`
+    + `${o.model || effort ? ` · modelo ${o.model || 'predeterminado'}${effort ? `, esfuerzo ${effort}` : ''}` : ''}`
+    + `${powers ? ' · con SuperPowers' : ''}`
     + `${plugins.length ? ` · plugins: ${plugins.map((p) => p.name).join(', ')}` : ''}`
     + `${logFile ? ` · registro ${path.basename(logFile)}` : ''} · ${path.basename(exe)}`);
   const env = childEnv(extraEnv);
@@ -539,7 +548,7 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     const pluginNames = style.prepare();
-    appLog(`plugins para las sesiones: ${pluginNames.join(', ') || 'ninguno'}${gitBash ? '' : ' (sin Git Bash, sin el explicativo)'}`);
+    appLog(`plugins preparados (el de SuperPowers, solo en sus pestañas): ${pluginNames.join(', ') || 'ninguno'}${gitBash ? '' : ' (sin Git Bash, sin el explicativo)'}`);
     registerIpc({
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
