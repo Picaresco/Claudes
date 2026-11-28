@@ -117,7 +117,7 @@ function passRows(pass) {
     })[pass.tests] || ['off', 'Pruebas: no se ha podido saber cómo han ido'],
     ['info', 'Lo pedido, punto por punto: lo repasa en su respuesta'],
     ({
-      ok: ['ok', `Revisión visual: ${pass.captured} captura${pass.captured === 1 ? '' : 's'} de pantalla`],
+      ok: ['ok', `Revisión visual: ${pass.captured === 1 ? 'una ronda' : `${pass.captured} rondas`} de capturas`],
       missing: ['warn', `Ha cambiado ${visual || 'algo que se ve'} sin revisarlo con capturas`],
     })[pass.captures] || ['off', 'Revisión visual: no hacía falta (nada que se vea)'],
     ({

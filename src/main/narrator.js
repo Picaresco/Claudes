@@ -359,7 +359,7 @@ function parseLines(stdout) {
 // La pasada final de SuperPowers en una frase (lo que se ve al pasar el ratón por la tarjeta).
 function passText(pass) {
   const tests = { ok: 'pruebas pasadas', failing: 'pruebas que fallan', pending: 'cambios sin probar', none: 'sin pruebas que pasar', unknown: 'pruebas sin saber' }[pass.tests] || 'pruebas sin saber';
-  const shots = { ok: `${pass.captured} captura${pass.captured === 1 ? '' : 's'}`, missing: 'algo visual sin capturas', skip: 'nada visual' }[pass.captures] || '';
+  const shots = { ok: `${pass.captured === 1 ? 'una ronda' : `${pass.captured} rondas`} de capturas`, missing: 'algo visual sin capturas', skip: 'nada visual' }[pass.captures] || '';
   const codex = { running: 'Codex revisa', clean: 'Codex sin objeciones', found: `Codex: ${pass.found || 0} posibles problemas`, none: 'Codex no ha podido revisar', off: 'sin Codex' }[pass.codex] || '';
   return `Pasada final de SuperPowers: ${[tests, shots, codex].filter(Boolean).join(' · ')}`;
 }

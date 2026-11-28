@@ -478,7 +478,7 @@ test('SuperPowers: el paso de la pasada final, su tarjeta con lo visto y la lín
   ev('Stop', { reviewing: true, superPass: { tests: 'ok', captures: 'ok', captured: 3, visual: ['estilo.css'], codex: true, seconds: 40 }, narr: { last: 'Pasada final: …' } });
   let card = last().entries.find((e) => e.kind === 'pass');
   assert.equal(card.pass.codex, 'running');
-  assert.match(card.text, /pruebas pasadas · 3 capturas · Codex revisa/);
+  assert.match(card.text, /pruebas pasadas · 3 rondas de capturas · Codex revisa/);
   narrator.review('t1', { state: 'found', count: 2 });
   card = last().entries.find((e) => e.kind === 'pass');
   assert.equal(card.pass.codex, 'found');
