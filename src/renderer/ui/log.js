@@ -70,7 +70,7 @@ function renderLog() {
     const target = el('td', 'c-target', e.target);
     target.title = e.detail ? `${e.target}\n${e.detail}` : e.target;
     const dest = el('td', 'c-dest', e.dest);
-    dest.title = e.kind === 'workflow'
+    dest.title = e.kind === 'workflow' || e.kind === 'idea'
       ? 'Lo envía ClaudHome directamente, sin pasar por la sesión de Claude: un extracto del proyecto, con lo que parece una clave tapado'
       : e.external ? 'Sale directamente a internet y, además, Claude recibe el resultado' : 'Claude recibe el resultado y lo envía a Anthropic con la conversación';
     tr.append(time, el('td', 'c-tab', e.tabName), kind, target, dest, el('td', 'c-size', logSize(e.size)));

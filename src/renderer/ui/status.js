@@ -3,6 +3,7 @@ import { WRAPUP_PROMPT } from './constants.js';
 import { api } from './dom.js';
 import { renderTabs, renderHeads, renderStatusbar } from './render.js';
 import { renderPowerButton } from './superpowers.js';
+import { showPendingIdea } from './ideas.js';
 import { sleep } from './state.js';
 
 export function setStatus(view, status) {
@@ -16,6 +17,7 @@ export function setStatus(view, status) {
   renderHeads();
   renderStatusbar();
   renderPowerButton(); // con SuperPowers, el borde gira mientras trabaja
+  showPendingIdea(view); // una idea que esperaba a que Claude terminase
 }
 
 // Cierre ordenado: interrumpe lo que Claude esté haciendo y le pide que deje

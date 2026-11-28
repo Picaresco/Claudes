@@ -10,6 +10,7 @@
 // en una sesión del navegador aparte, en memoria y sin permisos ni descargas.
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 const { pathToFileURL, fileURLToPath } = require('url');
 
 const DEFAULT_WIDTHS = [390, 1024, 1440];
@@ -309,4 +310,16 @@ function createCapture({ electron, dir, log = () => {} }) {
   return { take };
 }
 
-module.exports = { createCapture, CAPTURE_TOOL, resolveTarget, allowRequest, widthsFrom, report, DEFAULT_WIDTHS };
+// Las copias de trabajo de git del proyecto (git worktree): las ideas de SuperPowers se prueban
+// en una, junto a la carpeta del proyecto, y sus páginas también se pueden capturar. git: su ruta.
+function worktreeRoots(folder, git) {
+  if (!folder || !git) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    execFile(git, ['worktree', 'list', '--porcelain'], { cwd: folder, timeout: 3000, windowsHide: true }, (err, stdout) => {
+      if (err) { resolve([]); return; }
+      resolve(String(stdout).split(/\r?\n/).filter((l) => l.startsWith('worktree ')).map((l) => path.resolve(l.slice(9).trim())).slice(0, 20));
+    });
+  });
+}
+
+module.exports = { worktreeRoots, createCapture, CAPTURE_TOOL, resolveTarget, allowRequest, widthsFrom, report, DEFAULT_WIDTHS };

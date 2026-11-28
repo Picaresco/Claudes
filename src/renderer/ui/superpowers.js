@@ -8,6 +8,7 @@
 import { $, api } from './dom.js';
 import { BUSY } from './model.js';
 import { renderTabs, renderToolbar } from './render.js';
+import { forgetIdea } from './ideas.js';
 import { restartSession } from './sessions.js';
 import { S, views, byId, save, toast } from './state.js';
 
@@ -76,6 +77,7 @@ export function setSuperpowers(tabId, on) {
   tab.superpowers = on;
   save();
   api.log(`SuperPowers ${on ? 'activado' : 'desactivado'} en «${tab.name}»`);
+  if (!on) forgetIdea(tabId);
   renderTabs();
   renderToolbar();
   const what = on ? 'SuperPowers activado' : 'SuperPowers desactivado';

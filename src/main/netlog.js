@@ -33,6 +33,7 @@ const KIND_LABEL = {
   plan: 'Crítica de un plan (Codex)',
   imagen: 'Imagen con Codex',
   workflow: 'Mapa del proyecto (Workflow)',
+  idea: 'Ideas para el proyecto (SuperPowers)',
 };
 
 // ── Direcciones locales o de internet ────────────────────────────────

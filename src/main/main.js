@@ -32,7 +32,11 @@ const { createWorkflow } = require('./workflow');
 const { createPlanTracker, PLAN_NOTE } = require('./plan');
 const { isAgentReport } = require('./turns');
 const { createSuperpowers, powerEffort, powerEnv } = require('./superpowers');
-const { createCapture, CAPTURE_TOOL } = require('./capture');
+const { createCapture, CAPTURE_TOOL, worktreeRoots } = require('./capture');
+const { createIdeas } = require('./ideas');
+const digest = require('./workflow-digest');
+const { findGit } = require('./secrets');
+const { jsonIn } = require('./haiku');
 const { readRule } = require('./context');
 const { compactTarget, compactEnv } = require('./project-card');
 const { Tabs } = require('./tabs');
@@ -64,6 +68,7 @@ let secrets = null; // aviso de claves y contraseñas escritas en los archivos (
 let testcheck = null; // pruebas antes de terminar (testcheck.js)
 let superpowers = null; // SuperPowers por pestaña: pasada final y cómo trabajar (superpowers.js)
 let capture = null; // capturas de pantalla para la revisión visual de SuperPowers (capture.js)
+let ideas = null; // ideas para el proyecto de SuperPowers (ideas.js)
 const capturesDir = () => path.join(app.getPath('userData'), 'capturas');
 let optimizer = null; // botón «Optimiza» (optimize.js)
 let optimizeHints = null; // cuándo se recomienda (optimize-hint.js)
@@ -329,6 +334,37 @@ if (!app.requestSingleInstanceLock()) {
     testcheck = createTestReminder({ tabs, log: appLog });
     superpowers = createSuperpowers({ tabs, log: appLog });
     capture = createCapture({ electron: { BrowserWindow, session }, dir: capturesDir, log: appLog });
+    // Ideas para el proyecto: Sonnet aparte propone y, si puede, Codex da su visto bueno.
+    ideas = createIdeas({
+      store, tabs, send, log: appLog,
+      findClaude: sessions.findClaude,
+      env: haikuEnv,
+      workDir: () => path.join(app.getPath('temp'), 'Claudes-haiku'),
+      material: (folder) => digest.material(folder, { kind: 'refresh' }),
+      record: (entry) => { if (netlog) netlog.record(entry); },
+      codexCheck: async (folder, idea, text, tabId) => {
+        if (!codexState.advisorUsable() || !(await codex.chatgptLogin())) return null;
+        const cwd = path.join(app.getPath('temp'), 'Claudes-haiku');
+        fs.mkdirSync(cwd, { recursive: true });
+        if (netlog) netlog.record({ tabId, kind: 'idea', target: folder, detail: `${review.MODEL} · ¿merece la pena la idea «${idea.title}»?`, dest: 'OpenAI (Codex)', external: true });
+        const result = await codex.askCodex({
+          cwd, model: review.MODEL, effort: 'low', timeout: 3 * 60 * 1000,
+          prompt: [
+            `Otro asistente propone esta mejora para el proyecto «${path.basename(folder)}». Mira con criterio, en el material de abajo, si el problema existe de verdad y si la mejora merece la pena ahora para quien usa el proyecto.`,
+            `Idea: ${idea.title}\nPor qué: ${idea.why}\nQué hacer: ${idea.todo}\nArchivos: ${idea.files.join(', ') || '(no dice)'}`,
+            `Material del proyecto (recortado; lo que parecía una clave va tapado):\n${text}`,
+            'Responde solo con este JSON: {"coincide": true o false, "motivo": "una frase en español"}',
+          ].join('\n\n'),
+        });
+        const answer = result.ok ? jsonIn(result.text) : null;
+        return answer && typeof answer.coincide === 'boolean' ? { agrees: answer.coincide, why: String(answer.motivo || '').slice(0, 200) } : null;
+      },
+      // La captura de «ahora» de una idea visual, para la tarjeta.
+      capture: async (tabId, card, folder) => {
+        const shot = await capture.take(tabId, { objetivo: card.page, anchos: [card.width] }, { roots: [folder] });
+        return shot.files[0] ? { file: shot.files[0], width: card.width } : null;
+      },
+    });
     optimizer = createOptimizer({ tabs, log: appLog });
     // Antes de recomendar «Optimiza», Haiku lee lo que más ha cambiado y dice si conviene
     // (optimize-check.js). Lo que se le envía queda en el «Log».
@@ -406,7 +442,10 @@ if (!app.requestSingleInstanceLock()) {
         // El resumen de la pasada (panel «Actividad»): cuando ya no queda nada que pedirle.
         if (!event.superAsk && !event.testsAsk) {
           const pass = superpowers.summary(tabId, { tests: testcheck.verdict(tabId), codex: event.reviewing });
-          if (pass) event.superPass = pass;
+          if (pass) {
+            event.superPass = pass;
+            ideas.turnDone(tabId, (tabs.get(tabId) || {}).spRequest || '');
+          }
         }
       }
       // Con /clear la pestaña pasa a otra conversación: los hooks llevan la actual.
@@ -511,8 +550,11 @@ if (!app.requestSingleInstanceLock()) {
         if (name === CAPTURE_TOOL.name) {
           const tab = tabs.get(tabId) || {};
           // Las páginas de la carpeta en la que trabaja (puede ser otra copia del repositorio) y la del proyecto.
-          const roots = [tab.cwd, tab.folder].filter(Boolean);
-          return capture.take(tabId, args, { roots, signal });
+          // …y sus copias de trabajo de git (las ideas se prueban en una).
+          return worktreeRoots(tab.folder, findGit()).then((copies) => {
+            const roots = [tab.cwd, tab.folder, ...copies].filter(Boolean);
+            return capture.take(tabId, args, { roots, signal });
+          });
         }
         return name === codex.OPINION_TOOL.name ? review.secondOpinion(tabId, args, signal) : codexState.drawImage(tabId, args);
       },
@@ -574,7 +616,7 @@ if (!app.requestSingleInstanceLock()) {
       electron: { app, ipcMain, dialog, Notification, Menu, clipboard, shell },
       DEV, store, wm, ptys, pasteboard, hookServer, contexts, tabs, logger, logsDir, appLog, send,
       sessions, shellList, createPty, sessionSettings, codex, codexState, review, style, limits,
-      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker,
+      previewer, netlog, updater, restartToUpdate, optimizer, optimizeHints, gitBash, narrator, workflow, planTracker, ideas,
     });
     wm.create();
     limits.start();
@@ -585,6 +627,7 @@ if (!app.requestSingleInstanceLock()) {
     codex.stopReviews(); // una revisión de Codex en marcha no sigue tras cerrar
     codexState.stop();
     if (optimizeChecker) optimizeChecker.stop(); // una pregunta a Haiku en marcha no sigue tras cerrar
+    if (ideas) ideas.stop(); // ni la de las ideas
     if (narrator) narrator.stop();
     if (workflow) workflow.stop(); // un mapa a medias no sigue tras cerrar
     if (hookServer) hookServer.stop();

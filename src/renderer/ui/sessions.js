@@ -1,4 +1,5 @@
 // La vista de cada pestaña y sus procesos: la sesión de Claude y la terminal extra.
+import { loadIdea } from './ideas.js';
 import { SVG, THEME, THEME_EXTRA } from './constants.js';
 import { buildContextPanel, syncContextPanel, wireDropChoice } from './context.js';
 import { api, el } from './dom.js';
@@ -158,6 +159,7 @@ export async function startClaude(view) {
   tab.sessionId = res.sessionId;
   save();
   if (view.status === 'starting') setStatus(view, 'idle');
+  if (tab.superpowers) loadIdea(tab.id); // SuperPowers: una idea para el proyecto que esperaba
   renderToolbar();
 }
 

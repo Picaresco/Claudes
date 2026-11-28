@@ -2,6 +2,7 @@
 // Este archivo es la entrada: restaura el estado guardado y conecta los módulos de ui/.
 import { wireActivity, setActivity } from './ui/activity.js';
 import { wireSuperpowers } from './ui/superpowers.js';
+import { wireIdeas, setIdea } from './ui/ideas.js';
 import { wireZoom } from './ui/zoom.js';
 import { wireTabCard } from './ui/tabcard.js';
 import { EFFORT_LEVELS } from './ui/constants.js';
@@ -125,6 +126,8 @@ async function init() {
       showCodex: (fields) => renderCodex({ ...(codexInfo || {}), ...fields }),
       // Enseña en «Actividad» lo que se le dé (p. ej. la tarjeta de la pasada final de SuperPowers).
       showActivity: (snap) => setActivity(S.activeId, snap),
+      // Enseña una idea para el proyecto de SuperPowers en la pestaña activa.
+      showIdea: (card) => setIdea(S.activeId, card),
       // Pone una pestaña en un estado, para ver cómo se pinta.
       showStatus: (index, status) => {
         const tab = S.tabs[index];
@@ -173,6 +176,7 @@ async function init() {
   wireWorkflow();
   wireActivity();
   wireSuperpowers();
+  wireIdeas();
   wireZoom();
   wireTabCard();
   wireTabs();

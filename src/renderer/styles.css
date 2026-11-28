@@ -1122,3 +1122,40 @@ dialog .btn-primary { background: var(--txt); }
 @media (prefers-reduced-motion: reduce) {
   .sp-btn[data-on="true"], .sp-btn[data-on="true"] svg { animation: none; }
 }
+
+/* ── Ideas para el proyecto (ui/ideas.js) ─────────────────────────── */
+/* Encima de la terminal (que se encoge), con los colores de SuperPowers. */
+.idea-card { flex: none; position: relative; margin: 10px 12px 4px; padding: 13px 15px 13px 16px; border: 1px solid transparent; border-radius: 14px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(236, 72, 153, 0.08) 55%, rgba(245, 184, 65, 0.1)) padding-box,
+    linear-gradient(var(--bg1), var(--bg1)) padding-box, linear-gradient(120deg, var(--sp1), var(--sp2), var(--sp3)) border-box;
+  box-shadow: 0 10px 30px rgba(139, 92, 246, 0.18); animation: idea-in 0.35s ease-out; }
+@keyframes idea-in { from { opacity: 0; transform: translateY(-6px); } }
+.idea-head { display: flex; align-items: center; gap: 10px; }
+.idea-spark { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 9px; color: #fff; background: linear-gradient(135deg, var(--sp1), var(--sp2)); box-shadow: 0 0 14px rgba(236, 72, 153, 0.5); }
+.idea-titles { flex: 1 1 auto; min-width: 0; }
+.idea-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #F0B6E8; }
+.idea-title { margin-top: 1px; font-size: 15px; font-weight: 700; color: #fff; overflow-wrap: anywhere; }
+.idea-tags { display: flex; flex: none; align-items: center; gap: 6px; margin-left: 8px; }
+.idea-tag { padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.idea-gain { background: rgba(127, 212, 160, 0.14); color: #9FE6BB; box-shadow: inset 0 0 0 1px rgba(127, 212, 160, 0.45); }
+.idea-kind-visual, .idea-kind-funcional { background: rgba(106, 165, 248, 0.14); color: #BFD8FF; box-shadow: inset 0 0 0 1px rgba(106, 165, 248, 0.45); }
+.idea-x { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: var(--mute); }
+.idea-x:hover, .idea-x:focus-visible { background: var(--bg2); color: var(--txt); }
+.idea-body { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 9px; }
+.idea-body.with-shot { grid-template-columns: 1fr minmax(150px, 240px); }
+.idea-why { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
+.idea-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 12px; color: var(--mute); }
+.idea-facts b { color: var(--txt); font-weight: 600; }
+.idea-codex { color: var(--codex); }
+.idea-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 11px; }
+.idea-go { display: flex; flex: none; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 9px; color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; background: linear-gradient(90deg, var(--sp1), var(--sp2), var(--sp3)); }
+.idea-go:hover { filter: brightness(1.08); }
+.idea-ghost { display: flex; flex: none; align-items: center; height: 34px; padding: 0 12px; border: 1px solid var(--line2); border-radius: 9px; color: var(--dim); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.idea-ghost:hover, .idea-ghost:focus-visible { border-color: var(--mute); color: var(--txt); }
+.idea-note { flex-basis: 100%; color: var(--mute); font-size: 11.5px; }
+.idea-shot { align-self: start; padding: 0; overflow: hidden; border: 1px solid var(--line2); border-radius: 9px; background: #0E1014; cursor: pointer; text-align: left; }
+.idea-shot:hover { border-color: var(--focus); }
+.idea-shot small { display: block; padding: 4px 8px; border-bottom: 1px solid var(--line); background: var(--bg2); color: var(--mute); font-size: 10.5px; }
+.idea-shot img { display: block; width: 100%; max-height: 150px; object-fit: cover; object-position: top; }
+@media (max-width: 900px) { .idea-body.with-shot { grid-template-columns: 1fr; } .idea-shot { max-width: 240px; } }
+@media (prefers-reduced-motion: reduce) { .idea-card { animation: none; } }

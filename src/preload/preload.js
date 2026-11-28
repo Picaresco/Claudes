@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('api', {
   optimizeHint: (tabId) => ipcRenderer.invoke('optimize:hint', String(tabId)),
   optimizeSnooze: (tabId) => ipcRenderer.invoke('optimize:snooze', String(tabId)),
   onOptimizeHint: on('optimize:hint'), // (tabId, { recommended, reasons, snoozed, first })
+  // SuperPowers: ideas para el proyecto (src/main/ideas.js).
+  ideasGet: (tabId) => ipcRenderer.invoke('ideas:get', String(tabId)),
+  ideasAct: (tabId, id, action) => ipcRenderer.invoke('ideas:act', String(tabId), String(id), String(action)),
+  onIdea: on('ideas:card'), // (tabId, card)
   onCodexChanged: on('codex:changed'),
 
   // Botón «Workflow»: el mapa del proyecto de una pestaña (lo dibuja un modelo aparte).
