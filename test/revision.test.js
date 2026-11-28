@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { createReview, EARLY_NOTE, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
+const { createReview, EARLY_NOTE, FOLLOW_NOTE, FOLLOW_SOON, isGitRepo, repoRoot, reasonFor, verdict, WRAPUP_START } = require('../src/main/review');
 const { parseReview, opinionPrompt, planPrompt, lastAgentMessage, lineReader, SCOPES, OPINION_TOOL, ISOLATED, launcher, userSetting, limitsFrom, accessReport, sandboxConfigured } = require('../src/main/codex');
 const { Tabs } = require('../src/main/tabs');
 const { tempDir, waitFor } = require('./helpers');
@@ -833,4 +833,67 @@ test('la revisión lanzada con la pasada no empieza sin motivo y se para si camb
   off.review.turnStarted('t1', 'Cambia a');
   off.review.toolUsed('t1', 'Edit');
   assert.equal(off.review.startEarly('t1'), false);
+});
+
+test('si la pasada cambia código, Codex hace una segunda ronda mientras Claude corrige lo de la primera', async (t) => {
+  const dir = gitRepo(t);
+  const big = { lines: 400, paths: ['a.js'] }; // un cambio grande: la primera ronda va en xhigh
+  const replies = [SAMPLE, 'Findings:\n- [P2] Falta validar el valor nuevo — a.js:3\n  Detalle.\n'];
+  const { review, tabs, calls } = makeReview(t, {
+    checkSecrets: async () => ({ ok: true, files: [], ...big }),
+    reviewChanges: async () => ({ ok: true, code: 0, text: replies[calls.length - 1], log: '', seconds: 20, aborted: false }),
+  });
+  tabs.ensure('t1').folder = dir;
+  review.turnStarted('t1', 'Añade los filtros');
+  review.toolUsed('t1', 'Edit');
+  assert.equal(review.startEarly('t1'), true); // primer Stop: la pasada y la primera ronda a la vez
+  review.toolUsed('t1', 'Edit', 'a.js'); // la pasada final cambia código
+  tabs.get('t1').superAsked = true;
+  assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), true);
+  const first = await review.onStop('t1', { event: 'Stop', cwd: dir });
+  assert.ok(first.reason.startsWith(EARLY_NOTE));
+  assert.ok(first.reason.includes(FOLLOW_SOON)); // le avisa de que viene otra ronda
+  assert.match(first.reason, /\[P1\] Await transcript reads/);
+  await waitFor(() => calls.length === 2); // la segunda ya está en marcha mientras Claude corrige
+  assert.equal(calls[0].effort, 'xhigh');
+  assert.equal(calls[1].effort, 'high'); // un repaso: como mucho «high»
+  // Claude termina de corregir: lo de la segunda ronda.
+  assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), true);
+  const second = await review.onStop('t1', { event: 'Stop', cwd: dir });
+  assert.ok(second.reason.startsWith(FOLLOW_NOTE));
+  assert.match(second.reason, /Falta validar el valor nuevo/);
+  // Y ahí se acaba: no hay una tercera.
+  review.toolUsed('t1', 'Edit', 'a.js');
+  assert.equal(review.willReview('t1', { event: 'Stop', stopHookActive: true }), false);
+  assert.equal(calls.length, 2);
+});
+
+test('sin hallazgos en la primera ronda pero con cambios en la pasada, se revisa lo último antes de terminar; sin cambios, no', async (t) => {
+  const dir = gitRepo(t);
+  const clean = 'The change looks correct.\n';
+  const replies = [clean, 'Findings:\n- [P1] Rompe la búsqueda vacía — a.js:1\n  Detalle.\n'];
+  const { review, tabs, calls } = makeReview(t, { reviewChanges: async () => ({ ok: true, code: 0, text: replies[calls.length - 1], log: '', seconds: 5, aborted: false }) });
+  tabs.ensure('t1').folder = dir;
+  review.turnStarted('t1', 'Cambia a');
+  review.toolUsed('t1', 'Edit');
+  review.startEarly('t1');
+  review.toolUsed('t1', 'Edit', 'a.js'); // la pasada cambia código
+  tabs.get('t1').superAsked = true;
+  review.willReview('t1', { event: 'Stop', stopHookActive: true });
+  const answer = await review.onStop('t1', { event: 'Stop', cwd: dir });
+  assert.equal(calls.length, 2);
+  assert.ok(answer.reason.startsWith(FOLLOW_NOTE));
+  assert.match(answer.reason, /Rompe la búsqueda vacía/);
+  // Sin cambios en la pasada: una sola ronda, como siempre.
+  const other = makeReview(t, { result: { ok: true, code: 0, text: SAMPLE, log: '', seconds: 5, aborted: false } });
+  other.tabs.ensure('t1').folder = dir;
+  other.review.turnStarted('t1', 'Cambia a');
+  other.review.toolUsed('t1', 'Edit');
+  other.review.startEarly('t1');
+  other.tabs.get('t1').superAsked = true;
+  other.review.willReview('t1', { event: 'Stop', stopHookActive: true });
+  const only = await other.review.onStop('t1', { event: 'Stop', cwd: dir });
+  assert.ok(!only.reason.includes(FOLLOW_SOON));
+  assert.equal(other.review.willReview('t1', { event: 'Stop', stopHookActive: true }), false);
+  assert.equal(other.calls.length, 1);
 });

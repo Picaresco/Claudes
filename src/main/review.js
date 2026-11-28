@@ -167,6 +167,11 @@ function reasonFor(parsed, text, effort = EFFORT) {
 // «Codex asesora» esté apagado (solo la revisión del final: ni el plan ni la segunda opinión).
 // Lo que se le dice a Claude cuando la revisión se hizo a la vez que su pasada final.
 const EARLY_NOTE = 'Codex ha revisado tus cambios tal como estaban al pedirte la pasada final, mientras la hacías: si algo de lo que dice ya lo has corregido en la pasada, sáltatelo.';
+const FOLLOW_SOON = 'Como en la pasada cambiaste código, Codex ya está revisando el cambio otra vez, con eso incluido, mientras corriges esto: lo que encuentre te llegará al terminar.';
+const FOLLOW_NOTE = 'Segunda ronda: Codex ha vuelto a revisar el cambio con lo que hiciste en la pasada final. Lo que ya hayas corregido o decidido no cambiar (con motivo), sáltatelo.';
+// El esfuerzo de la segunda ronda, como mucho «high»: es un repaso, que no haga esperar.
+const LEVELS = ['low', 'medium', 'high', 'xhigh'];
+const capEffort = (effort, cap) => (cap && LEVELS.indexOf(effort) > LEVELS.indexOf(cap) ? cap : effort);
 
 function createReview({ tabs, store, usable, codex, send, log, logsDir, detailedLogs = () => true, netlog = () => null, checkSecrets = async () => ({ ok: true, files: [] }), checkLogin = async () => true, onBusy = () => {}, sandboxMissing = () => false, extraFor = () => false }) {
   let enabled = store.get('codexReview', false) === true; // apagado hasta que el usuario lo encienda
@@ -195,7 +200,10 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     tab.reviewPending = false;
     tab.reviewArmed = reviews(tabId);
     tab.reviewSkip = typeof prompt === 'string' && prompt.startsWith(WRAPUP_START.slice(0, 30));
-    if (tab.reviewEarly) { tab.reviewEarly.abort(); tab.reviewEarly = null; } // la de un turno ya pasado no sigue
+    // Las de un turno ya pasado no siguen.
+    if (tab.reviewEarly) { tab.reviewEarly.abort(); tab.reviewEarly = null; }
+    if (tab.reviewFollow) { tab.reviewFollow.abort(); tab.reviewFollow = null; }
+    tab.reviewEdits = 0;
   }
 
   // Claude ha usado una herramienta: ¿ha editado código, y de qué repositorio? Si no se
@@ -221,6 +229,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (tab.reviewRepo === undefined) tab.reviewRepo = repo;
     else if (tab.reviewRepo === null || !sameRepo(tab.reviewRepo, repo)) tab.reviewRepo = null; // de varios sitios
     tab.edited = true;
+    tab.reviewEdits = (tab.reviewEdits || 0) + 1;
   }
 
   // ¿Hay que revisar en este Stop? Se decide al recibir el aviso, antes de responder,
@@ -229,7 +238,8 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     const tab = tabs.get(tabId);
     // Tras otro aviso del Stop (stopHookActive), solo si ese aviso era de ClaudHome: el de las
     // pruebas o la pasada final de SuperPowers.
-    const go = Boolean(reviews(tabId) && tab && tab.reviewArmed && tab.edited
+    const follow = Boolean(tab && tab.reviewFollow && tab.reviewFollow.turn === tab.turn && reviews(tabId));
+    const go = follow || Boolean(reviews(tabId) && tab && tab.reviewArmed && tab.edited
       && !tab.reviewSkip && !tab.reviewed && (!(event && event.stopHookActive) || tab.testsAsked || tab.superAsked) && usable());
     if (tab) tab.reviewPending = go;
     return go;
@@ -243,16 +253,31 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     if (!tab || tab.reviewEarly || !reviews(tabId) || !tab.reviewArmed || !tab.edited || tab.reviewSkip || tab.reviewed || !usable()) return false;
     const cwd = tab.reviewRepo;
     if (!cwd) return false; // sin git o de varios repositorios: lo dirá onStop, como siempre
-    const turn = tab.turn;
-    const post = (result) => { if (tab.turn === turn) send('review:result', tabId, result); };
-    const own = new AbortController();
-    const link = linked(own.signal);
-    const promise = reviewRun(tabId, tab, turn, post, cwd, link.signal)
-      .catch((err) => { log(`revisión de Codex: ha fallado (${(err && err.message) || err})`); post({ state: 'error', seconds: 0 }); return null; })
-      .finally(() => link.done());
-    tab.reviewEarly = { turn, promise, abort: () => own.abort() };
+    tab.reviewEarly = launch(tabId, tab, cwd);
     log('revisión de Codex: empieza a la vez que la pasada final');
     return true;
+  }
+
+  // Una revisión en segundo plano: { turn, edits (las contadas al lanzarla), state (el último
+  // que ha dado), promise, abort }.
+  function launch(tabId, tab, cwd, cap = null) {
+    const job = { turn: tab.turn, edits: tab.reviewEdits || 0, state: null };
+    const post = (result) => { job.state = result.state; if (tab.turn === job.turn) send('review:result', tabId, result); };
+    const own = new AbortController();
+    const link = linked(own.signal);
+    job.abort = () => own.abort();
+    job.promise = reviewRun(tabId, tab, job.turn, post, cwd, link.signal, cap)
+      .catch((err) => { log(`revisión de Codex: ha fallado (${(err && err.message) || err})`); post({ state: 'error', seconds: 0 }); return null; })
+      .finally(() => link.done());
+    return job;
+  }
+
+  // Segunda ronda: el cambio otra vez, con lo que Claude hizo en la pasada final.
+  function startFollow(tabId, tab) {
+    if (!reviews(tabId) || !usable() || !tab.reviewRepo) return null;
+    log('revisión de Codex: segunda ronda, con lo que cambió en la pasada final');
+    tab.reviewFollow = launch(tabId, tab, tab.reviewRepo, 'high');
+    return tab.reviewFollow;
   }
 
   // Lo que encontró la revisión lanzada con la pasada; si se interrumpe el turno, se para.
@@ -286,15 +311,36 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     const tab = tabs.get(tabId);
     if (!tab || !tab.reviewPending) return null;
     tab.reviewPending = false;
-    tab.reviewed = true; // una sola ronda por turno
+    // La segunda ronda, lanzada al darle la primera: lo que encuentre, al terminar de corregir.
+    const follow = tab.reviewFollow;
+    if (follow && follow.turn === tab.turn) {
+      tab.reviewFollow = null;
+      const result = await awaitEarly(follow, signal);
+      return result && result.reason ? { ...result, reason: `${FOLLOW_NOTE}\n\n${result.reason}` } : result;
+    }
+    tab.reviewed = true; // la primera ronda, una vez por turno
     tab.edited = false;
     // Ya empezó con la pasada final: se espera (si no ha acabado) y se le da lo que encontró.
     const early = tab.reviewEarly;
     if (early && early.turn === tab.turn) {
       tab.reviewEarly = null;
+      const changed = (tab.reviewEdits || 0) > early.edits; // ¿la pasada cambió código?
       const result = await awaitEarly(early, signal);
-      if (!result || !result.reason) return result;
-      return { ...result, reason: `${EARLY_NOTE}\n\n${result.reason}` };
+      if (signal && signal.aborted) return null;
+      if (result && result.reason) {
+        // Mientras corrige esto, Codex mira el cambio otra vez con lo de la pasada.
+        const again = changed && startFollow(tabId, tab);
+        return { ...result, reason: `${EARLY_NOTE}${again ? ` ${FOLLOW_SOON}` : ''}\n\n${result.reason}` };
+      }
+      // Sin hallazgos, pero la pasada cambió código: lo último se revisa ahora (como antes).
+      if (changed && early.state === 'clean') {
+        const again = startFollow(tabId, tab);
+        if (!again) return null;
+        tab.reviewFollow = null;
+        const second = await awaitEarly(again, signal);
+        return second && second.reason ? { ...second, reason: `${FOLLOW_NOTE}\n\n${second.reason}` } : second;
+      }
+      return result;
     }
     // Lo que llegue cuando el usuario ya ha empezado otro turno no cambia su estado.
     const turn = tab.turn;
@@ -319,7 +365,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   }
 
   // La revisión, ya decidido el repositorio: comprobación de claves, cuenta y Codex.
-  async function reviewRun(tabId, tab, turn, post, cwd, signal) {
+  async function reviewRun(tabId, tab, turn, post, cwd, signal, cap = null) {
     const input = await checkSecrets(cwd, signal);
     if (input.aborted || (signal && signal.aborted)) {
       post({ state: 'aborted', seconds: 0 });
@@ -355,7 +401,7 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
     }
     if (tab.turn !== turn || !reviews(tabId)) return null;
     post({ state: 'running' });
-    const effort = reviewEffort(input);
+    const effort = capEffort(reviewEffort(input), cap);
     log(`revisión de Codex: empieza en ${cwd} (${MODEL}, razonamiento ${effort}: ${input.lines || 0} líneas en ${(input.paths || []).length} archivos)`);
     // Se anota antes de enviar nada: si la app se cierra a mitad, la salida ya consta.
     const record = netlog();
@@ -583,4 +629,4 @@ function createReview({ tabs, store, usable, codex, send, log, logsDir, detailed
   };
 }
 
-module.exports = { createReview, EARLY_NOTE, isGitRepo, repoRoot, reasonFor, verdict, reviewEffort, planEffort, opinionEffort, MODEL, EFFORT, WRAPUP_START, ADVISOR_ON, ADVISOR_OFF, ADVISOR_EVERY };
+module.exports = { createReview, EARLY_NOTE, FOLLOW_NOTE, FOLLOW_SOON, isGitRepo, repoRoot, reasonFor, verdict, reviewEffort, planEffort, opinionEffort, MODEL, EFFORT, WRAPUP_START, ADVISOR_ON, ADVISOR_OFF, ADVISOR_EVERY };
